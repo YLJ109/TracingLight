@@ -14,12 +14,33 @@ REM =============================================
 echo [1/5] Checking runtime...
 
 where node >nul 2>nul || (
-    echo [ERROR] Node.js not found!
-    echo Please install Node.js >= 20 from https://nodejs.org/
-    pause & exit /b 1
+    echo   Node.js not found. Attempting auto-install...
+
+    REM Try winget (built into Windows 10/11)
+    where winget >nul 2>nul && (
+        echo   Installing Node.js LTS via winget...
+        winget install OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements >nul 2>nul
+        if !errorlevel! equ 0 (
+            REM Refresh PATH for current session
+            for /f "tokens=*" %%p in ('where /R "C:\Program Files\nodejs" node.exe 2^>nul') do set "NODE_PATH=%%p"
+            if defined NODE_PATH (
+                set "PATH=!NODE_PATH!\..;%PATH%"
+                echo   Node.js installed successfully!
+            ) else (
+                echo   Installed. Please re-run setup.bat to continue.
+                pause & exit /b 1
+            )
+        ) else (
+            echo   winget install failed. Install manually: https://nodejs.org/
+            pause & exit /b 1
+        )
+    ) || (
+        echo   winget not found. Please install Node.js from https://nodejs.org/
+        pause & exit /b 1
+    )
 )
-echo   Node.js v%node:~0,-1%
-for /f "tokens=*" %%i in ('node -v') do echo   %%i
+echo   Node.js ready
+for /f "tokens=*" %%i in ('node -v') do echo     version: %%i
 
 where pnpm >nul 2>nul || (
     echo   Installing pnpm...
