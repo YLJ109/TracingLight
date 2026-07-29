@@ -1,0 +1,340 @@
+'use client';
+import { apiFetch } from '@/lib/api-fetch';
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import { getCurrentUser } from '@/lib/auth-helper';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import {
+  Calendar, CheckCircle2, Clock, BookOpen, Sparkles, ArrowRight, RotateCcw, Loader2,
+  Brain, Target, AlertTriangle, GraduationCap, Zap, Play, ExternalLink,
+} from 'lucide-react';
+
+type SessionStatus = 'pending' | 'in_progress' | 'completed';
+
+interface StudySession {
+  time: string; topic: string; type: string; kp: string;
+  priority: string; resources: string; duration: number; status: SessionStatus;
+}
+
+interface DayPlan { day: string; date: string; sessions: StudySession[]; }
+
+interface WeakPoint { name: string; mastery: number; }
+
+interface ScheduleItem { day_of_week: number; start_time: string; end_time: string; title: string; }
+
+interface ExamItem { subject: string; exam_date: string; exam_time: string; }
+
+interface PlanData {
+  plans: DayPlan[]; weakKnowledgePoints: WeakPoint[];
+  schedules: ScheduleItem[]; exams: ExamItem[];
+  generatedAt: string | null; totalSessions: number; completedSessions: number;
+}
+
+const STORAGE_KEY = 'tracinglight_study_plan_progress';
+
+function loadProgress(): Record<string, SessionStatus> {
+  if (typeof window === 'undefined') return {};
+  try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : {}; }
+  catch { return {}; }
+}
+
+function saveProgress(progress: Record<string, SessionStatus>) {
+  if (typeof window === 'undefined') return;
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(progress)); } catch {}
+}
+
+function sessionKey(dayIdx: number, sessionIdx: number) { return `${dayIdx}_${sessionIdx}`; }
+
+export default function StudyPlanPage() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [planData, setPlanData] = useState<PlanData | null>(null);
+  const [source, setSource] = useState<'ai' | 'local' | null>(null);
+  const [timers, setTimers] = useState<Record<string, number>>({});
+  const timerRefs = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+
+  const applyProgress = useCallback((data: PlanData): PlanData => {
+    const saved = loadProgress();
+    const plans = data.plans.map((dp, di) => ({
+      ...dp,
+      sessions: dp.sessions.map((s, si) => ({
+        ...s,
+        status: saved[sessionKey(di, si)] || s.status || 'pending',
+      })),
+    }));
+    const completedSessions = plans.reduce((sum, dp) =>
+      sum + dp.sessions.filter(s => s.status === 'completed').length, 0);
+    return { ...data, plans, completedSessions };
+  }, []);
+
+  useEffect(() => { getCurrentUser().then((user) => { loadPlan(user?.id || 3); }); }, []);
+
+  const loadPlan = async (studentId: number) => {
+    setLoading(true);
+    try {
+      const res = await apiFetch(`/api/student/study-plan?student_id=${studentId}`);
+      const data = await res.json();
+      if (data.success && data.data?.plans?.length > 0) {
+        setPlanData(applyProgress(data.data)); setSource('ai');
+      } else { await generateAIPlan(studentId); }
+    } catch (e) { await generateAIPlan(studentId); }
+    finally { setLoading(false); }
+  };
+
+  const generateAIPlan = async (studentId: number) => {
+    setGenerating(true);
+    try {
+      const res = await apiFetch('/api/student/study-plan/generate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student_id: studentId, course_id: 1 }),
+      });
+      const data = await res.json();
+      if (data.success && data.data?.weeklyPlan) {
+        const dayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+        const dayMap = new Map<string, DayPlan>();
+        data.data.weeklyPlan.forEach((item: { plan_date: string; time_slot: string; subject: string; content: string; duration_minutes: number; plan_type: string }) => {
+          const key = item.plan_date;
+          if (!dayMap.has(key)) {
+            const d = new Date(key);
+            dayMap.set(key, { day: `${dayNames[d.getDay()]} ${key.slice(5)}`, date: key, sessions: [] });
+          }
+          dayMap.get(key)!.sessions.push({
+            time: item.time_slot,
+            topic: `${item.subject || ''} - ${(item.content || '').slice(0, 25)}`,
+            type: item.plan_type, kp: item.subject || '',
+            priority: item.plan_type === 'review' ? 'P0' : item.plan_type === 'practice' ? 'P1' : 'P2',
+            resources: item.content || item.subject || '',
+            duration: item.duration_minutes, status: 'pending',
+          });
+        });
+        const basisRes = await apiFetch(`/api/student/study-plan?student_id=${studentId}`);
+        const basisData = await basisRes.json();
+        const rawPlan: PlanData = {
+          plans: Array.from(dayMap.values()),
+          weakKnowledgePoints: basisData.success ? basisData.data.weakKnowledgePoints : [],
+          schedules: basisData.success ? basisData.data.schedules : [],
+          exams: basisData.success ? basisData.data.exams : [],
+          generatedAt: new Date().toISOString(),
+          totalSessions: data.data.weeklyPlan.length, completedSessions: 0,
+        };
+        setPlanData(applyProgress(rawPlan)); setSource('ai'); return;
+      }
+    } catch (e) { console.error('AI plan generation failed', e); }
+    finally { setGenerating(false); }
+    setSource('local'); setGenerating(false);
+  };
+
+  const handleRegenerate = () => { getCurrentUser().then((user) => { generateAIPlan(user?.id || 3); }); };
+
+  const updateSessionStatus = (dayIdx: number, sessionIdx: number, status: SessionStatus) => {
+    setPlanData(prev => {
+      if (!prev) return prev;
+      const plans = prev.plans.map((dp, di) => {
+        if (di !== dayIdx) return dp;
+        return { ...dp, sessions: dp.sessions.map((s, si) => si === sessionIdx ? { ...s, status } : s) };
+      });
+      const completedSessions = plans.reduce((sum, dp) => sum + dp.sessions.filter(s => s.status === 'completed').length, 0);
+      const saved = loadProgress(); saved[sessionKey(dayIdx, sessionIdx)] = status; saveProgress(saved);
+      return { ...prev, plans, completedSessions };
+    });
+  };
+
+  const handleStart = (dayIdx: number, sessionIdx: number) => {
+    updateSessionStatus(dayIdx, sessionIdx, 'in_progress');
+    const key = sessionKey(dayIdx, sessionIdx);
+    setTimers(prev => ({ ...prev, [key]: 0 }));
+    if (timerRefs.current[key]) clearInterval(timerRefs.current[key]);
+    timerRefs.current[key] = setInterval(() => { setTimers(prev => ({ ...prev, [key]: (prev[key] || 0) + 1 })); }, 1000);
+  };
+
+  const handleComplete = (dayIdx: number, sessionIdx: number) => {
+    updateSessionStatus(dayIdx, sessionIdx, 'completed');
+    const key = sessionKey(dayIdx, sessionIdx);
+    if (timerRefs.current[key]) { clearInterval(timerRefs.current[key]); delete timerRefs.current[key]; }
+    setTimers(prev => { const n = { ...prev }; delete n[key]; return n; });
+  };
+
+  const handleNavigate = (session: StudySession) => {
+    if (session.type === 'review') router.push('/student/knowledge-graph');
+    else if (session.type === 'practice') router.push('/student/errors');
+  };
+
+  useEffect(() => { return () => { Object.values(timerRefs.current).forEach(clearInterval); }; }, []);
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60); const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  if (loading || generating) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96 gap-3">
+        <Loader2 className="h-8 w-8 animate-spin text-teal-600" />
+        <p className="text-sm text-slate-500">{generating ? 'AI 正在分析学情数据并生成计划...' : '加载学习计划...'}</p>
+      </div>
+    );
+  }
+
+  if (!planData) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96 gap-3">
+        <AlertTriangle className="h-8 w-8 text-amber-500" />
+        <p className="text-slate-500">暂无学习计划</p>
+        <Button onClick={handleRegenerate} className="gap-2"><Sparkles className="h-4 w-4" /> 生成学习计划</Button>
+      </div>
+    );
+  }
+
+  const progress = planData.totalSessions > 0 ? (planData.completedSessions / planData.totalSessions) * 100 : 0;
+  const generatedDate = planData.generatedAt ? new Date(planData.generatedAt) : null;
+  const daysAgo = generatedDate ? Math.floor((Date.now() - generatedDate.getTime()) / 86400000) : null;
+
+  // ─── JSX returned below ───
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">学习规划</h1>
+          <p className="text-slate-500 mt-1">基于学情数据的个性化学习方案</p>
+        </div>
+        <div className="flex items-center gap-3">
+          {source === 'ai' && (
+            <Badge variant="secondary" className="gap-1.5 bg-amber-50 text-amber-700 border-amber-200">
+              <Sparkles className="h-3.5 w-3.5" />AI 智能生成
+              {daysAgo !== null && daysAgo <= 1 && <span className="text-xs ml-1">· {daysAgo === 0 ? '今天' : '昨天'}</span>}
+            </Badge>
+          )}
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={handleRegenerate} disabled={generating}>
+            <RotateCcw className={`h-3.5 w-3.5 ${generating ? 'animate-spin' : ''}`} />重新生成
+          </Button>
+        </div>
+      </div>
+
+      {/* AI Analysis Basis */}
+      {source === 'ai' && (
+        <Card className="border-teal-100 bg-gradient-to-br from-teal-50/50 to-white">
+          <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><Brain className="h-5 w-5 text-teal-600" />AI 智能分析依据<Badge variant="outline" className="text-xs font-normal ml-2">数据来源</Badge></CardTitle></CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium text-slate-700"><Target className="h-4 w-4 text-red-500" />薄弱知识点<Badge variant="outline" className="text-xs">{planData.weakKnowledgePoints.length}个</Badge></div>
+                {planData.weakKnowledgePoints.length > 0 ? (
+                  <div className="space-y-1.5">{planData.weakKnowledgePoints.slice(0, 5).map((wp, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs"><span className="text-slate-600 truncate flex-1">{wp.name}</span><div className="w-16"><Progress value={wp.mastery} className="h-1.5" /></div><span className="text-slate-400 w-8 text-right">{wp.mastery}%</span></div>
+                  ))}</div>) : <p className="text-xs text-slate-400">暂无薄弱知识点数据</p>}
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium text-slate-700"><Calendar className="h-4 w-4 text-blue-500" />课表安排<Badge variant="outline" className="text-xs">{planData.schedules.length}节课</Badge></div>
+                {planData.schedules.length > 0 ? (
+                  <div className="space-y-1">{planData.schedules.slice(0, 4).map((s, i) => (
+                    <div key={i} className="text-xs text-slate-600 flex items-center gap-1.5"><Clock className="h-3 w-3 text-slate-400" /><span>周{s.day_of_week} {s.start_time}-{s.end_time}</span><span className="text-slate-400 truncate">{s.title}</span></div>
+                  ))}</div>) : <p className="text-xs text-slate-400">暂无课表数据</p>}
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium text-slate-700"><GraduationCap className="h-4 w-4 text-amber-500" />近期考试<Badge variant="outline" className="text-xs">{planData.exams.length}场</Badge></div>
+                {planData.exams.length > 0 ? (
+                  <div className="space-y-1">{planData.exams.slice(0, 3).map((e, i) => (
+                    <div key={i} className="text-xs text-slate-600 flex items-center gap-1.5"><AlertTriangle className="h-3 w-3 text-amber-400" /><span>{e.exam_date} {e.exam_time}</span><span className="text-slate-400 truncate">{e.subject}</span></div>
+                  ))}</div>) : <p className="text-xs text-slate-400">暂无考试安排</p>}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {[
+          { label: '计划周期', value: `${planData.plans.length} 天`, sub: `${planData.plans[0]?.date} ~ ${planData.plans[planData.plans.length - 1]?.date}`, valueClass: 'text-teal-600', progress: false },
+          { label: '总学习节数', value: `${planData.totalSessions}`, sub: `已完成 ${planData.completedSessions} 节`, valueClass: 'text-blue-600', progress: false },
+          { label: '完成进度', value: `${progress.toFixed(0)}%`, sub: null, valueClass: 'text-amber-600', progress: true },
+          { label: '重点知识点', value: `${planData.weakKnowledgePoints.length}`, sub: '薄弱知识点待攻克', valueClass: 'text-purple-600', progress: false },
+        ].map((card, i) => (
+          <Card key={i}>
+            <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-600">{card.label}</CardTitle></CardHeader>
+            <CardContent>
+              <div className={`text-2xl font-bold ${card.valueClass}`}>{card.value}</div>
+              {card.sub && <p className="text-xs text-slate-500 mt-1">{card.sub}</p>}
+              {card.progress && <Progress value={progress} className="mt-2" />}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Weekly Plan */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2"><Calendar className="h-5 w-5 text-teal-600" />本周学习计划</CardTitle>
+            {source === 'ai' && <div className="flex items-center gap-1.5 text-xs text-slate-500"><Zap className="h-3.5 w-3.5 text-amber-500" />已避开课表冲突时段</div>}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-6">
+            {planData.plans.map((dayPlan, dayIndex) => (
+              <div key={dayIndex} className="border rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-slate-900">{dayPlan.day}</h3>
+                  <Badge variant={dayPlan.sessions.every(s => s.status === 'completed') ? 'default' : 'secondary'}>
+                    {dayPlan.sessions.filter(s => s.status === 'completed').length}/{dayPlan.sessions.length} 已完成
+                  </Badge>
+                </div>
+                <div className="space-y-2">
+                  {dayPlan.sessions.map((session, sessionIndex) => {
+                    const key = sessionKey(dayIndex, sessionIndex);
+                    const elapsed = timers[key] || 0;
+                    const statusBg: Record<SessionStatus, string> = {
+                      pending: 'bg-slate-50',
+                      in_progress: 'bg-blue-50 border border-blue-200',
+                      completed: 'bg-green-50 border border-green-200',
+                    };
+                    return (
+                      <div key={sessionIndex} className={`flex items-center gap-4 p-3 rounded-lg transition-all duration-200 ${statusBg[session.status]}`}>
+                        <div className="flex items-center gap-2 min-w-[100px]">
+                          <Clock className={`h-4 w-4 ${session.status === 'in_progress' ? 'text-blue-500 animate-pulse' : 'text-slate-400'}`} />
+                          <span className="text-sm font-mono text-slate-600">{session.time}</span>
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`font-medium ${session.status === 'completed' ? 'text-green-700' : session.status === 'in_progress' ? 'text-blue-700' : 'text-slate-900'}`}>{session.topic}</span>
+                            <Badge variant="outline" className="text-xs">{session.type === 'review' ? '复习' : session.type === 'practice' ? '练习' : '预习'}</Badge>
+                            <Badge variant="outline" className={`text-xs ${session.priority === 'P0' ? 'border-red-300 text-red-600' : session.priority === 'P1' ? 'border-amber-300 text-amber-600' : 'border-blue-300 text-blue-600'}`}>{session.priority}</Badge>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
+                            <BookOpen className="h-3 w-3" /><span>{session.resources}</span><span>·</span><span>{session.duration}分钟</span>
+                            {session.status === 'in_progress' && <><span>·</span><span className="text-blue-600 font-mono font-medium">{formatTime(elapsed)}</span></>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {session.status === 'completed' ? (
+                            <CheckCircle2 className="h-5 w-5 text-green-500" />
+                          ) : session.status === 'in_progress' ? (
+                            <>
+                              <Button size="sm" variant="outline" className="text-xs border-blue-300 text-blue-700 hover:bg-blue-100" onClick={() => handleNavigate(session)}><ExternalLink className="h-3 w-3 mr-1" />跳转</Button>
+                              <Button size="sm" className="text-xs bg-green-600 hover:bg-green-700" onClick={() => handleComplete(dayIndex, sessionIndex)}><CheckCircle2 className="h-3 w-3 mr-1" />完成</Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button size="sm" variant="outline" className="text-xs border-teal-300 text-teal-700 hover:bg-teal-50" onClick={() => handleNavigate(session)}><ExternalLink className="h-3 w-3 mr-1" />跳转</Button>
+                              <Button size="sm" className="text-xs bg-teal-600 hover:bg-teal-700" onClick={() => handleStart(dayIndex, sessionIndex)}><Play className="h-3 w-3 mr-1" />开始</Button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

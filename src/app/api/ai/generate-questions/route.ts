@@ -1,0 +1,119 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createAIClient, HeaderUtils, invokeStructured } from "@/lib/ai/client";
+import { QUESTION_GEN_SYSTEM_PROMPT, buildQuestionGenPrompt } from "@/lib/ai/prompts/question-gen";
+import { requireAuth } from "@/lib/server-auth";
+import { getDb } from "@/storage/database/db";
+import { knowledgePoint, course, question } from "@/storage/database/shared/schema";
+import { eq } from "drizzle-orm";
+
+interface GeneratedQuestion {
+  content: string;
+  question_type: string;
+  difficulty: string;
+  options: string[] | null;
+  answer: string;
+  analysis: string;
+  default_score: number;
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const user = await requireAuth(request, 'teacher');
+    if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+    const body = await request.json();
+    const {
+      course_id,
+      knowledge_point_id,
+      question_type = "single_choice",
+      difficulty = "medium",
+      count = 3,
+    } = body;
+
+    if (!knowledge_point_id) {
+      return NextResponse.json(
+        { error: "缺少必要参数：knowledge_point_id" },
+        { status: 400 }
+      );
+    }
+
+    const db = getDb();
+
+    // 1. 获取知识点信息
+    const kpRows = db.select().from(knowledgePoint).where(eq(knowledgePoint.id, knowledge_point_id)).limit(1).all();
+    const kp = kpRows[0] || null;
+
+    if (!kp) {
+      return NextResponse.json({ error: "知识点不存在" }, { status: 404 });
+    }
+
+    // 单独查询关联的课程
+    const courseRows = db.select().from(course).where(eq(course.id, kp.course_id)).limit(1).all();
+    const courseData = courseRows[0] || null;
+
+    // 2. 调用 AI 出题
+    const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
+    const client = createAIClient(customHeaders);
+
+    const typeMap: Record<string, string> = {
+      single_choice: "单选题",
+      multi_choice: "多选题",
+      judgment: "判断题",
+      fill_blank: "填空题",
+      short_answer: "简答题",
+      programming: "编程题",
+    };
+
+    const prompt = buildQuestionGenPrompt({
+      courseName: courseData?.name || "计算机课程",
+      knowledgePointName: kp.name,
+      knowledgePointDescription: kp.description || "",
+      questionType: typeMap[question_type] || question_type,
+      difficulty,
+      count: Math.min(count, 5),
+    });
+
+    const result = await invokeStructured<GeneratedQuestion[]>(
+      client,
+      QUESTION_GEN_SYSTEM_PROMPT,
+      prompt,
+      0.7
+    );
+
+    // 3. 存入题库
+    const questionsToInsert = (Array.isArray(result) ? result : [result]).map((q) => ({
+      course_id: course_id || kp.course_id,
+      knowledge_point_id,
+      question_type: q.question_type || question_type,
+      difficulty: q.difficulty || difficulty,
+      content: q.content,
+      options: q.options || null,
+      answer: q.answer,
+      analysis: q.analysis || "",
+      default_score: q.default_score || 10,
+      source: "ai" as const,
+    }));
+
+    let inserted: Array<typeof question.$inferSelect> = [];
+    try {
+      inserted = db.insert(question).values(questionsToInsert).returning().all();
+    } catch (insErr) {
+      console.error("Insert questions error:", insErr);
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        generated: questionsToInsert,
+        inserted: inserted || [],
+        count: questionsToInsert.length,
+      },
+    });
+  } catch (error) {
+    if (error && typeof (error as { status?: number }).status === "number") return error as NextResponse;
+    console.error("Question generation failed:", error);
+    return NextResponse.json(
+      { error: "AI出题失败：" + (error instanceof Error ? error.message : "未知错误") },
+      { status: 500 }
+    );
+  }
+}
