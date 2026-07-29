@@ -11,7 +11,7 @@ echo.
 REM =============================================
 REM  1. Check runtime environment
 REM =============================================
-echo [1/6] Checking runtime...
+echo [1/5] Checking runtime...
 
 where node >nul 2>nul || (
     echo [ERROR] Node.js not found!
@@ -34,7 +34,7 @@ REM =============================================
 REM  2. Configure environment variables
 REM =============================================
 echo.
-echo [2/6] Configuring environment...
+echo [2/5] Configuring environment...
 
 set "NEED_KEY=0"
 
@@ -74,7 +74,7 @@ if "!NEED_KEY!"=="1" (
     echo ZHIPU_MODEL=glm-4-flash
     echo JWT_SECRET=!JWT_SECRET!
     echo DATABASE_PATH=./data/tracinglight.db
-    echo NODE_ENV=production
+    echo NODE_ENV=development
     echo PORT=5000
     ) > .env
     echo   .env configured
@@ -86,7 +86,7 @@ REM =============================================
 REM  3. Install dependencies
 REM =============================================
 echo.
-echo [3/6] Installing dependencies...
+echo [3/5] Installing dependencies...
 call pnpm install || (
     echo [ERROR] Failed to install dependencies
     pause & exit /b 1
@@ -97,7 +97,7 @@ REM =============================================
 REM  4. Initialize database
 REM =============================================
 echo.
-echo [4/6] Initializing database...
+echo [4/5] Initializing database...
 
 if not exist "data" mkdir data
 
@@ -115,22 +115,10 @@ call npx tsx src/storage/database/seed.ts || (
 echo   Database ready
 
 REM =============================================
-REM  5. Build project
+REM  5. Start server (dev mode — no build needed)
 REM =============================================
 echo.
-echo [5/6] Building project...
-call pnpm next build || (
-    echo [ERROR] Next.js build failed
-    pause & exit /b 1
-)
-call npx tsup src/server.ts --format cjs --platform node --target node20 --outDir dist --no-splitting --no-minify
-echo   Build complete
-
-REM =============================================
-REM  6. Start server
-REM =============================================
-echo.
-echo [6/6] Starting server...
+echo [5/5] Starting server...
 echo.
 echo    ========================================
 echo      Setup complete! Server starting...
@@ -144,8 +132,7 @@ echo      Student: stu_zhang ~ stu_ma
 echo    ========================================
 echo.
 
-set NODE_ENV=production
 set PORT=5000
-node dist/server.js
+npx tsx src/server.ts
 
 pause
