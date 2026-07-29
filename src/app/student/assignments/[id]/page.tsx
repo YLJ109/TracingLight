@@ -271,31 +271,38 @@ export default function StudentAssignmentDetailPage() {
                       <p className="text-sm text-slate-700 whitespace-pre-wrap mb-3">{q.content}</p>
 
                       {/* Options for single/multi choice */}
-                      {q.options && q.options.length > 0 && (
+                      {(function() {
+                        const opts = q.options;
+                        if (!opts) return null;
+                        const optEntries: [string, string][] = Array.isArray(opts)
+                          ? opts.map((o: string) => [o.charAt(0), o] as [string, string])
+                          : Object.entries(opts as Record<string, string>);
+                        if (optEntries.length === 0) return null;
+                        return (
                         <div className="grid grid-cols-2 gap-2 mb-3">
-                          {q.options.map((opt, oi) => (
-                            <label key={oi} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${
-                              answers[q.id] === opt.charAt(0)
+                          {optEntries.map(([key, val]) => (
+                            <label key={key} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${
+                              answers[q.id] === key
                                 ? 'border-indigo-500 bg-indigo-50'
                                 : 'border-slate-200 hover:border-slate-300'
                             } ${isGraded ? 'pointer-events-none' : ''}`}>
                               <input
                                 type="radio"
                                 name={`q-${q.id}`}
-                                value={opt.charAt(0)}
-                                checked={answers[q.id] === opt.charAt(0)}
+                                value={key}
+                                checked={answers[q.id] === key}
                                 onChange={e => setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
                                 disabled={isGraded}
                                 className="text-indigo-600"
                               />
-                              <span className="text-sm">{opt}</span>
+                              <span className="text-sm">{key}. {val}</span>
                             </label>
                           ))}
                         </div>
-                      )}
+                        );})()}
 
                       {/* Text input for non-choice questions */}
-                      {(!q.options || q.options.length === 0) && (
+                      {(!q.options || (Array.isArray(q.options) ? q.options.length === 0 : Object.keys(q.options).length === 0)) && (
                         <div>
                           {q.question_type === 'judgment' ? (
                             <div className="flex gap-4 mb-3">

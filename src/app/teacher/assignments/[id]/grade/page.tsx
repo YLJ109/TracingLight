@@ -265,8 +265,10 @@ export default function TeacherGradeDetailPage() {
                     <p className="text-base font-medium text-slate-800 mt-2">{q.content}</p>
                     {q.options && (
                       <div className="mt-2 space-y-1">
-                        {(q.options as string[]).map((opt: string, i: number) => (
-                          <p key={i} className="text-sm text-slate-600">{opt}</p>
+                        {(Array.isArray(q.options) ? q.options : Object.entries(q.options as Record<string, string>)).map((opt: string | [string, string], i: number) => (
+                          <p key={i} className="text-sm text-slate-600">
+                            {Array.isArray(opt) ? `${opt[0]}. ${opt[1]}` : opt}
+                          </p>
                         ))}
                       </div>
                     )}

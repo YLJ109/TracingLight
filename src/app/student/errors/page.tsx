@@ -210,10 +210,12 @@ export default function StudentErrors() {
         <div className="bg-slate-50 rounded-lg p-3 mb-3">
           <p className="text-xs text-slate-500 mb-1">题目：</p>
           <p className="text-sm text-slate-800 whitespace-pre-wrap">{err.question_content}</p>
-          {err.question_options && err.question_options.length > 0 && (
+          {err.question_options && (Array.isArray(err.question_options) ? err.question_options.length > 0 : Object.keys(err.question_options).length > 0) && (
             <div className="mt-2 flex flex-wrap gap-2">
-              {err.question_options.map((opt: string, oi: number) => (
-                <span key={oi} className="text-xs px-2 py-0.5 bg-white border rounded">{opt}</span>
+              {(Array.isArray(err.question_options) ? err.question_options : Object.entries(err.question_options)).map((opt: string | [string, string], oi: number) => (
+                <span key={oi} className="text-xs px-2 py-0.5 bg-white border rounded">
+                  {Array.isArray(opt) ? `${opt[0]}. ${opt[1]}` : opt}
+                </span>
               ))}
             </div>
           )}
