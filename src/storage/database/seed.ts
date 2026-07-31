@@ -63,7 +63,7 @@ async function seed() {
 
   // ===================== 4. 知识点 =====================
   console.log('🧠 插入知识点...');
-  db.insert(knowledgePoint).values([
+  const kpValues = [
     // Python (id 1-10) — 保持不变
     { id: 1, course_id: 1, name: '变量与数据类型', difficulty: 'easy', sort_order: 1 },
     { id: 2, course_id: 1, name: '运算符与表达式', difficulty: 'easy', sort_order: 2 },
@@ -278,54 +278,57 @@ async function seed() {
   addNode(36,3,'数据库备份与恢复',3,dbSec31,1,'#ddd6fe',true); addNode(37,3,'NoSQL数据库简介',3,dbSec31,2,'#ddd6fe',true); addNode(41,3,'分布式数据库',3,dbSec31,3,'#ddd6fe',true);
 
   // 课程4: 深度学习框架 (7项目)
+  const kpn: Record<number, string> = {};
+  [42,'人工智能的概念',43,'机器学习的定义',44,'深度学习的定义',45,'AI/ML/DL三者关系',46,'监督学习',47,'无监督学习',48,'半监督学习',49,'强化学习',50,'训练数据与模型',51,'分类、决策与预测任务',52,'图像识别',53,'人脸识别',54,'图像分割',55,'自然语言处理',56,'语音识别',57,'TensorFlow框架',58,'Keras高级接口',59,'PyTorch框架',60,'主流框架比较',61,'深度学习工程流程',62,'NumPy数据类型',63,'ndarray数组对象',64,'数组创建函数',65,'数组属性',66,'数组索引',67,'数组切片',68,'数组广播',69,'数组逐元素运算',70,'NumPy随机函数',71,'数组形状变换',72,'Matplotlib图形要素',73,'折线图绘制',74,'直方图绘制',75,'饼图绘制',76,'绘图基本步骤',77,'scikit-learn数据集',78,'scikit-learn模型训练',79,'训练集验证集测试集',80,'模型评估指标',81,'张量的维度',82,'tf.constant常量张量',83,'张量索引',84,'tf.reshape形状变换',85,'张量数学运算',86,'自动求导GradientTape',87,'TensorBoard可视化',88,'生物神经元与感知器',89,'单层感知器',90,'前馈神经网络',91,'输入层隐藏层输出层',92,'阶跃函数',93,'Tanh函数',94,'Softmax函数',95,'前向传播',96,'均方误差损失函数',97,'梯度下降',98,'反向传播',99,'早停法',100,'感受野与局部连接',101,'卷积层',102,'填充与步长',103,'SAME与VALID填充',104,'池化层',105,'Flatten层',106,'VGG网络',107,'LeNet网络',108,'CNN图像分类流程',109,'词向量表示',110,'序列填充',111,'文本序列化',112,'循环神经网络概念',113,'隐藏状态',114,'序列输出与最终输出',115,'文本分类流程',116,'RNN时间步展开',117,'LSTM长短时记忆网络',118,'LSTM遗忘门',119,'LSTM输入门',120,'LSTM输出门',121,'GRU门控循环单元',122,'文本预测任务',123,'循环网络模型训练',124,'生成模型与判别模型',125,'随机噪声向量',126,'判别器损失',127,'生成器损失',128,'生成对抗训练',129,'DCGAN深度卷积GAN',130,'转置卷积层',131,'GAN训练步骤',132,'生成图像可视化',133,'真实样本与生成样本',134,'GAN评估指标',135,'迁移学习概念',136,'特征迁移',137,'冻结卷积基',138,'微调策略',139,'预训练模型选择',140,'数据增强技术',141,'领域自适应',142,'多任务学习',143,'迁移学习实战流程'].forEach((v,i,a)=>{if(typeof v==='number')kpn[v]=a[i+1] as string;});
+
   const dlC: [string,string,string][] = [['#0d9488','#14b8a6','#99f6e4'],['#2563eb','#3b82f6','#bfdbfe'],['#7c3aed','#8b5cf6','#ddd6fe'],['#db2777','#ec4899','#fbcfe8'],['#d97706','#f59e0b','#fde68a'],['#0891b2','#06b6d4','#a5f3fc'],['#65a30d','#84cc16','#d9f99d']];
   const dlRoot = addNode(42,4,'深度学习框架',0,null,4,'#1e293b',false);
   // 项目一
   const p1 = addNode(42,4,'项目一 搭建深度学习开发环境',1,dlRoot,1,dlC[0][0],false);
   const p1s1 = addNode(42,4,'人工智能与深度学习导论',2,p1,1,dlC[0][1],false);
-  for (let i=42;i<=51;i++) addNode(i,4,`KP${i}`,3,p1s1,i-41,dlC[0][2],true);
+  for (let i=42;i<=51;i++) addNode(i,4,kpn[i],3,p1s1,i-41,dlC[0][2],true);
   const p1s2 = addNode(52,4,'应用领域与框架生态',2,p1,2,dlC[0][1],false);
-  for (let i=52;i<=61;i++) addNode(i,4,`KP${i}`,3,p1s2,i-51,dlC[0][2],true);
+  for (let i=52;i<=61;i++) addNode(i,4,kpn[i],3,p1s2,i-51,dlC[0][2],true);
   // 项目二
   const p2 = addNode(62,4,'项目二 夯实深度学习开发基础',1,dlRoot,2,dlC[1][0],false);
   const p2s1 = addNode(62,4,'NumPy科学计算',2,p2,1,dlC[1][1],false);
-  for (let i=62;i<=71;i++) addNode(i,4,`KP${i}`,3,p2s1,i-61,dlC[1][2],true);
+  for (let i=62;i<=71;i++) addNode(i,4,kpn[i],3,p2s1,i-61,dlC[1][2],true);
   const p2s2 = addNode(72,4,'可视化与机器学习库',2,p2,2,dlC[1][1],false);
-  for (let i=72;i<=80;i++) addNode(i,4,`KP${i}`,3,p2s2,i-71,dlC[1][2],true);
+  for (let i=72;i<=80;i++) addNode(i,4,kpn[i],3,p2s2,i-71,dlC[1][2],true);
   const p2s3 = addNode(81,4,'TensorFlow基础操作',2,p2,3,dlC[1][1],false);
-  for (let i=81;i<=87;i++) addNode(i,4,`KP${i}`,3,p2s3,i-80,dlC[1][2],true);
+  for (let i=81;i<=87;i++) addNode(i,4,kpn[i],3,p2s3,i-80,dlC[1][2],true);
   // 项目三
   const p3 = addNode(88,4,'项目三 构建神经网络',1,dlRoot,3,dlC[2][0],false);
   const p3s1 = addNode(88,4,'神经元与网络结构',2,p3,1,dlC[2][1],false);
-  for (let i=88;i<=91;i++) addNode(i,4,`KP${i}`,3,p3s1,i-87,dlC[2][2],true);
+  for (let i=88;i<=91;i++) addNode(i,4,kpn[i],3,p3s1,i-87,dlC[2][2],true);
   const p3s2 = addNode(92,4,'激活函数',2,p3,2,dlC[2][1],false);
-  for (let i=92;i<=94;i++) addNode(i,4,`KP${i}`,3,p3s2,i-91,dlC[2][2],true);
+  for (let i=92;i<=94;i++) addNode(i,4,kpn[i],3,p3s2,i-91,dlC[2][2],true);
   const p3s3 = addNode(95,4,'训练与优化',2,p3,3,dlC[2][1],false);
-  for (let i=95;i<=99;i++) addNode(i,4,`KP${i}`,3,p3s3,i-94,dlC[2][2],true);
+  for (let i=95;i<=99;i++) addNode(i,4,kpn[i],3,p3s3,i-94,dlC[2][2],true);
   // 项目四
   const p4 = addNode(100,4,'项目四 卷积神经网络',1,dlRoot,4,dlC[3][0],false);
   const p4s1 = addNode(100,4,'CNN基本思想',2,p4,1,dlC[3][1],false);
-  for (let i=100;i<=105;i++) addNode(i,4,`KP${i}`,3,p4s1,i-99,dlC[3][2],true);
+  for (let i=100;i<=105;i++) addNode(i,4,kpn[i],3,p4s1,i-99,dlC[3][2],true);
   const p4s2 = addNode(106,4,'经典CNN与实践',2,p4,2,dlC[3][1],false);
-  for (let i=106;i<=108;i++) addNode(i,4,`KP${i}`,3,p4s2,i-105,dlC[3][2],true);
+  for (let i=106;i<=108;i++) addNode(i,4,kpn[i],3,p4s2,i-105,dlC[3][2],true);
   const p4s3 = addNode(109,4,'自然语言数据处理',2,p4,3,dlC[3][1],false);
-  for (let i=109;i<=112;i++) addNode(i,4,`KP${i}`,3,p4s3,i-108,dlC[3][2],true);
+  for (let i=109;i<=112;i++) addNode(i,4,kpn[i],3,p4s3,i-108,dlC[3][2],true);
   const p4s4 = addNode(113,4,'循环神经网络结构',2,p4,4,dlC[3][1],false);
-  for (let i=113;i<=116;i++) addNode(i,4,`KP${i}`,3,p4s4,i-112,dlC[3][2],true);
+  for (let i=113;i<=116;i++) addNode(i,4,kpn[i],3,p4s4,i-112,dlC[3][2],true);
   // 项目五
   const p5 = addNode(117,4,'项目五 循环神经网络',1,dlRoot,5,dlC[4][0],false);
   const p5s1 = addNode(117,4,'门控循环网络',2,p5,1,dlC[4][1],false);
-  for (let i=117;i<=123;i++) addNode(i,4,`KP${i}`,3,p5s1,i-116,dlC[4][2],true);
+  for (let i=117;i<=123;i++) addNode(i,4,kpn[i],3,p5s1,i-116,dlC[4][2],true);
   // 项目六
   const p6 = addNode(124,4,'项目六 生成对抗神经网络',1,dlRoot,6,dlC[5][0],false);
   const p6s1 = addNode(124,4,'GAN模型与训练',2,p6,1,dlC[5][1],false);
-  for (let i=124;i<=132;i++) addNode(i,4,`KP${i}`,3,p6s1,i-123,dlC[5][2],true);
+  for (let i=124;i<=132;i++) addNode(i,4,kpn[i],3,p6s1,i-123,dlC[5][2],true);
   const p6s2 = addNode(133,4,'生成对抗网络核心知识点',2,p6,2,dlC[5][1],false);
-  for (let i=133;i<=134;i++) addNode(i,4,`KP${i}`,3,p6s2,i-132,dlC[5][2],true);
+  for (let i=133;i<=134;i++) addNode(i,4,kpn[i],3,p6s2,i-132,dlC[5][2],true);
   // 项目七
   const p7 = addNode(135,4,'项目七 迁移学习',1,dlRoot,7,dlC[6][0],false);
   const p7s1 = addNode(135,4,'迁移学习原理',2,p7,1,dlC[6][1],false);
-  for (let i=135;i<=143;i++) addNode(i,4,`KP${i}`,3,p7s1,i-134,dlC[6][2],true);
+  for (let i=135;i<=143;i++) addNode(i,4,kpn[i],3,p7s1,i-134,dlC[6][2],true);
 
   db.insert(knowledgeGraphNode).values(KGN).run();
   console.log(`  ✅ 知识图谱节点完成 (${KGN.length}个)`);
