@@ -24,6 +24,7 @@ interface QuestionItem {
   knowledge_point_id: number;
   knowledge_point: { name: string } | null;
   course: { name: string } | null;
+  options?: string[] | string;
 }
 
 interface CourseItem {
@@ -39,8 +40,8 @@ interface KnowledgePoint {
 }
 
 const typeLabels: Record<string, string> = {
-  single_choice: '单选题', multiple_choice: '多选题', judgment: '判断题',
-  fill_blank: '填空题', short_answer: '简答题', essay: '论述题',
+  single_choice: '单选题', multiple_choice: '多选题', multi_choice: '多选题',
+  judgment: '判断题', fill_blank: '填空题', short_answer: '简答题', essay: '论述题',
   code: '编程题', programming: '编程题',
 };
 
@@ -67,6 +68,7 @@ export default function NewAssignmentPage() {
   const [endTime, setEndTime] = useState('');
   const [selectedQuestions, setSelectedQuestions] = useState<QuestionItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterCourse, setFilterCourse] = useState('all');
   const [filterType, setFilterType] = useState('all');
   const [filterDifficulty, setFilterDifficulty] = useState('all');
   const [submitting, setSubmitting] = useState(false);
@@ -81,61 +83,53 @@ export default function NewAssignmentPage() {
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiGenerated, setAiGenerated] = useState<QuestionItem[]>([]);
 
-  // 加载题库和课程
+  // 存储全部知识点缓存
+  const [allKnowledgePoints, setAllKnowledgePoints] = useState<KnowledgePoint[]>([]);
+
+  // 加载题库、课程和知识点（一次请求全量获取）
   useEffect(() => {
-    apiFetch('/api/teacher/questions/bank?limit=100')
+    apiFetch('/api/teacher/questions/bank?pageSize=500')
       .then(r => r.json())
       .then(qData => {
         if (qData.success) {
-          const questionsList = Array.isArray(qData.data) ? qData.data : (qData.data.questions || []);
+          const dd = qData.data;
+          const questionsList = Array.isArray(dd) ? dd : (dd.questions || []);
           setQuestions(questionsList);
-          const courseMap = new Map<number, string>();
-          questionsList.forEach((q: QuestionItem) => {
-            if (q.course) courseMap.set(q.course_id, q.course.name);
-          });
-          setCourses(Array.from(courseMap.entries()).map(([id, name]) => ({ id, name })));
+          // 使用 API 返回的课程列表
+          if (dd.courses && Array.isArray(dd.courses)) {
+            setCourses(dd.courses);
+          } else {
+            const courseMap = new Map<number, string>();
+            questionsList.forEach((q: QuestionItem) => {
+              if (q.course) courseMap.set(q.course_id, q.course.name);
+            });
+            setCourses(Array.from(courseMap.entries()).map(([id, name]) => ({ id, name })));
+          }
+          // 缓存所有知识点
+          if (dd.allKps && Array.isArray(dd.allKps)) {
+            setAllKnowledgePoints(dd.allKps);
+          } else if (dd.knowledgePoints && Array.isArray(dd.knowledgePoints)) {
+            setAllKnowledgePoints(dd.knowledgePoints);
+          }
         }
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, []);
 
-  // 加载知识点
+  // 根据选中的课程过滤知识点
   useEffect(() => {
     if (!aiCourseId) { setKnowledgePoints([]); return; }
-    apiFetch('/api/teacher/questions/bank?limit=1')
-      .then(r => r.json())
-      .then(() => {
-        // 从题库中提取该课程的知识点
-        const kps: KnowledgePoint[] = [];
-        const seen = new Set<number>();
-        questions.forEach(q => {
-          if (q.course_id === parseInt(aiCourseId) && q.knowledge_point && !seen.has(q.knowledge_point_id)) {
-            seen.add(q.knowledge_point_id);
-            kps.push({ id: q.knowledge_point_id, name: q.knowledge_point.name, course_id: q.course_id });
-          }
-        });
-        // 如果题库中没有，从数据库获取
-        if (kps.length === 0) {
-          apiFetch(`/api/teacher/analytics?course_id=${aiCourseId}`)
-            .then(r => r.json())
-            .then(data => {
-              if (data.success && data.data?.knowledgePoints) {
-                setKnowledgePoints(data.data.knowledgePoints);
-              }
-            })
-            .catch(() => {});
-        } else {
-          setKnowledgePoints(kps);
-        }
-      })
-      .catch(() => {});
-  }, [aiCourseId, questions]);
+    const courseKps = allKnowledgePoints.filter(
+      kp => kp.course_id === parseInt(aiCourseId)
+    );
+    setKnowledgePoints(courseKps);
+  }, [aiCourseId, allKnowledgePoints]);
 
   const filteredQuestions = questions.filter(q => {
     if (filterType !== 'all' && q.question_type !== filterType) return false;
     if (filterDifficulty !== 'all' && q.difficulty !== filterDifficulty) return false;
-    if (courseId && q.course_id !== parseInt(courseId)) return false;
+    if (filterCourse && filterCourse !== 'all' && q.course_id !== parseInt(filterCourse)) return false;
     if (searchTerm && !q.content.toLowerCase().includes(searchTerm.toLowerCase())) return false;
     return true;
   });
@@ -169,10 +163,12 @@ export default function NewAssignmentPage() {
       });
       const data = await res.json();
       if (data.success) {
-        const generated = Array.isArray(data.data) ? data.data : [data.data];
+        const generated = Array.isArray(data.data?.generated)
+          ? data.data.generated
+          : Array.isArray(data.data) ? data.data : [data.data].filter(Boolean);
         setAiGenerated(generated);
         // 刷新题库
-        const qRes = await apiFetch('/api/teacher/questions/bank?limit=100');
+        const qRes = await apiFetch('/api/teacher/questions/bank?pageSize=500');
         const qData = await qRes.json();
         if (qData.success) {
           const questionsList = Array.isArray(qData.data) ? qData.data : (qData.data.questions || []);
@@ -380,6 +376,19 @@ export default function NewAssignmentPage() {
                           </div>
                           <p className="text-sm text-slate-700 line-clamp-2">{q.content}</p>
                           <p className="text-xs text-green-600 mt-1 font-mono">答案：{q.answer}</p>
+                          {q.options && (() => {
+                            const opts: string[] = typeof q.options === 'string' ? (() => { try { return JSON.parse(q.options as string); } catch { return []; } })() : (q.options as unknown as string[]);
+                            if (!Array.isArray(opts) || opts.length === 0) return null;
+                            return (
+                              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                {opts.map((opt, i) => (
+                                  <span key={i} className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                    opt.trim() === q.answer?.trim() ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-slate-50 text-slate-500 border border-slate-150'
+                                  }`}>{opt}</span>
+                                ))}
+                              </div>
+                            );
+                          })()}
                         </div>
                         <Button
                           size="sm"
@@ -405,7 +414,7 @@ export default function NewAssignmentPage() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <Input placeholder="搜索题目..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-9" />
                 </div>
-                <Select value={courseId} onValueChange={setCourseId}>
+                <Select value={filterCourse} onValueChange={setFilterCourse}>
                   <SelectTrigger className="w-[160px]"><SelectValue placeholder="全部课程" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">全部课程</SelectItem>
@@ -416,7 +425,12 @@ export default function NewAssignmentPage() {
                   <SelectTrigger className="w-[120px]"><SelectValue placeholder="题型" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">全部题型</SelectItem>
-                    {Object.entries(typeLabels).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                    <SelectItem value="single_choice">单选题</SelectItem>
+                    <SelectItem value="multiple_choice">多选题</SelectItem>
+                    <SelectItem value="judgment">判断题</SelectItem>
+                    <SelectItem value="fill_blank">填空题</SelectItem>
+                    <SelectItem value="short_answer">简答题</SelectItem>
+                    <SelectItem value="code">编程题</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select value={filterDifficulty} onValueChange={setFilterDifficulty}>
@@ -437,7 +451,7 @@ export default function NewAssignmentPage() {
 
           {/* 题库列表 */}
           <div className="grid gap-3">
-            {filteredQuestions.slice(0, 30).map((q) => {
+            {filteredQuestions.map((q) => {
               const isSelected = selectedQuestions.some(s => s.id === q.id);
               return (
                 <Card

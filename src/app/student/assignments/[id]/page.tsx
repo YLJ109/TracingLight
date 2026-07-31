@@ -34,6 +34,7 @@ interface AnswerDetail {
   grading: {
     total_score: number;
     full_score: number;
+    status: string;
     dimension_scores: { knowledge_accuracy: number; logic_completeness: number; expression_clarity: number; expansion: number };
     annotations: Array<{ content: string; type: string; comment: string; point_deduction: number }>;
   } | null;
@@ -59,8 +60,10 @@ function fmt(n: number): string {
 }
 
 const typeLabels: Record<string, string> = {
-  single_choice: '单选题', multiple_choice: '多选题', judgment: '判断题',
+  single_choice: '单选题', multiple_choice: '多选题', multi_choice: '多选题',
+  judgment: '判断题', '选择题': '单选题', '多选题': '多选题', '判断题': '判断题',
   fill_blank: '填空题', short_answer: '简答题', essay: '论述题',
+  '填空题': '填空题', '简答题': '简答题', '论述题': '论述题',
   code: '编程题', concept_confusion: '概念混淆', calculation_error: '计算错误',
   logic_error: '逻辑错误', knowledge_missing: '知识缺失', careless: '粗心大意', empty: '未作答',
 };
@@ -83,9 +86,12 @@ export default function StudentAssignmentDetailPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
   const searchParams = useSearchParams();
   const redoMode = searchParams.get('redo') === 'true';
+  const draftKey = `tracinglight_draft_${assignmentId}`;
 
+  // Load assignment data + restore draft from localStorage
   useEffect(() => {
     getCurrentUser().then((user) => {
       const studentId = String(user?.id || 3);
@@ -96,15 +102,48 @@ export default function StudentAssignmentDetailPage() {
             setDetail(data.data);
             setSubmitted(data.data.is_submitted);
             const existing: Record<number, string> = {};
+
+            // First, restore from server answers
             data.data.answers?.forEach((a: AnswerDetail) => {
               if (a.student_answer) existing[a.question_id] = a.student_answer;
             });
+
+            // Then, overlay localStorage draft if available (draft takes priority for unsaved answers)
+            try {
+              const draft = localStorage.getItem(draftKey);
+              if (draft) {
+                const draftData = JSON.parse(draft) as Record<string, string>;
+                for (const [qId, val] of Object.entries(draftData)) {
+                  const numId = Number(qId);
+                  if (!data.data.is_submitted || redoMode) {
+                    existing[numId] = val;
+                  }
+                }
+              }
+            } catch { /* ignore corrupt draft */ }
+
             setAnswers(existing);
+            setDraftRestored(true);
           }
         })
         .finally(() => setLoading(false));
     });
   }, [assignmentId]);
+
+  // Auto-save draft to localStorage (debounced 2s)
+  useEffect(() => {
+    if (!draftRestored || submitted) return;
+    const timer = setTimeout(() => {
+      const nonEmpty: Record<string, string> = {};
+      for (const [k, v] of Object.entries(answers)) {
+        if (v && v.trim()) nonEmpty[k] = v;
+      }
+      if (Object.keys(nonEmpty).length > 0) {
+        localStorage.setItem(draftKey, JSON.stringify(nonEmpty));
+      }
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [answers, draftRestored, submitted, draftKey]);
 
   const handleSave = async () => {
     if (!detail) return;
@@ -157,6 +196,8 @@ export default function StudentAssignmentDetailPage() {
       if (data.success) {
         setSubmitted(true);
         setActiveTab('result');
+        // Clear draft on successful submit
+        localStorage.removeItem(draftKey);
       }
     } finally {
       setSubmitting(false);
@@ -243,7 +284,7 @@ export default function StudentAssignmentDetailPage() {
         <TabsContent value="questions" className="mt-4 space-y-4">
           {detail.questions.map((q, idx) => {
             const existingAnswer = getAnswerForQuestion(q.id);
-            const isGraded = !redoMode && (existingAnswer?.grading !== null && existingAnswer?.grading !== undefined);
+            const isGraded = !redoMode && existingAnswer?.grading?.status === 'completed';
             return (
               <Card key={q.id} className={`border-0 shadow-sm ${isGraded ? 'ring-1 ring-green-200' : ''}`}>
                 <CardContent className="p-5">
@@ -270,71 +311,175 @@ export default function StudentAssignmentDetailPage() {
                       </div>
                       <p className="text-sm text-slate-700 whitespace-pre-wrap mb-3">{q.content}</p>
 
-                      {/* Options for single/multi choice */}
-                      {(function() {
-                        const opts = q.options;
-                        if (!opts) return null;
-                        const optEntries: [string, string][] = Array.isArray(opts)
-                          ? opts.map((o: string) => [o.charAt(0), o] as [string, string])
-                          : Object.entries(opts as Record<string, string>);
-                        if (optEntries.length === 0) return null;
-                        return (
-                        <div className="grid grid-cols-2 gap-2 mb-3">
-                          {optEntries.map(([key, val]) => (
-                            <label key={key} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${
-                              answers[q.id] === key
-                                ? 'border-indigo-500 bg-indigo-50'
-                                : 'border-slate-200 hover:border-slate-300'
-                            } ${isGraded ? 'pointer-events-none' : ''}`}>
-                              <input
-                                type="radio"
-                                name={`q-${q.id}`}
-                                value={key}
-                                checked={answers[q.id] === key}
-                                onChange={e => setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
-                                disabled={isGraded}
-                                className="text-indigo-600"
-                              />
-                              <span className="text-sm">{key}. {val}</span>
-                            </label>
-                          ))}
+                      {/* Judgment (true/false) questions - render BEFORE options check */}
+                      {q.question_type === 'judgment' ? (
+                        <div className="flex gap-4 mb-3">
+                          {['正确', '错误'].map(val => {
+                            const isSelected = answers[q.id] === val;
+                            const correctAnswer = (q as any).answer || q.answer;
+                            const isCorrectOpt = correctAnswer === val;
+                            let border = 'border-slate-200 hover:border-slate-300';
+                            let bg = '';
+                            let icon: React.ReactNode = null;
+                            if (isGraded) {
+                              if (isSelected && isCorrectOpt) {
+                                border = 'border-green-400'; bg = 'bg-green-50';
+                                icon = <CheckCircle2 className="w-4 h-4 text-green-600 ml-auto flex-shrink-0" />;
+                              } else if (isSelected && !isCorrectOpt) {
+                                border = 'border-red-400'; bg = 'bg-red-50';
+                                icon = <XCircle className="w-4 h-4 text-red-500 ml-auto flex-shrink-0" />;
+                              } else if (isCorrectOpt) {
+                                border = 'border-green-300 border-dashed';
+                              }
+                            } else if (isSelected) {
+                              border = 'border-indigo-500'; bg = 'bg-indigo-50';
+                            }
+                            return (
+                              <label key={val} className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-colors ${border} ${bg} ${isGraded ? 'pointer-events-none' : ''}`}>
+                                <input
+                                  type="radio"
+                                  name={`q-${q.id}`}
+                                  value={val}
+                                  checked={isSelected}
+                                  onChange={e => setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
+                                  disabled={isGraded}
+                                  className="text-indigo-600"
+                                />
+                                <span className="text-sm">{val}</span>
+                                {icon}
+                              </label>
+                            );
+                          })}
                         </div>
-                        );})()}
+                      ) : /* Options for single/multi choice (non-judgment questions with options) */
+                      (() => {
+                        // Parse options: support string (JSON), array, or object format
+                        let rawOpts: string[] | null = null;
+                        try {
+                          rawOpts = typeof q.options === 'string'
+                            ? JSON.parse(q.options)
+                            : (Array.isArray(q.options) ? q.options : null);
+                        } catch { rawOpts = null; }
+                        return rawOpts && rawOpts.length > 0;
+                      })() ? (
+                        (() => {
+                          const rawOpts: string[] = typeof q.options === 'string'
+                            ? JSON.parse(q.options)
+                            : (q.options as string[]);
+                          const isMulti = q.question_type === 'multi_choice' || q.question_type === 'multiple_choice';
+                          const selectedLetters = isMulti
+                            ? (answers[q.id] || '').split(',').filter(Boolean)
+                            : [answers[q.id] || ''];
+                          const correctAnswer = (q as any).answer || q.answer;
+                          const correctLetters = isMulti && correctAnswer
+                            ? correctAnswer.split(',').map((s: string) => s.trim())
+                            : [correctAnswer];
 
-                      {/* Text input for non-choice questions */}
-                      {(!q.options || (Array.isArray(q.options) ? q.options.length === 0 : Object.keys(q.options).length === 0)) && (
-                        <div>
-                          {q.question_type === 'judgment' ? (
-                            <div className="flex gap-4 mb-3">
-                              {['正确', '错误'].map(val => (
-                                <label key={val} className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-colors ${
-                                  answers[q.id] === val
-                                    ? 'border-indigo-500 bg-indigo-50'
-                                    : 'border-slate-200 hover:border-slate-300'
-                                } ${isGraded ? 'pointer-events-none' : ''}`}>
-                                  <input
-                                    type="radio"
-                                    name={`q-${q.id}`}
-                                    value={val}
-                                    checked={answers[q.id] === val}
-                                    onChange={e => setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
-                                    disabled={isGraded}
-                                    className="text-indigo-600"
-                                  />
-                                  <span className="text-sm">{val}</span>
-                                </label>
-                              ))}
-                            </div>
-                          ) : (
-                            <Input
-                              placeholder="请输入你的答案..."
-                              value={answers[q.id] || ''}
-                              onChange={e => setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
-                              disabled={isGraded}
-                              className="mb-3"
-                            />
-                          )}
-                        </div>
+                          if (isMulti) {
+                            // Checkbox for multiple choice
+                            return (
+                              <div className="grid grid-cols-2 gap-2 mb-3">
+                                {rawOpts.map((opt: string, oi: number) => {
+                                  const optLetter = opt.charAt(0);
+                                  const isSelected = selectedLetters.includes(optLetter);
+                                  const isCorrectOpt = correctLetters.includes(optLetter);
+                                  let border = 'border-slate-200 hover:border-slate-300';
+                                  let bg = '';
+                                  let icon: React.ReactNode = null;
+                                  if (isGraded) {
+                                    if (isSelected && isCorrectOpt) {
+                                      border = 'border-green-400'; bg = 'bg-green-50';
+                                      icon = <CheckCircle2 className="w-4 h-4 text-green-600 ml-auto flex-shrink-0" />;
+                                    } else if (isSelected && !isCorrectOpt) {
+                                      border = 'border-red-400'; bg = 'bg-red-50';
+                                      icon = <XCircle className="w-4 h-4 text-red-500 ml-auto flex-shrink-0" />;
+                                    } else if (isCorrectOpt) {
+                                      border = 'border-green-300 border-dashed';
+                                    }
+                                  } else if (isSelected) {
+                                    border = 'border-indigo-500'; bg = 'bg-indigo-50';
+                                  }
+                                  return (
+                                    <label key={oi} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${border} ${bg} ${isGraded ? 'pointer-events-none' : ''}`}>
+                                      <input
+                                        type="checkbox"
+                                        value={optLetter}
+                                        checked={isSelected}
+                                        onChange={e => {
+                                          if (isGraded) return;
+                                          setAnswers(prev => {
+                                            const cur = (prev[q.id] || '').split(',').filter(Boolean);
+                                            if (e.target.checked) {
+                                              cur.push(optLetter);
+                                            } else {
+                                              const idx = cur.indexOf(optLetter);
+                                              if (idx >= 0) cur.splice(idx, 1);
+                                            }
+                                            return { ...prev, [q.id]: cur.join(',') };
+                                          });
+                                        }}
+                                        className="text-indigo-600 rounded"
+                                      />
+                                      <span className="text-sm">{opt}</span>
+                                      {icon}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            );
+                          } else {
+                            // Radio for single choice
+                            return (
+                              <div className="grid grid-cols-2 gap-2 mb-3">
+                                {rawOpts.map((opt: string, oi: number) => {
+                                  const optLetter = opt.charAt(0);
+                                  const isSelected = answers[q.id] === optLetter;
+                                  const isCorrectOpt = correctAnswer && correctAnswer === optLetter;
+                                  let border = 'border-slate-200 hover:border-slate-300';
+                                  let bg = '';
+                                  let icon: React.ReactNode = null;
+                                  if (isGraded) {
+                                    if (isSelected && isCorrectOpt) {
+                                      border = 'border-green-400'; bg = 'bg-green-50';
+                                      icon = <CheckCircle2 className="w-4 h-4 text-green-600 ml-auto flex-shrink-0" />;
+                                    } else if (isSelected && !isCorrectOpt) {
+                                      border = 'border-red-400'; bg = 'bg-red-50';
+                                      icon = <XCircle className="w-4 h-4 text-red-500 ml-auto flex-shrink-0" />;
+                                    } else if (isCorrectOpt) {
+                                      border = 'border-green-300 border-dashed';
+                                    }
+                                  } else if (isSelected) {
+                                    border = 'border-indigo-500'; bg = 'bg-indigo-50';
+                                  }
+                                  return (
+                                    <label key={oi} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${border} ${bg} ${isGraded ? 'pointer-events-none' : ''}`}>
+                                      <input
+                                        type="radio"
+                                        name={`q-${q.id}`}
+                                        value={optLetter}
+                                        checked={isSelected}
+                                        onChange={e => setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
+                                        disabled={isGraded}
+                                        className="text-indigo-600"
+                                      />
+                                      <span className="text-sm">{opt}</span>
+                                      {icon}
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            );
+                          }
+                        })()
+                      ) : (
+                        /* Text input for open-ended questions */
+                        <Input
+                          placeholder="请输入你的答案..."
+                          value={answers[q.id] || ''}
+                          onChange={e => setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
+                          disabled={isGraded}
+                          className="mb-3"
+                        />
                       )}
 
                       {/* Grading result */}
@@ -355,12 +500,14 @@ export default function StudentAssignmentDetailPage() {
                                 得分：{fmt(existingAnswer!.grading.total_score)}/{fmt(existingAnswer!.grading.full_score)}
                               </span>
                             </div>
-                            <div className="flex gap-2 text-xs text-slate-500">
-                              <span>知识:{existingAnswer!.grading.dimension_scores.knowledge_accuracy}</span>
-                              <span>逻辑:{existingAnswer!.grading.dimension_scores.logic_completeness}</span>
-                              <span>表达:{existingAnswer!.grading.dimension_scores.expression_clarity}</span>
-                              <span>拓展:{existingAnswer!.grading.dimension_scores.expansion}</span>
-                            </div>
+                            {existingAnswer!.grading.dimension_scores && (
+                              <div className="flex gap-2 text-xs text-slate-500">
+                                <span>知识:{existingAnswer!.grading.dimension_scores.knowledge_accuracy}</span>
+                                <span>逻辑:{existingAnswer!.grading.dimension_scores.logic_completeness}</span>
+                                <span>表达:{existingAnswer!.grading.dimension_scores.expression_clarity}</span>
+                                <span>拓展:{existingAnswer!.grading.dimension_scores.expansion}</span>
+                              </div>
+                            )}
                           </div>
                           {existingAnswer!.grading.annotations?.length > 0 && (
                             <div className="mt-2 space-y-1">
@@ -378,7 +525,7 @@ export default function StudentAssignmentDetailPage() {
             );
           })}
 
-          {!submitted && detail.my_score === null && (
+          {detail.my_score === null && (
             <div className="flex justify-end gap-3 pt-4">
               <Button
                 onClick={handleSave}

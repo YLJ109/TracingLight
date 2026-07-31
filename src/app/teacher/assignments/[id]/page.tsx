@@ -50,8 +50,8 @@ const levelConfig: Record<string, { label: string; className: string }> = {
 };
 
 const typeLabels: Record<string, string> = {
-  single_choice: '单选题', multiple_choice: '多选题', judgment: '判断题',
-  fill_blank: '填空题', short_answer: '简答题', essay: '论述题',
+  single_choice: '单选题', multiple_choice: '多选题', multi_choice: '多选题',
+  judgment: '判断题', fill_blank: '填空题', short_answer: '简答题', essay: '论述题',
   code: '编程题', concept_confusion: '概念混淆', calculation_error: '计算错误',
   logic_error: '逻辑错误', knowledge_missing: '知识缺失', careless: '粗心大意', empty: '未作答',
 };

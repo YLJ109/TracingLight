@@ -59,6 +59,7 @@ const statusConfig: Record<string, { label: string; icon: typeof CheckCircle2; c
 const typeLabels: Record<string, string> = {
   single_choice: '单选题',
   multiple_choice: '多选题',
+  multi_choice: '多选题',
   judgment: '判断题',
   fill_blank: '填空题',
   short_answer: '简答题',

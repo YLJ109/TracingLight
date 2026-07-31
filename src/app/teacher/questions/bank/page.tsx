@@ -38,17 +38,31 @@ interface Question {
 const questionTypeLabels: Record<string, string> = {
   single_choice: '单选题',
   multi_choice: '多选题',
-  choice_single: '单选题',
-  choice_multiple: '多选题',
   judgment: '判断题',
   fill_blank: '填空题',
   short_answer: '简答题',
   programming: '编程题',
-  essay: '论述题',
   code: '编程题',
 };
 
-const validQuestionTypes = Object.keys(questionTypeLabels);
+const displayQuestionTypes = [
+  { key: 'single_choice', label: '单选题' },
+  { key: 'multi_choice', label: '多选题' },
+  { key: 'judgment', label: '判断题' },
+  { key: 'fill_blank', label: '填空题' },
+  { key: 'short_answer', label: '简答题' },
+  { key: 'programming', label: '编程题' },
+];
+
+// Map from display key to DB-compatible values for filtering
+const filterTypeMap: Record<string, string[]> = {
+  single_choice: ['single_choice'],
+  multi_choice: ['multi_choice'],
+  judgment: ['judgment'],
+  fill_blank: ['fill_blank'],
+  short_answer: ['short_answer'],
+  programming: ['programming', 'code'],
+};
 
 const difficultyLabels: Record<string, string> = {
   easy: '简单',
@@ -61,6 +75,19 @@ const difficultyColors: Record<string, string> = {
   medium: 'bg-amber-100 text-amber-700',
   hard: 'bg-rose-100 text-rose-700',
 };
+
+// Convert DB array format ['A内容','B内容'] to form object {A:'...', B:'...'}
+function arrayToOptionsObj(arr: string[]): Record<string, string> {
+  const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+  const obj: Record<string, string> = {};
+  arr.forEach((v, i) => { obj[letters[i] || String(i)] = v; });
+  return obj;
+}
+
+// Convert form object {A:'...', B:'...'} to DB array ['A内容','B内容']
+function optionsObjToArray(obj: Record<string, string>): string[] {
+  return Object.values(obj).filter(v => v && v.trim() !== '');
+}
 
 export default function QuestionBankPage() {
   const router = useRouter();
@@ -85,7 +112,7 @@ export default function QuestionBankPage() {
   const [formData, setFormData] = useState({
     course_id: '',
     knowledge_point_id: '',
-    question_type: 'choice_single',
+    question_type: 'single_choice',
     difficulty: 'medium',
     content: '',
     options: { A: '', B: '', C: '', D: '' } as Record<string, string>,
@@ -137,7 +164,7 @@ export default function QuestionBankPage() {
     setFormData({
       course_id: filterCourse !== 'all' ? filterCourse : '',
       knowledge_point_id: '',
-      question_type: 'choice_single',
+      question_type: 'single_choice',
       difficulty: 'medium',
       content: '',
       options: { A: '', B: '', C: '', D: '' },
@@ -157,7 +184,9 @@ export default function QuestionBankPage() {
       question_type: q.question_type,
       difficulty: q.difficulty,
       content: q.content,
-      options: (q.options || { A: '', B: '', C: '', D: '' }) as Record<string, string>,
+      options: q.options && Array.isArray(q.options)
+        ? arrayToOptionsObj(q.options as unknown as string[])
+        : (q.options || { A: '', B: '', C: '', D: '' }) as Record<string, string>,
       answer: q.answer,
       analysis: q.analysis || '',
       default_score: String(q.default_score),
@@ -193,7 +222,7 @@ export default function QuestionBankPage() {
       question_type: formData.question_type,
       difficulty: formData.difficulty,
       content: formData.content.trim(),
-      options: formData.options,
+      options: optionsObjToArray(formData.options),
       answer: formData.answer.trim(),
       analysis: formData.analysis.trim(),
       default_score: parseInt(formData.default_score) || 10,
@@ -291,8 +320,8 @@ export default function QuestionBankPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">全部题型</SelectItem>
-              {Object.entries(questionTypeLabels).map(([k, v]) => (
-                <SelectItem key={k} value={k}>{v}</SelectItem>
+              {displayQuestionTypes.map(t => (
+                <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -423,8 +452,8 @@ export default function QuestionBankPage() {
                 <Select value={formData.question_type} onValueChange={(v) => setFormData({ ...formData, question_type: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {Object.entries(questionTypeLabels).map(([k, v]) => (
-                      <SelectItem key={k} value={k}>{v}</SelectItem>
+                    {displayQuestionTypes.map(t => (
+                      <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -458,7 +487,7 @@ export default function QuestionBankPage() {
                 placeholder="输入题目内容..."
               />
             </div>
-            {(formData.question_type === 'choice_single' || formData.question_type === 'choice_multiple') && (
+            {['single_choice', 'multi_choice', 'choice_single', 'choice_multiple'].includes(formData.question_type) && (
               <div className="grid grid-cols-2 gap-3">
                 {['A', 'B', 'C', 'D'].map((key) => (
                   <div key={key}>

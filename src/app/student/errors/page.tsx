@@ -2,11 +2,12 @@
 import { apiFetch } from '@/lib/api-fetch';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BookMarked, CheckCircle2, RotateCcw, Sparkles, Loader2, Brain, ChevronDown, ChevronUp, Download } from 'lucide-react';
+import { BookMarked, CheckCircle2, RotateCcw, Sparkles, Loader2, Brain, ChevronDown, ChevronUp, Download, ArrowLeft, Filter, X, ExternalLink } from 'lucide-react';
 import { getCurrentUser } from '@/lib/auth-helper';
 import { exportCsv } from '@/lib/export-utils';
 
@@ -20,15 +21,14 @@ const errorTypeLabels: Record<string, string> = {
   calculation: '计算错误',
   empty: '未作答',
 };
-
 const questionTypeLabels: Record<string, string> = {
   single_choice: '单选题',
   multiple_choice: '多选题',
-  judgment: '判断题',
   fill_blank: '填空题',
-  short_answer: '简答题',
-  programming: '编程题',
+  judgment: '判断题',
+  code: '编程题',
 };
+const ALL_QUESTION_TYPES = ['single_choice', 'multiple_choice', 'fill_blank', 'judgment', 'code'];
 
 interface AIAnalysisResult {
   error_analysis: string;
@@ -61,33 +61,52 @@ interface ErrorItem {
 }
 
 export default function StudentErrors() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const kpIdFromQuery = searchParams.get('knowledge_point_id');
   const [mounted, setMounted] = useState(false);
   const [errors, setErrors] = useState<ErrorItem[]>([]);
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [filterCourse, setFilterCourse] = useState('all');
+  const [filterType, setFilterType] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [kpFilterName, setKpFilterName] = useState('');
+  const [toast, setToast] = useState<{ message: string; kpName: string } | null>(null);
 
-  // ─── Data loading ───
+  // Data loading
   useEffect(() => {
     setMounted(true);
     getCurrentUser().then((user) => {
       const studentId = String(user?.id || 3);
-      apiFetch(`/api/student/errors?student_id=${studentId}`)
+      let url = `/api/student/errors?student_id=${studentId}`;
+      if (kpIdFromQuery) url += `&knowledge_point_id=${kpIdFromQuery}`;
+      apiFetch(url)
         .then(r => r.json())
         .then(data => {
           if (data.success) {
-            setErrors(data.data.map((e: Record<string, unknown>) => ({
-              ...e,
-              aiAnalysis: null,
-            })) as ErrorItem[]);
+            const mapped = data.data.map((e: Record<string, unknown>) => {
+              // Safe parse: question_options comes as JSON string from API
+              let qOpts = (e as any).question_options;
+              if (typeof qOpts === 'string') { try { qOpts = JSON.parse(qOpts); } catch { qOpts = null; } }
+              return { ...e, aiAnalysis: null, question_options: Array.isArray(qOpts) ? qOpts : null };
+            }) as ErrorItem[];
+            setErrors(mapped);
+            if (mapped.length > 0 && kpIdFromQuery) {
+              setKpFilterName(mapped[0].knowledge_point_name);
+            }
           }
         })
         .catch(() => {})
         .finally(() => setLoading(false));
     });
-  }, []);
+  }, [kpIdFromQuery]);
+
+  // Toast auto-dismiss
+  useEffect(() => {
+    if (toast) { const t = setTimeout(() => setToast(null), 4000); return () => clearTimeout(t); }
+  }, [toast]);
 
   const handleMarkMastered = async (errorId: number) => {
     try {
@@ -97,6 +116,8 @@ export default function StudentErrors() {
         body: JSON.stringify({ error_id: errorId, review_status: 'mastered' }),
       });
       setErrors(prev => prev.map(e => e.id === errorId ? { ...e, review_status: 'mastered' } : e));
+      const err = errors.find(e => e.id === errorId);
+      if (err) setToast({ message: '已掌握！知识图谱掌握度已同步更新', kpName: err.knowledge_point_name });
     } catch {}
   };
 
@@ -150,6 +171,7 @@ export default function StudentErrors() {
   }, [errors]);
 
   if (!mounted) return null;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -162,7 +184,11 @@ export default function StudentErrors() {
   const mastered = errors.filter((e) => e.review_status === 'mastered');
   const courses = Array.from(new Set(errors.map(e => (e as any).course_name || '未知').filter(Boolean)));
   // Course-filtered subsets for each tab
-  const filterByCourse = (list: ErrorItem[]) => filterCourse === 'all' ? list : list.filter(e => (e as any).course_name === filterCourse);
+  const filterByCourse = (list: ErrorItem[]) => {
+    let filtered = filterCourse === 'all' ? list : list.filter(e => (e as any).course_name === filterCourse);
+    if (filterType !== 'all') filtered = filtered.filter(e => e.question_type === filterType);
+    return filtered;
+  };
   const filteredPending = filterByCourse(pending);
   const filteredMastered = filterByCourse(mastered);
   const filteredAll = filterByCourse(errors);
@@ -177,6 +203,7 @@ export default function StudentErrors() {
             <Badge variant="secondary" className="text-xs bg-indigo-50 text-indigo-600">{err.course_name}</Badge>
             <Badge variant="outline" className="text-xs">{err.knowledge_point_name}</Badge>
             <Badge variant="outline" className="text-xs text-red-600 border-red-200 bg-red-50">{errorTypeLabels[err.error_type] || err.error_type}</Badge>
+            <Badge variant="outline" className="text-xs text-slate-500 border-slate-200">{questionTypeLabels[err.question_type] || err.question_type}</Badge>
           </div>
           <div className="flex gap-2">
             {!err.aiAnalysis && (
@@ -210,12 +237,10 @@ export default function StudentErrors() {
         <div className="bg-slate-50 rounded-lg p-3 mb-3">
           <p className="text-xs text-slate-500 mb-1">题目：</p>
           <p className="text-sm text-slate-800 whitespace-pre-wrap">{err.question_content}</p>
-          {err.question_options && (Array.isArray(err.question_options) ? err.question_options.length > 0 : Object.keys(err.question_options).length > 0) && (
+          {err.question_options && err.question_options.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-2">
-              {(Array.isArray(err.question_options) ? err.question_options : Object.entries(err.question_options)).map((opt: string | [string, string], oi: number) => (
-                <span key={oi} className="text-xs px-2 py-0.5 bg-white border rounded">
-                  {Array.isArray(opt) ? `${opt[0]}. ${opt[1]}` : opt}
-                </span>
+              {err.question_options.map((opt: string, oi: number) => (
+                <span key={oi} className="text-xs px-2 py-0.5 bg-white border rounded">{opt}</span>
               ))}
             </div>
           )}
@@ -276,12 +301,51 @@ export default function StudentErrors() {
 
   return (
     <div className="space-y-6 animate-fade-in-up">
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 animate-fade-in-up">
+          <div className="flex items-center gap-3 bg-white border border-green-200 rounded-xl px-4 py-3 shadow-lg max-w-md">
+            <CheckCircle2 className="w-5 h-5 text-green-500 flex-none" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-slate-700 font-medium">{toast.message}</p>
+              <p className="text-xs text-slate-400 mt-0.5">知识点：{toast.kpName}</p>
+            </div>
+            <button
+              onClick={() => router.push('/student/knowledge-graph')}
+              className="flex items-center gap-1 text-xs font-medium text-teal-600 hover:text-teal-700 whitespace-nowrap px-2 py-1 rounded-md hover:bg-teal-50 transition-colors"
+            >
+              去知识图谱 <ExternalLink className="w-3 h-3" />
+            </button>
+            <button onClick={() => setToast(null)} className="p-1 rounded hover:bg-slate-100 transition-colors">
+              <X className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-800">错题本</h1>
           <p className="text-sm text-slate-500">共{errors.length}道错题 · {pending.length}道待复习 · {mastered.length}道已掌握</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {kpIdFromQuery && kpFilterName && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg">
+              <Filter className="w-3.5 h-3.5 text-amber-600" />
+              <span className="text-xs text-amber-700 font-medium">知识点: {kpFilterName}</span>
+              <button
+                onClick={() => router.push('/student/errors')}
+                className="ml-1 text-amber-500 hover:text-amber-700 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+          <button
+            onClick={() => router.push('/student/knowledge-graph')}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />返回知识图谱
+          </button>
           <button
             onClick={() => {
               const rows = errors.map(e => ({
@@ -323,6 +387,21 @@ export default function StudentErrors() {
           ))}
         </div>
       )}
+
+      {/* Question type filter pills */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={() => setFilterType('all')}
+          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${filterType === 'all' ? 'bg-teal-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+        >全部题型</button>
+        {ALL_QUESTION_TYPES.map((qt) => (
+          <button
+            key={qt}
+            onClick={() => setFilterType(qt)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${filterType === qt ? 'bg-teal-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+          >{questionTypeLabels[qt]}</button>
+        ))}
+      </div>
 
       {/* Stats bar */}
       <div className="flex gap-4 text-xs text-slate-500 bg-slate-50 rounded-lg p-3">

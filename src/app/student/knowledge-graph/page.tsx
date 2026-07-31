@@ -4,568 +4,551 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import * as d3 from 'd3';
 import { apiFetch } from '@/lib/api-fetch';
 import { getCurrentUser } from '@/lib/auth-helper';
+import { Search, Download, ZoomIn, ZoomOut, RotateCcw, Layers, Target, BookOpen, X, ArrowRight, AlertTriangle } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
-// ─── Types ───
-interface APINode {
-  id: string; name: string; description?: string; category: number; node_level: number;
-  symbolSize: number; color: string; itemStyle: any; label: any;
-  source: string; source_table: string; data_id: number | null;
-  chapter_no: string; course_id: number; group_color: string;
-  mastery: number | null; mastery_color: string | null;
+// Safe color manipulation -- d3.color() returns null for invalid colors
+function safeDarker(hex: string, amount: number): string {
+  const c = d3.color(hex);
+  return c ? c.darker(amount).toString() : '#64748b';
 }
-interface APIEdge { source: string; target: string; type: string; lineStyle: any; }
+
+interface APINode {
+  id: string; dbId: number; name: string; node_level: number;
+  is_leaf: boolean; symbolSize: number; color: string; itemStyle: any;
+  group_color: string; knowledge_point_id: number | null; course_id: number;
+  mastery: number | null; mastery_color: string | null; mastery_label: string | null;
+  mastery_detail: { avg: number; total: number; mastered: number; pending: number; level: string } | null;
+  description?: string;
+}
+interface APIEdge { source: string; target: string; type: string; lineStyle: any; description?: string; }
 interface ChapterInfo { id: string; name: string; group_color: string; sections: any[]; }
 interface GraphData {
   course: { id: number; name: string; short_name: string };
-  textbook: string;
-  nodes: APINode[];
-  edges: APIEdge[];
+  nodes: APINode[]; edges: APIEdge[];
   totalNodes: number; totalEdges: number;
   chapters: ChapterInfo[];
   masteryStats: { mastered: number; basics: number; weak: number; unlearned: number; total: number };
 }
-
-// D3 hierarchy node type
 interface TreeNode extends d3.HierarchyNode<any> {
   data: APINode & { children?: TreeNode['data'][] };
-  _children?: TreeNode[];
-  x: number; y: number;
+  _children?: TreeNode[]; x: number; y: number;
 }
+interface CourseInfo { id: number; name: string; }
 
 export default function KnowledgeGraphPage() {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [courseId, setCourseId] = useState(1);
+  const [courses, setCourses] = useState<CourseInfo[]>([]);
+  const [viewMode, setViewMode] = useState<'radial'|'tree'>('radial');
+  const [maxDepth, setMaxDepth] = useState<number>(3); // 1=L1章, 2=L2节, 3=L3知识点(全部)
   const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<any>(null);
-
-  const [studentId, setStudentId] = useState<number | null>(null);
+  const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement,unknown>|null>(null);
+  const [studentId, setStudentId] = useState<number|null>(null);
+  const [selectedNode, setSelectedNode] = useState<APINode|null>(null);
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
 
+  useEffect(() => { getCurrentUser().then(u => setStudentId(u?.id||3)); }, []);
   useEffect(() => {
-    getCurrentUser().then((u) => {
-      setStudentId(u?.id || 3);
-    });
+    apiFetch('/api/teacher/courses').then(r=>r.json()).then(d=>{if(d.success) setCourses(d.data||[]);}).catch(()=>{});
   }, []);
 
-  // Fetch data
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    const params = new URLSearchParams({ course_id: String(courseId) });
-    if (studentId) params.set('student_id', String(studentId));
-    apiFetch(`/api/student/knowledge-graph?${params}`)
-      .then(r => r.json())
-      .then(d => { if (!cancelled) { setGraphData(d.data); setLoading(false); } })
-      .catch(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [courseId, studentId]);
+    let cancelled=false; setLoading(true); setError(null);
+    const p=new URLSearchParams({course_id:String(courseId)});
+    if(studentId) p.set('student_id',String(studentId));
+    apiFetch(`/api/student/knowledge-graph?${p}`).then(r=>r.json()).then(d=>{
+      if(!cancelled){
+        if(d.success) { setGraphData(d.data); setError(null); }
+        else { setError(d.error || '加载失败'); setGraphData(null); }
+        setLoading(false);
+      }
+    }).catch((err)=>{
+      if(!cancelled){ setError(err.message || '网络错误，请稍后重试'); setLoading(false); }
+    });
+    return ()=>{cancelled=true;};
+  },[courseId,studentId]);
 
-  // ─── Helper: rebuild flat root from hierarchy with collapse state ───
-  function rebuildRootFromHierarchy(root: any): any {
-    const result: any = { ...root.data, children: undefined };
-    const currentChildren = root.children || root._children || [];
-    if (currentChildren.length > 0) {
-      result.children = currentChildren.map((c: any) => rebuildRootFromHierarchy(c));
-    }
-    return result;
+  function rebuildRoot(h: any): any {
+    const r: any = {...h.data, children: undefined};
+    const kids = h.children||h._children||[];
+    if(kids.length) r.children = kids.map((c:any)=>rebuildRoot(c));
+    return r;
   }
 
-  // ─── D3 Radial Tree Rendering ───
-  const renderRadialTree = useCallback(() => {
-    if (!svgRef.current || !rootRef.current || !graphData) return;
-
+  // D3 rendering
+  const renderGraph = useCallback(() => {
+    if (!svgRef.current || !rootRef.current || !graphData || !containerRef.current) return;
+    try {
     const svg = d3.select(svgRef.current);
-    const width = svgRef.current.clientWidth;
-    const height = svgRef.current.clientHeight;
-    if (width === 0 || height === 0) return;
-
-    const radius = Math.min(width, height) / 2 - 60;
+    const W = containerRef.current.clientWidth;
+    const H = containerRef.current.clientHeight;
+    if (W===0||H===0) return;
     svg.selectAll('*').remove();
 
-    // Background with subtle concentric guides
     const defs = svg.append('defs');
-    const levels = ['#e2e8f0', '#e2e8f0', '#e2e8f0'];
-    levels.forEach((_color, i) => {
-      defs.append('filter')
-        .attr('id', `shadow-${i}`)
-        .append('feDropShadow')
-        .attr('dx', 0).attr('dy', 1).attr('stdDeviation', 1.5).attr('flood-opacity', 0.12);
-    });
+    defs.append('filter').attr('id','s').append('feDropShadow').attr('dx',0).attr('dy',1).attr('stdDeviation',2).attr('flood-opacity',0.12);
+    defs.append('filter').attr('id','gl').append('feDropShadow').attr('dx',0).attr('dy',0).attr('stdDeviation',5).attr('flood-color','#3b82f6').attr('flood-opacity',0.55);
 
-    // Glow filter for hover
-    const glowFilter = defs.append('filter').attr('id', 'glow');
-    glowFilter.append('feGaussianBlur').attr('stdDeviation', 3).attr('result', 'blur');
-    glowFilter.append('feMerge')
-      .selectAll('feMergeNode')
-      .data(['blur', 'SourceGraphic'])
-      .join('feMergeNode')
-      .attr('in', (d: string) => d);
+    const g = svg.append('g').attr('class','main-g');
 
-    const mainG = svg.append('g')
-      .attr('transform', `translate(${width / 2}, ${height / 2})`);
+    const hRoot = d3.hierarchy(rootRef.current) as TreeNode;
+    const maxD = (d3.max(hRoot.descendants(),(d:any)=>d.depth)||2)+1;
 
-    // Subtle concentric guide circles
-    const guideRings = [radius * 0.25, radius * 0.50, radius * 0.78];
-    guideRings.forEach(r => {
-      mainG.append('circle')
-        .attr('r', r).attr('fill', 'none')
-        .attr('stroke', '#e2e8f0').attr('stroke-width', 0.5).attr('stroke-dasharray', '4,4');
-    });
-
-    // Zoom behavior
-    const zoom = d3.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.3, 3])
-      .on('zoom', (event) => {
-        mainG.attr('transform', event.transform);
-      });
-    svg.call(zoom as any);
-    // Initial transform to center
-    svg.call(zoom.transform as any, d3.zoomIdentity.translate(width / 2, height / 2));
-
-    // Tree layout
-    const hierarchy = d3.hierarchy(rootRef.current) as TreeNode;
-    const treeLayout = d3.tree<any>()
-      .size([2 * Math.PI, radius])
-      .separation((a: any, b: any) => {
-        const siblingCount = (a.parent?.children?.length || a.parent?._children?.length || 3);
-        let baseSep: number;
-        if (siblingCount <= 4) baseSep = 1.3;
-        else if (siblingCount <= 7) baseSep = 1.8;
-        else if (siblingCount <= 12) baseSep = 2.2;
-        else baseSep = 2.6;
-        return (a.parent === b.parent ? baseSep : baseSep * 1.6) / Math.max(a.depth, 1);
-      });
-
-    treeLayout(hierarchy);
-
-    // Radial link generator
-    const linkGen = d3.linkRadial<any, any>()
-      .angle((d: any) => d.x)
-      .radius((d: any) => d.y);
-
-    // ── Draw links ──
-    mainG.append('g').attr('class', 'links')
-      .selectAll('path')
-      .data(hierarchy.links())
-      .join('path')
-      .attr('d', linkGen)
-      .attr('fill', 'none')
-      .attr('stroke', (d: any) => d.target.data.group_color || '#cbd5e1')
-      .attr('stroke-width', (d: any) => d.target.depth <= 2 ? 1.8 : 1)
-      .attr('stroke-opacity', (d: any) => d.target.depth <= 2 ? 0.45 : 0.3)
-      .attr('stroke-linecap', 'round');
-
-    // ── Draw nodes ──
-    const nodeG = mainG.append('g').attr('class', 'nodes')
-      .selectAll('g')
-      .data(hierarchy.descendants())
-      .join('g')
-      .attr('transform', (d: any) => {
-        const angle = d.x * 180 / Math.PI - 90;
-        return `rotate(${angle}) translate(${d.y}, 0)`;
-      })
-      .attr('cursor', 'pointer')
-      .on('click', (event: any, d: any) => {
-        event.stopPropagation();
-        if (d.children && d.children.length > 0) {
-          d._children = d.children;
-          d.children = undefined;
-        } else if (d._children && d._children.length > 0) {
-          d.children = d._children;
-          d._children = undefined;
-        }
-        // Rebuild root with updated collapse state
-        rootRef.current = rebuildRootFromHierarchy(hierarchy);
-        renderRadialTree();
-      })
-      .on('mouseenter', function (event: any, d: any) {
-        const tooltip = tooltipRef.current;
-        if (!tooltip) return;
-        const nd = d.data as APINode;
-        const levelLabels = ['课程', '章', '节', '知识点'];
-        const levelLabel = levelLabels[nd.node_level] || '节点';
-
-        let html = '';
-        // Header with level badge
-        html += `<div class="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100">`;
-        html += `<span class="text-[10px] px-1.5 py-0.5 rounded font-medium text-white" style="background:${nd.group_color || '#64748b'}">${levelLabel}</span>`;
-        html += `<span class="font-semibold text-sm text-slate-800">${nd.name}</span>`;
-        html += `</div>`;
-
-        // Course level
-        if (nd.node_level === 0) {
-          html += `<div class="text-xs text-slate-500">${graphData?.textbook || ''}</div>`;
-          html += `<div class="text-xs text-slate-400 mt-1">${graphData?.totalNodes || 0} 个节点 · ${graphData?.totalEdges || 0} 条关系</div>`;
-        }
-        // Chapter level
-        if (nd.node_level === 1) {
-          const chapterInfo = graphData?.chapters.find(ch => ch.id === nd.id);
-          if (chapterInfo) {
-            const totalSections = chapterInfo.sections?.length || 0;
-            html += `<div class="text-xs text-slate-500">共 ${totalSections} 节</div>`;
-          }
-        }
-        // Section level
-        if (nd.node_level === 2) {
-          html += `<div class="text-xs text-slate-500">章节编号: ${nd.chapter_no}</div>`;
-        }
-        // Knowledge point level
-        if (nd.node_level === 3) {
-          if (nd.description) {
-            html += `<div class="text-xs text-slate-600 leading-relaxed mt-1 mb-2">${nd.description}</div>`;
-          }
-          html += `<div class="text-xs text-slate-400 mt-1">所属章节: ${nd.chapter_no}</div>`;
-          if (nd.mastery !== null && nd.mastery !== undefined) {
-            const label = nd.mastery >= 80 ? '已掌握' : nd.mastery >= 60 ? '基本掌握' : nd.mastery >= 30 ? '薄弱' : '未学习';
-            const barColor = nd.mastery_color || '#94a3b8';
-            const labelColor = nd.mastery >= 80 ? '#10b981' : nd.mastery >= 60 ? '#f59e0b' : nd.mastery >= 30 ? '#ef4444' : '#94a3b8';
-            html += `<div class="mt-2">`;
-            html += `<div class="flex items-center justify-between text-xs mb-1"><span class="text-slate-500">掌握度</span><span style="color:${labelColor}" class="font-medium">${label} ${nd.mastery}%</span></div>`;
-            html += `<div class="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">`;
-            html += `<div class="h-full rounded-full transition-all" style="width:${nd.mastery}%;background:${barColor}"></div>`;
-            html += `</div></div>`;
-          }
-        }
-        // Click hint
-        if (d.children || d._children) {
-          html += `<div class="text-[11px] text-slate-400 mt-2 pt-2 border-t border-slate-100">🖱️ 点击${d.children ? '收起' : '展开'}子节点</div>`;
-        }
-
-        tooltip.innerHTML = html;
-        tooltip.style.display = 'block';
-        // Fixed top-right corner — no mousemove tracking needed
-        tooltip.style.top = '12px';
-        tooltip.style.right = '12px';
-        tooltip.style.left = 'auto';
-        tooltip.style.bottom = 'auto';
-
-        d3.select(this).selectAll('circle, rect, path, polygon').attr('filter', 'url(#glow)');
-      })
-      .on('mouseleave', function () {
-        const tooltip = tooltipRef.current;
-        if (tooltip) tooltip.style.display = 'none';
-        d3.select(this).selectAll('circle, rect, path, polygon').attr('filter', null);
-      });
-
-    // ── Node shapes per level ──
-    nodeG.each(function (d: any) {
-      const el = d3.select(this);
-      const lvl = d.data.node_level;
-      const groupColor = d.data.group_color || '#64748b';
-      const borderColor = d.data.mastery_color || undefined;
-      const borderW = lvl === 3 && borderColor ? 2.5 : 0;
-
-      if (lvl === 0) {
-        // Course: large circle
-        el.append('circle')
-          .attr('r', 16)
-          .attr('fill', '#1e293b')
-          .attr('stroke', '#475569')
-          .attr('stroke-width', 2.5);
-      } else if (lvl === 1) {
-        // Chapter: diamond
-        el.append('polygon')
-          .attr('points', '0,-12 9,0 0,12 -9,0')
-          .attr('fill', groupColor)
-          .attr('stroke', d3.color(groupColor)!.darker(0.3).toString())
-          .attr('stroke-width', 1.5);
-      } else if (lvl === 2) {
-        // Section: rounded rect
-        el.append('rect')
-          .attr('x', -10).attr('y', -7)
-          .attr('width', 20).attr('height', 14)
-          .attr('rx', 4).attr('ry', 4)
-          .attr('fill', groupColor)
-          .attr('stroke', d3.color(groupColor)!.darker(0.2).toString())
-          .attr('stroke-width', 1);
-      } else {
-        // Knowledge point: roundRect with mastery border
-        el.append('rect')
-          .attr('x', -10).attr('y', -6.5)
-          .attr('width', 20).attr('height', 13)
-          .attr('rx', 6).attr('ry', 6)
-          .attr('fill', groupColor)
-          .attr('stroke', borderColor || d3.color(groupColor)!.darker(0.2).toString())
-          .attr('stroke-width', borderW || 1);
+    if (viewMode==='radial') {
+      const R = Math.min(W,H)/2-50;
+      const ringStep = R/(maxD+0.3);
+      for(let i=1;i<maxD;i++){
+        g.append('circle').attr('r',ringStep*i).attr('fill','none')
+          .attr('stroke','#e2e8f0').attr('stroke-width',0.5)
+          .attr('stroke-dasharray','4,4').attr('opacity',0.5);
       }
+    }
 
-      // Collapse indicator for parent nodes
-      if (d.children || d._children) {
-        const isCollapsed = !d.children;
-        el.append('circle')
-          .attr('r', 5)
-          .attr('fill', 'white')
-          .attr('stroke', '#94a3b8')
-          .attr('stroke-width', 1);
-        el.append('text')
-          .attr('text-anchor', 'middle')
-          .attr('dy', '0.35em')
-          .attr('font-size', 7)
-          .attr('fill', '#64748b')
-          .attr('pointer-events', 'none')
-          .text(isCollapsed ? '+' : '−');
+    const zoom = d3.zoom<SVGSVGElement,unknown>().scaleExtent([0.2,4]).on('zoom',(ev)=>g.attr('transform',ev.transform));
+    svg.call(zoom as any); zoomRef.current=zoom;
+    svg.call(zoom.transform as any, d3.zoomIdentity.translate(W/2,H/2));
+
+    if (viewMode==='radial') {
+      const R = Math.min(W,H)/2-50;
+      d3.cluster<any>().size([2*Math.PI,R-10]).separation((a:any,b:any)=>{
+        const n=(a.parent?.children?.length||1);
+        const base=n<=6?1.8:n<=12?1.5:n<=25?1.2:n<=50?1.05:n<=80?1.0:0.95;
+        return a.parent===b.parent?base:base*2.5;
+      })(hRoot);
+      const linkGen=d3.linkRadial<any,any>().angle((d:any)=>d.x).radius((d:any)=>d.y);
+      g.append('g').selectAll('path').data(hRoot.links()).join('path')
+        .attr('d',linkGen).attr('fill','none')
+        .attr('stroke',(d:any)=>d.target.data.group_color||'#cbd5e1')
+        .attr('stroke-width',(d:any)=>d.target.depth<=2?1.6:0.8)
+        .attr('stroke-opacity',(d:any)=>d.target.depth<=2?0.45:0.25);
+    } else {
+      d3.cluster<any>().size([H-120,W-200]).separation((a:any,b:any)=>a.parent===b.parent?1.4:1.8)(hRoot);
+      hRoot.descendants().forEach((d:any)=>{const t=d.x;d.x=d.y;d.y=t;});
+      g.append('g').selectAll('path').data(hRoot.links()).join('path')
+        .attr('d',d3.linkHorizontal<any,any>().x((d:any)=>d.x).y((d:any)=>d.y) as any).attr('fill','none')
+        .attr('stroke',(d:any)=>d.target.data.group_color||'#cbd5e1')
+        .attr('stroke-width',(d:any)=>d.target.depth<=2?1.6:0.8)
+        .attr('stroke-opacity',(d:any)=>d.target.depth<=2?0.45:0.25);
+    }
+
+    // Nodes
+    const ng = g.append('g').attr('class','nodes')
+      .selectAll('g').data(hRoot.descendants()).join('g')
+      .attr('transform',(d:any)=>viewMode==='radial'?`rotate(${d.x*180/Math.PI-90})translate(${d.y},0)`:`translate(${d.x},${d.y})`)
+      .attr('cursor','pointer').attr('filter','url(#s)')
+      .on('click',function(ev:any,d:any){
+        ev.stopPropagation();
+        const nd=d.data as APINode;
+        if(nd.is_leaf&&nd.mastery_detail){
+          setSelectedNode(nd);
+          // Zoom-focus: center on this leaf node
+          if(viewMode==='radial'){
+            const tr=d3.zoomIdentity.translate(W/2,H/2).scale(1.6).translate(-d.x,-d.y);
+            svg.transition().duration(500).call(zoomRef.current!.transform as any, tr);
+          }else{
+            const tr=d3.zoomIdentity.translate(W/2-d.x, H/2-d.y).scale(1.6);
+            svg.transition().duration(500).call(zoomRef.current!.transform as any, tr);
+          }
+          return;
+        }
+        if(d.children?.length){d._children=d.children;d.children=undefined;}
+        else if(d._children?.length){d.children=d._children;d._children=undefined;}
+        rootRef.current=rebuildRoot(hRoot);
+        renderGraph();
+      })
+      .on('mouseenter',function(ev:any,d:any){
+        const tt=tooltipRef.current; if(!tt)return;
+        const nd=d.data as APINode;
+        const lvls=['课程','项目','模块','知识点'];
+        const m=nd.mastery_detail;
+        let h=`<div class="flex items-center gap-2 pb-2 mb-2 border-b border-slate-100">`;
+        h+=`<span class="text-[10px] px-1.5 py-0.5 rounded font-medium text-white" style="background:${nd.group_color}">${lvls[nd.node_level]||''}</span>`;
+        h+=`<span class="font-semibold text-sm text-slate-800">${nd.name}</span></div>`;
+        if(nd.is_leaf&&m){
+          const l=m.level; const c=m.avg>=80?'#10b981':m.avg>=60?'#f59e0b':m.avg>=30?'#ef4444':'#94a3b8';
+          h+=`<div class="text-xs"><span style="color:${c}" class="font-medium">${l} ${m.avg}%</span></div>`;
+          h+=`<div class="w-full h-1.5 bg-slate-100 rounded-full mt-1 mb-1 overflow-hidden"><div class="h-full rounded-full" style="width:${m.avg}%;background:${c}"></div></div>`;
+          h+=`<div class="flex gap-3 text-[11px] text-slate-500 mt-1"><span>错题 ${m.total}题</span><span>已掌握 ${m.mastered}题</span><span>待复习 ${m.pending}题</span></div>`;
+          h+=`<div class="text-[11px] text-slate-400 mt-2 pt-2 border-t border-slate-100">🖱️ 点击查看详情</div>`;
+        } else if(d.children||d._children){
+          h+=`<div class="text-[11px] text-slate-400 mt-2 pt-2 border-t border-slate-100">🖱️ 点击${d.children?'收起':'展开'}子节点</div>`;
+        }
+        tt.innerHTML=h; tt.style.display='block';
+        tt.style.top='12px';tt.style.right='12px';tt.style.left='auto';tt.style.bottom='auto';
+        d3.select(this).attr('filter','url(#gl)');
+      })
+      .on('mouseleave',function(){
+        const tt=tooltipRef.current;if(tt)tt.style.display='none';
+        d3.select(this).attr('filter','url(#s)');
+      });
+
+    ng.each(function(d:any){
+      const el=d3.select(this);const lvl=d.data.node_level;
+      const gc=d.data.group_color||'#64748b';const mc=d.data.mastery_color||undefined;
+      const bw=lvl===3&&mc?3:0;
+      if(lvl===0){el.append('circle').attr('r',18).attr('fill','#1e293b').attr('stroke','#475569').attr('stroke-width',3);}
+      else if(lvl===1){el.append('polygon').attr('points','0,-13 10,0 0,13 -10,0').attr('fill',gc).attr('stroke',safeDarker(gc,0.4)).attr('stroke-width',1.5);}
+      else if(lvl===2){el.append('rect').attr('x',-12).attr('y',-8).attr('width',24).attr('height',16).attr('rx',4).attr('fill',gc).attr('stroke',safeDarker(gc,0.3)).attr('stroke-width',1);}
+      else{
+        const ns=(d.parent?.children?.length||1);
+        const sx=ns>60?8:ns>40?9.5:11;const sy=ns>60?5:ns>40?6:7;
+        el.append('rect').attr('x',-sx).attr('y',-sy).attr('width',sx*2).attr('height',sy*2).attr('rx',sx*0.6).attr('fill',gc).attr('stroke',mc||safeDarker(gc,0.3)).attr('stroke-width',bw||1.2);
+      }
+      if(d.children||d._children){
+        const col=!d.children;
+        el.append('circle').attr('r',5).attr('fill','white').attr('stroke','#94a3b8').attr('stroke-width',1);
+        el.append('text').attr('text-anchor','middle').attr('dy','0.35em').attr('font-size',7).attr('fill','#64748b').attr('pointer-events','none').text(col?'+':'-');
       }
     });
 
-    // ── Labels ──
-    const labelG = mainG.append('g').attr('class', 'labels');
-    hierarchy.descendants().forEach((d: any) => {
-      const lvl = d.data.node_level;
-      const angleRad = d.x;
-      const nodeRadius = d.y;
-      const labelOffset = lvl === 0 ? 22 : lvl === 1 ? 20 : lvl === 2 ? 16 : 17;
-      const labelR = nodeRadius + labelOffset;
-
-      const x = labelR * Math.cos(angleRad - Math.PI / 2);
-      const y = labelR * Math.sin(angleRad - Math.PI / 2);
-
-      // Determine if label is on the left or right side
-      const isLeft = angleRad > Math.PI;
-      const anchor = isLeft ? 'end' : 'start';
-      const textOffset = isLeft ? -6 : 6;
-
-      const fontSize = lvl === 0 ? '13px' : lvl === 1 ? '12px' : lvl === 2 ? '10px' : '8.5px';
-      const fontWeight = lvl <= 1 ? '600' : lvl === 2 ? '500' : '400';
-      const fillColor = lvl === 0 ? '#1e293b' : lvl <= 2 ? '#334155' : '#64748b';
-      const maxLen = lvl <= 1 ? 16 : lvl === 2 ? 18 : 11;
-      const displayName = d.data.name.length > maxLen
-        ? d.data.name.slice(0, maxLen) + '…'
-        : d.data.name;
-
-      labelG.append('text')
-        .attr('x', x + textOffset)
-        .attr('y', y)
-        .attr('text-anchor', anchor)
-        .attr('dominant-baseline', 'middle')
-        .attr('font-size', fontSize)
-        .attr('font-weight', fontWeight)
-        .attr('fill', fillColor)
-        .attr('font-family', '"Inter", "Noto Sans SC", sans-serif')
-        .attr('pointer-events', 'none')
-        .text(displayName);
+    // Labels
+    const lg = g.append('g').attr('class','labels');
+    hRoot.descendants().forEach((d:any)=>{
+      const lvl=d.data.node_level;const angle=d.x;const nR=d.y;
+      const off=lvl===0?24:lvl===1?22:lvl===2?17:18;
+      const lR=nR+off;
+      let x,y,anchor,textOff:number;
+      if(viewMode==='radial'){
+        const si=(d.parent?.children?.indexOf(d)||0)%3;
+        const staggerY=[-4,0,4][si];
+        x=lR*Math.cos(angle-Math.PI/2);y=lR*Math.sin(angle-Math.PI/2)+staggerY;
+        anchor=angle>Math.PI?'end':'start';
+        textOff=angle>Math.PI?-(6+si*1.5):(6+si*1.5);
+      }else{
+        const tsi=(d.parent?.children?.indexOf(d)||0)%3;
+        const tdy=[-3,0,3][tsi];
+        x=d.x+off;y=d.y+tdy;anchor='start';textOff=6;
+      }
+      const sibCount=(d.parent?.children?.length||1);
+      const fs=lvl===0?'13px':lvl===1?'12px':lvl===2?'10px':(sibCount>60?'7px':sibCount>40?'8px':sibCount>20?'9px':'10px');
+      const fw=lvl<=1?'600':lvl===2?'500':'400';
+      const fc=lvl===0?'#1e293b':lvl<=2?'#334155':'#64748b';
+      const ml=lvl<=1?20:lvl===2?20:14;
+      const dn=d.data.name.length>ml?d.data.name.slice(0,ml)+'...':d.data.name;
+      lg.append('text').attr('x',x+textOff).attr('y',y).attr('text-anchor',anchor)
+        .attr('dominant-baseline','middle').attr('font-size',fs).attr('font-weight',fw)
+        .attr('fill',fc).attr('font-family','"Inter","Noto Sans SC",sans-serif').attr('pointer-events','none').text(dn);
     });
-  }, [graphData]);
-
-  // ─── Initial data processing: build hierarchy root from flat data ───
-  const buildRootFromFlat = useCallback(() => {
-    if (!graphData) return null;
-    const { nodes, edges } = graphData;
-    const childrenMap: Record<string, string[]> = {};
-    edges.filter(e => e.type === 'belong_to').forEach(e => {
-      if (!childrenMap[e.source]) childrenMap[e.source] = [];
-      childrenMap[e.source].push(e.target);
-    });
-    const nodeMap = new Map(nodes.map(n => [n.id, n]));
-
-    function build(id: string): any {
-      const n = nodeMap.get(id)!;
-      const childIds = childrenMap[id] || [];
-      const children = childIds.map(build);
-      return {
-        ...n,
-        children: children.length > 0 ? children : undefined,
-      };
+    } catch (err: any) {
+      console.error('Knowledge graph render error:', err);
+      setError('图谱渲染失败，请刷新页面重试');
     }
+  },[graphData,viewMode]);
 
-    const rootNode = nodes.find(n => n.node_level === 0);
-    if (!rootNode) return null;
-    return build(rootNode.id);
-  }, [graphData]);
+  // Build root from flat
+  const buildRoot=useCallback(()=>{
+    if(!graphData)return null;
+    const{edges}=graphData;
+    const cm:Record<string,string[]>={};
+    edges.filter(e=>e.type==='belong_to').forEach(e=>{if(!cm[e.source])cm[e.source]=[];cm[e.source].push(e.target);});
+    const nm=new Map(graphData.nodes.map(n=>[n.id,n]));
+    function build(id:string):any{const n=nm.get(id)!;const kids=(cm[id]||[]).map(build);return{...n,children:kids.length?kids:undefined};}
+    const root=graphData.nodes.find(n=>n.node_level===0);
+    return root?build(root.id):null;
+  },[graphData]);
 
-  // ─── Trigger D3 render when data or view changes ───
-  useEffect(() => {
-    if (!graphData) return;
-    const root = buildRootFromFlat();
-    if (!root) return;
-    rootRef.current = root;
-    // Delay to ensure container has size
-    const timer = setTimeout(() => renderRadialTree(), 80);
-    return () => clearTimeout(timer);
-  }, [graphData, renderRadialTree, buildRootFromFlat]);
-
-  // ─── Resize handler ───
-  useEffect(() => {
-    const handleResize = () => renderRadialTree();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [renderRadialTree]);
-
-  // ─── Search & highlight ───
-  const highlightAndCenterNode = useCallback((nodeId: string | null) => {
-    const svg = d3.select(svgRef.current);
-    if (!nodeId) {
-      svg.selectAll('.node-group').selectAll('circle').attr('opacity', 1).attr('stroke-width', 2);
-      svg.selectAll('.node-group').selectAll('text').attr('opacity', 1);
-      svg.selectAll('.edge').attr('opacity', 0.18);
-      return;
-    }
-    svg.selectAll('.node-group').selectAll('circle').attr('opacity', 0.12).attr('stroke-width', 1.5);
-    svg.selectAll('.node-group').selectAll('text').attr('opacity', 0.12);
-    svg.selectAll('.edge').attr('opacity', 0.04);
-    svg.selectAll('.node-group').filter(function () {
-      const d = d3.select(this).datum() as any;
-      return d?.data?.id === nodeId;
-    }).selectAll('circle').attr('opacity', 1).attr('stroke-width', 4).attr('stroke', '#ef4444');
-    svg.selectAll('.node-group').filter(function () {
-      const d = d3.select(this).datum() as any;
-      return d?.data?.id === nodeId;
-    }).selectAll('text').attr('opacity', 1);
-    const targetG = svg.selectAll('.node-group').filter(function () {
-      const d = d3.select(this).datum() as any;
-      return d?.data?.id === nodeId;
-    });
-    if (!targetG.empty()) {
-      const bbox = (targetG.node() as SVGGElement).getBBox();
-      const w = svgRef.current!.clientWidth, h = svgRef.current!.clientHeight;
-      svg.select('.zoom-g').transition().duration(500)
-        .attr('transform', `translate(${w/2 - (bbox.x + bbox.width/2)},${h/2 - (bbox.y + bbox.height/2)}) scale(1.5)`);
-    }
+  // Collapse nodes beyond maxDepth
+  const collapseByDepth = useCallback((root: any, depth: number) => {
+    const walk = (node: any, d: number) => {
+      if (d >= depth && node.children && node.children.length > 0) {
+        node._children = node.children;
+        node.children = undefined;
+        if (node._children) node._children.forEach((c: any) => walk(c, d + 1));
+        return;
+      }
+      if (node.children) node.children.forEach((c: any) => walk(c, d + 1));
+      // Also collapse children that were previously hidden
+      if (node._children && d < depth) {
+        node._children.forEach((c: any) => walk(c, d + 1));
+      }
+    };
+    walk(root, 0);
   }, []);
 
-  // ─── Stats ───
-  const stat = graphData?.masteryStats;
+  useEffect(()=>{if(!graphData)return;const r=buildRoot();if(!r)return;collapseByDepth(r,maxDepth);rootRef.current=r;const t=setTimeout(()=>renderGraph(),120);return()=>clearTimeout(t);},[graphData,renderGraph,buildRoot,collapseByDepth,maxDepth]);
+  useEffect(()=>{const h=()=>renderGraph();window.addEventListener('resize',h);return()=>window.removeEventListener('resize',h);},[renderGraph]);
+
+  const exportSVG=()=>{
+    if(!svgRef.current)return;
+    const c=svgRef.current.cloneNode(true)as SVGSVGElement;
+    const b=new Blob([new XMLSerializer().serializeToString(c)],{type:'image/svg+xml'});
+    const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=`知识图谱_${graphData?.course?.short_name||'export'}.svg`;a.click();URL.revokeObjectURL(u);
+  };
+  const exportPNG=()=>{
+    if(!svgRef.current||!containerRef.current)return;
+    const W=containerRef.current.clientWidth,H=containerRef.current.clientHeight;
+    const c=svgRef.current.cloneNode(true)as SVGSVGElement;
+    c.setAttribute('width',String(W*2));c.setAttribute('height',String(H*2));
+    const bg=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    bg.setAttribute('width',String(W*2));bg.setAttribute('height',String(H*2));bg.setAttribute('fill','#ffffff');
+    c.insertBefore(bg,c.firstChild);
+    const img=new Image();
+    img.onload=()=>{
+      const cv=document.createElement('canvas');cv.width=W*2;cv.height=H*2;
+      cv.getContext('2d')!.drawImage(img,0,0);
+      cv.toBlob(b=>{if(!b)return;const u=URL.createObjectURL(b);
+        const a=document.createElement('a');a.href=u;a.download=`知识图谱_${graphData?.course?.short_name||'export'}.png`;a.click();URL.revokeObjectURL(u);},'image/png');
+    };
+    img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(new XMLSerializer().serializeToString(c))));
+  };
+
+  const zi=()=>{if(zoomRef.current&&svgRef.current)zoomRef.current.scaleBy(d3.select(svgRef.current),1.35);};
+  const zo=()=>{if(zoomRef.current&&svgRef.current)zoomRef.current.scaleBy(d3.select(svgRef.current),0.7);};
+  const zr=()=>{if(zoomRef.current&&svgRef.current&&containerRef.current){const w=containerRef.current.clientWidth,h=containerRef.current.clientHeight;d3.select(svgRef.current).call(zoomRef.current.transform as any,d3.zoomIdentity.translate(w/2,h/2));}};
+
+  const allKps=useMemo(()=>graphData?.nodes.filter(n=>n.is_leaf)||[],[graphData]);
+  const fKps=searchTerm?allKps.filter(k=>k.name.includes(searchTerm)):[];
+
+  const locateNode=(nid:string)=>{
+    if(!rootRef.current)return;
+    const fe=(root:any,tid:string):boolean=>{
+      if(root.data?.id===tid)return true;
+      const ks=root.children||root._children||[];
+      for(const k of ks){if(fe(k,tid)){if(root._children){root.children=root._children;root._children=undefined;}return true;}}
+      return false;
+    };
+    fe(rootRef.current,nid);
+    rootRef.current=rebuildRoot(d3.hierarchy(rootRef.current));
+    renderGraph();
+    setSelectedNode(graphData?.nodes.find(n=>n.id===nid)||null);
+  };
+
+  const stat=graphData?.masteryStats;
 
   return (
-    <div className="flex flex-col h-full p-3 bg-[#f8fafc]">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+    <div className="flex flex-col h-full bg-[#fafbfc]" style={{minHeight:0}}>
+      {/* Top bar */}
+      <div className="flex-none flex items-center justify-between px-5 py-2.5 bg-white border-b border-slate-200/50 z-20">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold text-slate-800">知识图谱</h1>
-          <span className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">
-            {graphData?.textbook || ''}
-          </span>
-        </div>
-
-        {/* Course switch */}
-        <div className="flex bg-white rounded-lg border border-slate-200 overflow-hidden">
-          {[1, 2].map(cid => (
-            <button
-              key={cid}
-              onClick={() => setCourseId(cid)}
-              className={`px-4 py-1.5 text-sm font-medium transition-colors ${
-                courseId === cid ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-50'
-              }`}
-            >
-              {cid === 1 ? 'Python程序设计' : '数据结构与算法'}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Search bar */}
-      <SearchBar nodes={graphData?.nodes || []} onLocate={(nodeId) => {
-        if (nodeId && rootRef.current) {
-          highlightAndCenterNode(nodeId);
-        }
-      }} onClear={() => {
-        highlightAndCenterNode(null);
-      }} />
-
-      {/* Stats & legend bar */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mb-3">
-        {stat && (
-          <>
-            <span className="text-xs text-slate-500 font-medium">掌握度:</span>
-            {[
-              ['已掌握', stat.mastered, '#10b981'],
-              ['基本掌握', stat.basics, '#f59e0b'],
-              ['薄弱', stat.weak, '#ef4444'],
-              ['未学习', stat.unlearned, '#94a3b8'],
-            ].map(([label, count, color]) => (
-              <div key={label as string} className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-full" style={{ background: color as string }} />
-                <span className="text-xs text-slate-600">{label}: <b>{count as number}</b></span>
-              </div>
-            ))}
-            <span className="w-px h-4 bg-slate-200 mx-1" />
-          </>
-        )}
-        <span className="text-xs text-slate-500 font-medium">章节:</span>
-        {graphData?.chapters.map(ch => (
-          <div key={ch.id} className="flex items-center gap-1">
-            <span className="w-3 h-3 rounded-sm" style={{ background: ch.group_color }} />
-            <span className="text-xs text-slate-500">{ch.name}</span>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center">
+              <Layers className="w-4 h-4 text-white" />
+            </div>
+            <h1 className="text-lg font-bold text-slate-800 tracking-tight">知识图谱</h1>
           </div>
-        ))}
+          {/* Dynamic course tabs */}
+          <div className="flex bg-slate-100 rounded-lg p-0.5">
+            {(courses.length>0?courses:[{id:1,name:'Python程序设计'},{id:2,name:'数据结构与算法'}]).map(c=>(
+              <button key={c.id} onClick={()=>setCourseId(c.id)}
+                className={`px-3.5 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
+                  courseId===c.id?'bg-white text-slate-800 shadow-sm':'text-slate-500 hover:text-slate-700'
+                }`}>
+                {c.name.length>8?c.name.slice(0,8)+'...':c.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Search */}
+          <div className="relative">
+            <input value={searchTerm} onChange={e=>setSearchTerm(e.target.value)}
+              placeholder="搜索知识点..." className="w-44 h-8 pl-8 pr-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-200 focus:bg-white transition-all" />
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+            {searchTerm&&fKps.length>0&&(
+              <div className="absolute top-full mt-1 left-0 w-64 bg-white rounded-xl shadow-xl border border-slate-200 z-30 overflow-hidden">
+                {fKps.slice(0,10).map(k=>(
+                  <button key={k.id} onMouseDown={()=>{locateNode(k.id);setSearchTerm(k.name);}}
+                    className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full flex-none" style={{background:k.mastery_color||'#94a3b8'}}/>
+                    {k.name}
+                    {k.mastery!==null&&<span className="ml-auto text-[11px] text-slate-400">{k.mastery}%</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* View mode */}
+          <div className="flex bg-slate-100 rounded-lg p-0.5">
+            {(['radial','tree']as const).map(m=>(
+              <button key={m} onClick={()=>setViewMode(m)}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${viewMode===m?'bg-white text-slate-800 shadow-sm':'text-slate-500'}`}>
+                {m==='radial'?'环图':'树图'}
+              </button>
+            ))}
+          </div>
+
+          <div className="w-px h-5 bg-slate-200 mx-1" />
+
+          {/* Level filter */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-slate-400 font-medium">层级</span>
+            <div className="flex bg-slate-100 rounded-lg p-0.5">
+              {[{v:1,l:'L1·章'},{v:2,l:'L2·节'},{v:3,l:'L3·全'}].map(({v,l})=>(
+                <button key={v} onClick={()=>setMaxDepth(v)}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                    maxDepth===v?'bg-white text-teal-700 shadow-sm':'text-slate-500 hover:text-slate-700'
+                  }`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Export */}
+          <button onClick={exportSVG} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors" title="导出SVG">
+            <Download className="w-4 h-4" />
+          </button>
+          <button onClick={exportPNG} className="text-xs px-2 py-1 rounded-md border border-slate-200 hover:bg-slate-50 text-slate-500 transition-colors" title="导出PNG">PNG</button>
+        </div>
       </div>
 
-      {/* SVG Chart */}
-      <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden relative min-h-0">
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
-            <div className="flex items-center gap-2 text-slate-500">
-              <div className="w-4 h-4 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
-              <span className="text-sm">加载中...</span>
+      {/* Main canvas + sidebar */}
+      <div className="flex-1 flex" style={{minHeight:0}}>
+        {/* Legend panel */}
+        <div className="flex-none w-[200px] bg-white border-r border-slate-200/60 p-3 flex flex-col gap-3 overflow-y-auto">
+          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">掌握度统计</div>
+          {stat&&(
+            <div className="space-y-1.5">
+              {[['已掌握',stat.mastered,'#10b981'],['基本掌握',stat.basics,'#f59e0b'],['薄弱',stat.weak,'#ef4444'],['未学习',stat.unlearned,'#94a3b8']].map(([l,c,cl])=>(
+                <div key={l as string} className="flex items-center gap-2 text-xs">
+                  <span className="w-2.5 h-2.5 rounded-full flex-none" style={{background:cl as string}}/>
+                  <span className="text-slate-600">{l}</span>
+                  <span className="ml-auto font-mono font-bold text-slate-800">{c as number}</span>
+                  <span className="text-[10px] text-slate-400">/ {stat.total}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="border-t border-slate-100 pt-3">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">节点图例</div>
+            <div className="space-y-2 text-xs text-slate-500">
+              <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-slate-800"/><span>课程根节点</span></div>
+              <div className="flex items-center gap-2"><span className="w-3 h-3 rotate-45 bg-teal-600"/><span>项目/章</span></div>
+              <div className="flex items-center gap-2"><span className="w-2.5 h-2 rounded bg-teal-500"/><span>模块/节</span></div>
+              <div className="flex items-center gap-2"><span className="w-2 h-1.5 rounded-full border-2 border-slate-300"/><span>知识点</span></div>
+            </div>
+          </div>
+          {graphData?.chapters&&graphData.chapters.length>0&&(
+            <div className="border-t border-slate-100 pt-3">
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">章节色系</div>
+              <div className="space-y-1">
+                {graphData.chapters.map(ch=>(
+                  <div key={ch.id} className="flex items-center gap-2 text-xs">
+                    <span className="w-3 h-3 rounded-sm flex-none" style={{background:ch.group_color}}/>
+                    <span className="text-slate-600 truncate">{ch.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Canvas */}
+        <div className="flex-1 relative" style={{minWidth:0}} ref={containerRef}>
+          {loading&&(
+            <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-20">
+              <div className="flex items-center gap-3 text-slate-500">
+                <div className="w-5 h-5 border-2 border-teal-500 border-t-transparent rounded-full animate-spin"/>
+                <span className="text-sm font-medium">加载知识图谱...</span>
+              </div>
+            </div>
+          )}
+          {!loading&&error&&(
+            <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-20">
+              <div className="flex flex-col items-center gap-3 text-slate-500 max-w-sm text-center">
+                <AlertTriangle className="w-8 h-8 text-amber-500" />
+                <span className="text-sm font-medium">{error}</span>
+                <button onClick={() => { setError(null); setCourseId(courseId); }}
+                  className="px-4 py-2 text-sm bg-teal-500 text-white rounded-lg hover:bg-teal-600 transition-colors">
+                  重试
+                </button>
+              </div>
+            </div>
+          )}
+          <svg ref={svgRef} className="w-full h-full" />
+          <div ref={tooltipRef} className="absolute hidden bg-white/95 backdrop-blur-sm border border-slate-200 rounded-xl px-4 py-3 shadow-xl pointer-events-none z-30"
+            style={{maxWidth:'280px'}}/>
+          {!loading&&graphData&&(
+            <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm text-xs text-slate-400 px-3 py-1.5 rounded-lg border border-slate-100 shadow-sm">
+              {graphData.totalNodes} 节点 · {graphData.totalEdges} 关系
+            </div>
+          )}
+
+          {/* Zoom controls */}
+          <div className="absolute bottom-4 right-4 flex flex-col gap-1">
+            <button onClick={zi} className="w-8 h-8 rounded-lg bg-white border border-slate-200 shadow-sm flex items-center justify-center hover:bg-slate-50 text-slate-600 transition-colors"><ZoomIn className="w-4 h-4"/></button>
+            <button onClick={zo} className="w-8 h-8 rounded-lg bg-white border border-slate-200 shadow-sm flex items-center justify-center hover:bg-slate-50 text-slate-600 transition-colors"><ZoomOut className="w-4 h-4"/></button>
+            <button onClick={zr} className="w-8 h-8 rounded-lg bg-white border border-slate-200 shadow-sm flex items-center justify-center hover:bg-slate-50 text-slate-600 transition-colors"><RotateCcw className="w-3.5 h-3.5"/></button>
+          </div>
+        </div>
+
+        {/* Mastery detail panel */}
+        {selectedNode&&(
+          <div className="flex-none w-[300px] bg-white border-l border-slate-200/60 p-4 overflow-y-auto z-10 shadow-lg">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Target className="w-4 h-4 text-teal-600"/>
+                <span className="text-sm font-bold text-slate-800">知识点详情</span>
+              </div>
+              <button onClick={()=>setSelectedNode(null)} className="p-1 rounded-lg hover:bg-slate-100 transition-colors"><X className="w-4 h-4 text-slate-400"/></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <div className="text-[11px] text-slate-400 uppercase tracking-wider mb-1">知识点</div>
+                <div className="text-sm font-semibold text-slate-800">{selectedNode.name}</div>
+              </div>
+              {selectedNode.mastery_detail&&(function(){
+                const m=selectedNode.mastery_detail;
+                const c=m.avg>=80?'#10b981':m.avg>=60?'#f59e0b':m.avg>=30?'#ef4444':'#94a3b8';
+                return (<>
+                  <div>
+                    <div className="text-[11px] text-slate-400 uppercase tracking-wider mb-2">掌握度</div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className="text-3xl font-bold font-mono" style={{color:c}}>{m.avg}%</span>
+                      <span className="px-2 py-0.5 rounded text-xs font-medium text-white" style={{background:c}}>{m.level}</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-700" style={{width:`${m.avg}%`,background:c}}/>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-slate-50 rounded-xl p-3 text-center">
+                      <div className="text-2xl font-bold font-mono text-slate-800">{m.total}</div>
+                      <div className="text-[11px] text-slate-500">错题总数</div>
+                    </div>
+                    <div className="bg-emerald-50 rounded-xl p-3 text-center">
+                      <div className="text-2xl font-bold font-mono text-emerald-600">{m.mastered}</div>
+                      <div className="text-[11px] text-emerald-600">已掌握</div>
+                    </div>
+                    <div className="bg-amber-50 rounded-xl p-3 text-center col-span-2">
+                      <div className="text-2xl font-bold font-mono text-amber-600">{m.pending}</div>
+                      <div className="text-[11px] text-amber-600">待复习错题</div>
+                    </div>
+                  </div>
+                  <div className="bg-slate-50 rounded-xl p-3">
+                    <div className="text-[11px] text-slate-500 mb-1">学习建议</div>
+                    <div className="text-xs text-slate-700 leading-relaxed">
+                      {m.avg>=80?'该知识点已熟练掌握，建议定期回顾保持记忆。':
+                       m.avg>=60?'建议重点复习待复习错题的AI解析，巩固薄弱环节。':
+                       m.avg>=30?'该知识点较为薄弱，建议重新学习相关章节并完成对应练习。':
+                       '该知识点尚未学习或掌握度较低，建议从基础开始系统学习。'}
+                    </div>
+                  </div>
+                  {m.total > 0 && selectedNode.knowledge_point_id && (
+                    <button
+                      onClick={() => router.push(`/student/errors?knowledge_point_id=${selectedNode.knowledge_point_id}`)}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors text-sm font-medium"
+                    >
+                      <BookOpen className="w-4 h-4" />
+                      {m.pending > 0 ? `查看相关错题（${m.pending}题待复习）` : `查看已掌握错题（${m.mastered}题）`}
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </>);
+              })()}
             </div>
           </div>
         )}
-
-        <svg ref={svgRef} className="w-full h-full" />
-
-        {/* Node tooltip */}
-        <div
-          ref={tooltipRef}
-          className="absolute hidden bg-white/95 backdrop-blur-sm border border-slate-200 rounded-xl px-4 py-3 shadow-xl pointer-events-none z-20 text-slate-700"
-          style={{ maxWidth: '280px' }}
-        />
-
-        {/* Footer info */}
-        {!loading && graphData && (
-          <div className="absolute bottom-3 right-3 bg-white/90 text-xs text-slate-400 px-2 py-1 rounded border border-slate-100">
-            {graphData.totalNodes} 节点 · 滚轮缩放 · 拖拽平移 · 点击展开/收起
-          </div>
-        )}
       </div>
-    </div>
-  );
-}
-
-// ─── SearchBar inline component ───
-function SearchBar({ nodes, onLocate, onClear }: {
-  nodes: { id: string; name: string; category: number }[];
-  onLocate: (nodeId: string | null) => void;
-  onClear: () => void;
-}) {
-  const [value, setValue] = useState('');
-  const [focused, setFocused] = useState(false);
-  const filtered = value.trim() ? nodes.filter(n =>
-    n.name.toLowerCase().includes(value.toLowerCase())
-  ).slice(0, 8) : [];
-
-  return (
-    <div className="relative mb-3">
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          value={value}
-          onChange={e => setValue(e.target.value)}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setTimeout(() => setFocused(false), 150)}
-          placeholder="搜索知识点..."
-          className="w-64 h-9 px-3 text-sm rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-200 placeholder:text-slate-400"
-        />
-        {value && (
-          <button onClick={() => { setValue(''); onClear(); }} className="text-xs text-slate-400 hover:text-slate-600">
-            清除
-          </button>
-        )}
-      </div>
-      {focused && filtered.length > 0 && (
-        <div className="absolute top-10 left-0 w-72 bg-white rounded-xl shadow-xl border border-slate-200 z-20 overflow-hidden">
-          {filtered.map(n => (
-            <button
-              key={n.id}
-              onMouseDown={() => { onLocate(n.id); setValue(n.name); }}
-              className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-            >
-              <span className="text-[10px] text-slate-400">{['课程','章','节','知识点'][n.category] || '节点'}</span>
-              {n.name}
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

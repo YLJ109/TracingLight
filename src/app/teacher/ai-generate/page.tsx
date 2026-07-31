@@ -71,45 +71,31 @@ export default function AIGeneratePage() {
   const [generated, setGenerated] = useState<GeneratedQuestion[]>([]);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
 
-  // 加载课程
+  const [allKps, setAllKps] = useState<KnowledgePoint[]>([]);
+
+  // 加载课程和知识点（使用 API 的 courses / allKps 直接获取）
   useEffect(() => {
-    apiFetch('/api/teacher/questions/bank?limit=1')
+    apiFetch('/api/teacher/questions/bank?pageSize=1')
       .then(r => r.json())
       .then(data => {
-        if (data.success) {
-          const questions = Array.isArray(data.data) ? data.data : (data.data.questions || []);
-          const courseMap = new Map<number, string>();
-          questions.forEach((q: GeneratedQuestion) => {
-            if (q.course) courseMap.set(q.course_id, q.course.name);
-          });
-          setCourses(Array.from(courseMap.entries()).map(([id, name]) => ({ id, name })));
+        if (data.success && data.data) {
+          const dd = data.data;
+          setCourses(Array.isArray(dd.courses) ? dd.courses : []);
+          const kps = Array.isArray(dd.allKps) ? dd.allKps : (Array.isArray(dd.knowledgePoints) ? dd.knowledgePoints : []);
+          setAllKps(kps);
         }
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, []);
 
-  // 加载知识点
+  // 根据选中课程过滤知识点
   useEffect(() => {
-    if (!courseId) { setKnowledgePoints([]); return; }
-    apiFetch('/api/teacher/questions/bank?limit=200')
-      .then(r => r.json())
-      .then(data => {
-        if (data.success) {
-          const questions = Array.isArray(data.data) ? data.data : (data.data.questions || []);
-          const kps: KnowledgePoint[] = [];
-          const seen = new Set<number>();
-          questions.forEach((q: GeneratedQuestion) => {
-            if (q.course_id === parseInt(courseId) && q.knowledge_point && !seen.has(q.knowledge_point_id)) {
-              seen.add(q.knowledge_point_id);
-              kps.push({ id: q.knowledge_point_id, name: q.knowledge_point.name, course_id: q.course_id });
-            }
-          });
-          setKnowledgePoints(kps);
-        }
-      })
-      .catch(() => {});
-  }, [courseId]);
+    if (!courseId) { setKnowledgePoints([]); setKpId(''); return; }
+    const cid = parseInt(courseId);
+    setKnowledgePoints(allKps.filter((kp) => kp.course_id === cid));
+    setKpId('');
+  }, [courseId, allKps]);
 
   // AI 出题
   const handleGenerate = async () => {
