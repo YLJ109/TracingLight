@@ -211,7 +211,10 @@ async function seed() {
     { id: 141, course_id: 4, name: '领域自适应', difficulty: 'hard', sort_order: 100 },
     { id: 142, course_id: 4, name: '多任务学习', difficulty: 'hard', sort_order: 101 },
     { id: 143, course_id: 4, name: '迁移学习实战流程', difficulty: 'hard', sort_order: 102 },
-  ]).run();
+  ];
+db.insert(knowledgePoint).values(kpValues).run();
+const kpNames: Record<number, string> = {};
+kpValues.forEach(kp => { kpNames[kp.id] = kp.name; });
   console.log('  ✅ 知识点完成 (143个)');
 
   // ===================== 5. 知识图谱节点 =====================
@@ -278,57 +281,54 @@ async function seed() {
   addNode(36,3,'数据库备份与恢复',3,dbSec31,1,'#ddd6fe',true); addNode(37,3,'NoSQL数据库简介',3,dbSec31,2,'#ddd6fe',true); addNode(41,3,'分布式数据库',3,dbSec31,3,'#ddd6fe',true);
 
   // 课程4: 深度学习框架 (7项目)
-  const kpn: Record<number, string> = {};
-  [42,'人工智能的概念',43,'机器学习的定义',44,'深度学习的定义',45,'AI/ML/DL三者关系',46,'监督学习',47,'无监督学习',48,'半监督学习',49,'强化学习',50,'训练数据与模型',51,'分类、决策与预测任务',52,'图像识别',53,'人脸识别',54,'图像分割',55,'自然语言处理',56,'语音识别',57,'TensorFlow框架',58,'Keras高级接口',59,'PyTorch框架',60,'主流框架比较',61,'深度学习工程流程',62,'NumPy数据类型',63,'ndarray数组对象',64,'数组创建函数',65,'数组属性',66,'数组索引',67,'数组切片',68,'数组广播',69,'数组逐元素运算',70,'NumPy随机函数',71,'数组形状变换',72,'Matplotlib图形要素',73,'折线图绘制',74,'直方图绘制',75,'饼图绘制',76,'绘图基本步骤',77,'scikit-learn数据集',78,'scikit-learn模型训练',79,'训练集验证集测试集',80,'模型评估指标',81,'张量的维度',82,'tf.constant常量张量',83,'张量索引',84,'tf.reshape形状变换',85,'张量数学运算',86,'自动求导GradientTape',87,'TensorBoard可视化',88,'生物神经元与感知器',89,'单层感知器',90,'前馈神经网络',91,'输入层隐藏层输出层',92,'阶跃函数',93,'Tanh函数',94,'Softmax函数',95,'前向传播',96,'均方误差损失函数',97,'梯度下降',98,'反向传播',99,'早停法',100,'感受野与局部连接',101,'卷积层',102,'填充与步长',103,'SAME与VALID填充',104,'池化层',105,'Flatten层',106,'VGG网络',107,'LeNet网络',108,'CNN图像分类流程',109,'词向量表示',110,'序列填充',111,'文本序列化',112,'循环神经网络概念',113,'隐藏状态',114,'序列输出与最终输出',115,'文本分类流程',116,'RNN时间步展开',117,'LSTM长短时记忆网络',118,'LSTM遗忘门',119,'LSTM输入门',120,'LSTM输出门',121,'GRU门控循环单元',122,'文本预测任务',123,'循环网络模型训练',124,'生成模型与判别模型',125,'随机噪声向量',126,'判别器损失',127,'生成器损失',128,'生成对抗训练',129,'DCGAN深度卷积GAN',130,'转置卷积层',131,'GAN训练步骤',132,'生成图像可视化',133,'真实样本与生成样本',134,'GAN评估指标',135,'迁移学习概念',136,'特征迁移',137,'冻结卷积基',138,'微调策略',139,'预训练模型选择',140,'数据增强技术',141,'领域自适应',142,'多任务学习',143,'迁移学习实战流程'].forEach((v,i,a)=>{if(typeof v==='number')kpn[v]=a[i+1] as string;});
-
   const dlC: [string,string,string][] = [['#0d9488','#14b8a6','#99f6e4'],['#2563eb','#3b82f6','#bfdbfe'],['#7c3aed','#8b5cf6','#ddd6fe'],['#db2777','#ec4899','#fbcfe8'],['#d97706','#f59e0b','#fde68a'],['#0891b2','#06b6d4','#a5f3fc'],['#65a30d','#84cc16','#d9f99d']];
   const dlRoot = addNode(42,4,'深度学习框架',0,null,4,'#1e293b',false);
   // 项目一
   const p1 = addNode(42,4,'项目一 搭建深度学习开发环境',1,dlRoot,1,dlC[0][0],false);
   const p1s1 = addNode(42,4,'人工智能与深度学习导论',2,p1,1,dlC[0][1],false);
-  for (let i=42;i<=51;i++) addNode(i,4,kpn[i],3,p1s1,i-41,dlC[0][2],true);
+  for (let i=42;i<=51;i++) addNode(i,4,kpNames[i],3,p1s1,i-41,dlC[0][2],true);
   const p1s2 = addNode(52,4,'应用领域与框架生态',2,p1,2,dlC[0][1],false);
-  for (let i=52;i<=61;i++) addNode(i,4,kpn[i],3,p1s2,i-51,dlC[0][2],true);
+  for (let i=52;i<=61;i++) addNode(i,4,kpNames[i],3,p1s2,i-51,dlC[0][2],true);
   // 项目二
   const p2 = addNode(62,4,'项目二 夯实深度学习开发基础',1,dlRoot,2,dlC[1][0],false);
   const p2s1 = addNode(62,4,'NumPy科学计算',2,p2,1,dlC[1][1],false);
-  for (let i=62;i<=71;i++) addNode(i,4,kpn[i],3,p2s1,i-61,dlC[1][2],true);
+  for (let i=62;i<=71;i++) addNode(i,4,kpNames[i],3,p2s1,i-61,dlC[1][2],true);
   const p2s2 = addNode(72,4,'可视化与机器学习库',2,p2,2,dlC[1][1],false);
-  for (let i=72;i<=80;i++) addNode(i,4,kpn[i],3,p2s2,i-71,dlC[1][2],true);
+  for (let i=72;i<=80;i++) addNode(i,4,kpNames[i],3,p2s2,i-71,dlC[1][2],true);
   const p2s3 = addNode(81,4,'TensorFlow基础操作',2,p2,3,dlC[1][1],false);
-  for (let i=81;i<=87;i++) addNode(i,4,kpn[i],3,p2s3,i-80,dlC[1][2],true);
+  for (let i=81;i<=87;i++) addNode(i,4,kpNames[i],3,p2s3,i-80,dlC[1][2],true);
   // 项目三
   const p3 = addNode(88,4,'项目三 构建神经网络',1,dlRoot,3,dlC[2][0],false);
   const p3s1 = addNode(88,4,'神经元与网络结构',2,p3,1,dlC[2][1],false);
-  for (let i=88;i<=91;i++) addNode(i,4,kpn[i],3,p3s1,i-87,dlC[2][2],true);
+  for (let i=88;i<=91;i++) addNode(i,4,kpNames[i],3,p3s1,i-87,dlC[2][2],true);
   const p3s2 = addNode(92,4,'激活函数',2,p3,2,dlC[2][1],false);
-  for (let i=92;i<=94;i++) addNode(i,4,kpn[i],3,p3s2,i-91,dlC[2][2],true);
+  for (let i=92;i<=94;i++) addNode(i,4,kpNames[i],3,p3s2,i-91,dlC[2][2],true);
   const p3s3 = addNode(95,4,'训练与优化',2,p3,3,dlC[2][1],false);
-  for (let i=95;i<=99;i++) addNode(i,4,kpn[i],3,p3s3,i-94,dlC[2][2],true);
+  for (let i=95;i<=99;i++) addNode(i,4,kpNames[i],3,p3s3,i-94,dlC[2][2],true);
   // 项目四
   const p4 = addNode(100,4,'项目四 卷积神经网络',1,dlRoot,4,dlC[3][0],false);
   const p4s1 = addNode(100,4,'CNN基本思想',2,p4,1,dlC[3][1],false);
-  for (let i=100;i<=105;i++) addNode(i,4,kpn[i],3,p4s1,i-99,dlC[3][2],true);
+  for (let i=100;i<=105;i++) addNode(i,4,kpNames[i],3,p4s1,i-99,dlC[3][2],true);
   const p4s2 = addNode(106,4,'经典CNN与实践',2,p4,2,dlC[3][1],false);
-  for (let i=106;i<=108;i++) addNode(i,4,kpn[i],3,p4s2,i-105,dlC[3][2],true);
+  for (let i=106;i<=108;i++) addNode(i,4,kpNames[i],3,p4s2,i-105,dlC[3][2],true);
   const p4s3 = addNode(109,4,'自然语言数据处理',2,p4,3,dlC[3][1],false);
-  for (let i=109;i<=112;i++) addNode(i,4,kpn[i],3,p4s3,i-108,dlC[3][2],true);
+  for (let i=109;i<=112;i++) addNode(i,4,kpNames[i],3,p4s3,i-108,dlC[3][2],true);
   const p4s4 = addNode(113,4,'循环神经网络结构',2,p4,4,dlC[3][1],false);
-  for (let i=113;i<=116;i++) addNode(i,4,kpn[i],3,p4s4,i-112,dlC[3][2],true);
+  for (let i=113;i<=116;i++) addNode(i,4,kpNames[i],3,p4s4,i-112,dlC[3][2],true);
   // 项目五
   const p5 = addNode(117,4,'项目五 循环神经网络',1,dlRoot,5,dlC[4][0],false);
   const p5s1 = addNode(117,4,'门控循环网络',2,p5,1,dlC[4][1],false);
-  for (let i=117;i<=123;i++) addNode(i,4,kpn[i],3,p5s1,i-116,dlC[4][2],true);
+  for (let i=117;i<=123;i++) addNode(i,4,kpNames[i],3,p5s1,i-116,dlC[4][2],true);
   // 项目六
   const p6 = addNode(124,4,'项目六 生成对抗神经网络',1,dlRoot,6,dlC[5][0],false);
   const p6s1 = addNode(124,4,'GAN模型与训练',2,p6,1,dlC[5][1],false);
-  for (let i=124;i<=132;i++) addNode(i,4,kpn[i],3,p6s1,i-123,dlC[5][2],true);
+  for (let i=124;i<=132;i++) addNode(i,4,kpNames[i],3,p6s1,i-123,dlC[5][2],true);
   const p6s2 = addNode(133,4,'生成对抗网络核心知识点',2,p6,2,dlC[5][1],false);
-  for (let i=133;i<=134;i++) addNode(i,4,kpn[i],3,p6s2,i-132,dlC[5][2],true);
+  for (let i=133;i<=134;i++) addNode(i,4,kpNames[i],3,p6s2,i-132,dlC[5][2],true);
   // 项目七
   const p7 = addNode(135,4,'项目七 迁移学习',1,dlRoot,7,dlC[6][0],false);
   const p7s1 = addNode(135,4,'迁移学习原理',2,p7,1,dlC[6][1],false);
-  for (let i=135;i<=143;i++) addNode(i,4,kpn[i],3,p7s1,i-134,dlC[6][2],true);
+  for (let i=135;i<=143;i++) addNode(i,4,kpNames[i],3,p7s1,i-134,dlC[6][2],true);
 
   db.insert(knowledgeGraphNode).values(KGN).run();
   console.log(`  ✅ 知识图谱节点完成 (${KGN.length}个)`);
@@ -449,102 +449,292 @@ async function seed() {
   ]).run();
   console.log('  ✅ 题目完成 (50题)');
 
-  // ===================== 8. 作业 =====================
+  // ===================== 8. 作业 (24个: 4课程 x 6状态) =====================
   console.log('📋 插入作业...');
   db.insert(assignment).values([
-    // 保持原有6个作业不变
-    { id: 1, course_id: 1, teacher_id: 1, title: 'Python第一次作业', description: '涵盖变量与数据类型、控制流程、函数基础等核心知识点', question_ids: [1, 2, 3, 4, 5, 6], total_score: 100, start_time: '2026-07-15T08:00:00+08:00', end_time: '2026-07-18T23:59:00+08:00', status: 'published' },
-    { id: 2, course_id: 1, teacher_id: 1, title: 'Python第二次作业', description: '涵盖字典集合、文件操作、异常处理、面向对象等进阶知识点', question_ids: [7, 8, 9, 10, 11], total_score: 100, start_time: '2026-07-18T08:00:00+08:00', end_time: '2026-07-22T23:59:00+08:00', status: 'published' },
-    { id: 3, course_id: 2, teacher_id: 1, title: '数据结构第一次作业', description: '涵盖数组链表、栈队列、树、排序算法等核心知识点', question_ids: [12, 13, 14, 15, 16], total_score: 100, start_time: '2026-07-20T08:00:00+08:00', end_time: '2026-07-25T23:59:00+08:00', status: 'published' },
-    { id: 4, course_id: 2, teacher_id: 1, title: '数据结构第二次作业', description: '涵盖图的遍历、最短路径、二分查找等知识点', question_ids: [17, 18, 19, 20, 21], total_score: 100, start_time: '2026-07-22T08:00:00+08:00', end_time: '2026-07-28T23:59:00+08:00', status: 'published' },
-    { id: 5, course_id: 3, teacher_id: 1, title: '数据库原理第一次作业', description: '涵盖SQL查询、JOIN、子查询等核心知识点', question_ids: [24, 25, 26, 27, 28], total_score: 100, start_time: '2026-07-25T08:00:00+08:00', end_time: '2026-07-30T23:59:00+08:00', status: 'published' },
-    { id: 6, course_id: 3, teacher_id: 1, title: '数据库原理第二次作业', description: '涵盖数据库索引、事务并发控制等高级知识点', question_ids: [29, 30], total_score: 100, start_time: '2026-07-30T08:00:00+08:00', end_time: '2026-08-05T23:59:00+08:00', status: 'published' },
-    // 新增作业
-    { id: 7, course_id: 4, teacher_id: 1, title: '深度学习第一次作业：基础与框架', description: '涵盖AI基础概念、框架生态、NumPy/TensorFlow基础等知识点', question_ids: [31, 32, 33, 34, 35, 36, 37, 38, 39], total_score: 100, start_time: '2026-08-01T08:00:00+08:00', end_time: '2026-08-07T23:59:00+08:00', status: 'published' },
-    { id: 8, course_id: 4, teacher_id: 1, title: '深度学习第二次作业：神经网络与高级模型', description: '涵盖感知器、CNN、RNN、GAN、迁移学习等进阶知识点', question_ids: [40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50], total_score: 100, start_time: '2026-08-07T08:00:00+08:00', end_time: '2026-08-14T23:59:00+08:00', status: 'published' },
-  ]).run();
-  console.log('  ✅ 作业完成 (8个)');
+    // ===== 课程1: Python程序设计 (Q1-15) =====
+    // graded (已批改完成)
+    { id: 1, course_id: 1, teacher_id: 1, title: 'Python基础语法作业', description: '涵盖变量与数据类型、流程控制、循环结构等核心知识点', question_ids: [1, 2, 3, 4, 5], total_score: 100, start_time: '2026-07-01T08:00:00+08:00', end_time: '2026-07-05T23:59:00+08:00', status: 'graded' },
+    { id: 2, course_id: 1, teacher_id: 1, title: 'Python函数与复合类型作业', description: '涵盖函数定义、列表元组、字典集合等知识点', question_ids: [6, 7, 8, 9, 10], total_score: 100, start_time: '2026-07-06T08:00:00+08:00', end_time: '2026-07-10T23:59:00+08:00', status: 'graded' },
+    { id: 3, course_id: 1, teacher_id: 1, title: 'Python文件与面向对象作业', description: '涵盖文件操作、异常处理、面向对象基础等进阶知识点', question_ids: [11, 12, 13, 14, 15], total_score: 100, start_time: '2026-07-11T08:00:00+08:00', end_time: '2026-07-15T23:59:00+08:00', status: 'graded' },
+    // submitted (已提交待批改)
+    { id: 4, course_id: 1, teacher_id: 1, title: 'Python阶段练习(一)', description: '综合考察Python基础语法与函数', question_ids: [1, 3, 5, 7, 9], total_score: 100, start_time: '2026-07-25T08:00:00+08:00', end_time: '2026-07-31T23:59:00+08:00', status: 'submitted' },
+    // open (当前进行中)
+    { id: 5, course_id: 1, teacher_id: 1, title: 'Python阶段练习(二)', description: '综合考察Python复合类型与面向对象', question_ids: [2, 4, 6, 8, 10], total_score: 100, start_time: '2026-07-30T08:00:00+08:00', end_time: '2026-08-06T23:59:00+08:00', status: 'open' },
+    // future (未来发布)
+    { id: 6, course_id: 1, teacher_id: 1, title: 'Python期末模拟测试', description: 'Python课程期末模拟考试', question_ids: [12, 13, 14, 15, 1, 6], total_score: 100, start_time: '2026-08-12T08:00:00+08:00', end_time: '2026-08-18T23:59:00+08:00', status: 'future' },
 
-  // ===================== 9. 作答 + 批改 + 错题 =====================
+    // ===== 课程2: 数据结构与算法 (Q16-23) =====
+    // graded
+    { id: 7, course_id: 2, teacher_id: 1, title: '线性结构作业', description: '涵盖数组链表、栈队列等线性结构知识点', question_ids: [16, 17, 18, 19], total_score: 100, start_time: '2026-07-08T08:00:00+08:00', end_time: '2026-07-12T23:59:00+08:00', status: 'graded' },
+    { id: 8, course_id: 2, teacher_id: 1, title: '树结构作业', description: '涵盖二叉树、哈夫曼树、遍历等知识点', question_ids: [20, 21], total_score: 100, start_time: '2026-07-13T08:00:00+08:00', end_time: '2026-07-17T23:59:00+08:00', status: 'graded' },
+    { id: 9, course_id: 2, teacher_id: 1, title: '排序算法作业', description: '涵盖冒泡排序、快速排序等排序算法知识点', question_ids: [22, 23], total_score: 100, start_time: '2026-07-18T08:00:00+08:00', end_time: '2026-07-22T23:59:00+08:00', status: 'graded' },
+    // submitted
+    { id: 10, course_id: 2, teacher_id: 1, title: '数据结构阶段练习', description: '综合考察线性结构、树结构与排序算法', question_ids: [16, 18, 20, 22], total_score: 100, start_time: '2026-07-27T08:00:00+08:00', end_time: '2026-07-31T23:59:00+08:00', status: 'submitted' },
+    // open
+    { id: 11, course_id: 2, teacher_id: 1, title: '数据结构综合探索', description: '探索栈队列应用、图遍历与排序综合', question_ids: [17, 19, 21, 23], total_score: 100, start_time: '2026-07-31T08:00:00+08:00', end_time: '2026-08-07T23:59:00+08:00', status: 'open' },
+    // future
+    { id: 12, course_id: 2, teacher_id: 1, title: '数据结构期末测试', description: '数据结构课程期末综合测试', question_ids: [16, 17, 18, 19, 20, 21, 22], total_score: 100, start_time: '2026-08-14T08:00:00+08:00', end_time: '2026-08-20T23:59:00+08:00', status: 'future' },
+
+    // ===== 课程3: 数据库原理 (Q24-30) =====
+    // graded
+    { id: 13, course_id: 3, teacher_id: 2, title: 'SQL基础查询作业', description: '涵盖SELECT、DROP TABLE等基础SQL语句', question_ids: [24, 25, 26], total_score: 100, start_time: '2026-07-12T08:00:00+08:00', end_time: '2026-07-16T23:59:00+08:00', status: 'graded' },
+    { id: 14, course_id: 3, teacher_id: 2, title: 'SQL高级查询作业', description: '涵盖JOIN、GROUP BY、子查询等高级SQL', question_ids: [27, 28], total_score: 100, start_time: '2026-07-17T08:00:00+08:00', end_time: '2026-07-21T23:59:00+08:00', status: 'graded' },
+    { id: 15, course_id: 3, teacher_id: 2, title: '数据库优化作业', description: '涵盖索引优化、查询性能调优等知识点', question_ids: [29, 30], total_score: 100, start_time: '2026-07-22T08:00:00+08:00', end_time: '2026-07-26T23:59:00+08:00', status: 'graded' },
+    // submitted
+    { id: 16, course_id: 3, teacher_id: 2, title: '数据库阶段练习', description: '综合考察SQL查询、索引与事务', question_ids: [24, 26, 28, 30], total_score: 100, start_time: '2026-07-28T08:00:00+08:00', end_time: '2026-07-31T23:59:00+08:00', status: 'submitted' },
+    // open
+    { id: 17, course_id: 3, teacher_id: 2, title: '数据库综合探索', description: '考察高级查询、索引设计与事务控制', question_ids: [25, 27, 29], total_score: 100, start_time: '2026-08-01T08:00:00+08:00', end_time: '2026-08-08T23:59:00+08:00', status: 'open' },
+    // future
+    { id: 18, course_id: 3, teacher_id: 2, title: '数据库期末测试', description: '数据库原理课程期末综合测试', question_ids: [24, 25, 26, 27, 28, 29, 30], total_score: 100, start_time: '2026-08-16T08:00:00+08:00', end_time: '2026-08-22T23:59:00+08:00', status: 'future' },
+
+    // ===== 课程4: 深度学习框架 (Q31-50) =====
+    // graded
+    { id: 19, course_id: 4, teacher_id: 2, title: 'AI基础与框架作业', description: '涵盖AI/ML/DL概念、框架生态与TensorFlow基础', question_ids: [31, 32, 33, 34], total_score: 100, start_time: '2026-07-15T08:00:00+08:00', end_time: '2026-07-19T23:59:00+08:00', status: 'graded' },
+    { id: 20, course_id: 4, teacher_id: 2, title: 'NumPy与可视化作业', description: '涵盖NumPy数组操作、Matplotlib绘图与scikit-learn基础', question_ids: [35, 36, 37, 38], total_score: 100, start_time: '2026-07-20T08:00:00+08:00', end_time: '2026-07-24T23:59:00+08:00', status: 'graded' },
+    { id: 21, course_id: 4, teacher_id: 2, title: '神经网络基础作业', description: '涵盖感知器、激活函数、梯度下降与反向传播', question_ids: [39, 40, 41, 42, 43], total_score: 100, start_time: '2026-07-25T08:00:00+08:00', end_time: '2026-07-29T23:59:00+08:00', status: 'graded' },
+    // submitted
+    { id: 22, course_id: 4, teacher_id: 2, title: 'CNN与RNN作业', description: '涵盖卷积神经网络、循环神经网络及LSTM', question_ids: [44, 45, 46, 47], total_score: 100, start_time: '2026-07-28T08:00:00+08:00', end_time: '2026-07-31T23:59:00+08:00', status: 'submitted' },
+    // open
+    { id: 23, course_id: 4, teacher_id: 2, title: 'GAN与迁移学习', description: '涵盖生成对抗网络、迁移学习等前沿主题', question_ids: [48, 49, 50], total_score: 100, start_time: '2026-08-02T08:00:00+08:00', end_time: '2026-08-09T23:59:00+08:00', status: 'open' },
+    // future
+    { id: 24, course_id: 4, teacher_id: 2, title: '深度学习综合项目', description: '深度学习框架课程期末综合项目', question_ids: [31, 35, 39, 44, 48], total_score: 100, start_time: '2026-08-18T08:00:00+08:00', end_time: '2026-08-25T23:59:00+08:00', status: 'future' },
+  ]).run();
+  console.log('  ✅ 作业完成 (24个)');
+
+  // ===================== 9. 作答 + 批改 + 错题 (16个作业含作答) =====================
   console.log('✍️  插入作答/批改/错题...');
   let ansId = 0, gtId = 0, ebId = 0;
 
-  // 作业1: 10学生 x 6题
-  const a1Data = [
-    { sid: 3, ans: ['C', 'C', '正确', 'B', 'type()', 'B'], scr: [22, 11, 11, 11, 23, 22] },
-    { sid: 4, ans: ['C', 'C', '正确', 'B', 'type()', 'B'], scr: [22, 11, 11, 11, 23, 22] },
-    { sid: 5, ans: ['C', 'C', '正确', 'A', 'type()', 'B'], scr: [22, 11, 11, 0, 23, 22] },
-    { sid: 6, ans: ['C', 'C', '正确', 'B', 'type()', 'B'], scr: [22, 11, 11, 11, 18, 22] },
-    { sid: 7, ans: ['C', 'C', '正确', 'B', 'type', 'B'], scr: [22, 11, 11, 11, 15, 0] },
-    { sid: 8, ans: ['C', 'A', '正确', 'B', 'type()', 'B'], scr: [22, 0, 11, 11, 23, 22] },
-    { sid: 9, ans: ['C', 'C', '正确', 'B', 'type()', 'B'], scr: [22, 11, 11, 11, 23, 22] },
-    { sid: 10, ans: ['A', 'C', '错误', 'C', 'type', 'B'], scr: [0, 11, 0, 0, 10, 0] },
-    { sid: 11, ans: ['C', 'C', '正确', 'B', 'type()', 'B'], scr: [22, 11, 11, 11, 23, 22] },
-    { sid: 12, ans: ['B', 'C', '正确', 'B', 'type()', 'B'], scr: [0, 11, 11, 11, 12, 22] },
-  ];
-  const a1Full = [22, 11, 11, 11, 23, 22];
-  const a1Ref = ['C', 'C', '正确', 'B', 'type()', 'B'];
-  const a1Kps = [1, 1, 1, 3, 3, 4];
-
-  for (const d of a1Data) {
-    for (let qi = 0; qi < 6; qi++) {
-      ansId++; gtId++;
-      db.insert(answer).values({ id: ansId, assignment_id: 1, student_id: d.sid, question_id: qi + 1, student_answer: d.ans[qi], is_submitted: true, submitted_at: '2026-07-17T20:00:00+08:00' }).run();
-      db.insert(gradingTask).values({ id: gtId, answer_id: ansId, assignment_id: 1, student_id: d.sid, question_id: qi + 1, knowledge_point_id: a1Kps[qi], full_score: a1Full[qi], question_type: qi < 4 ? 'single_choice' : (qi === 4 ? 'fill_blank' : 'code'), reference_answer: a1Ref[qi], student_answer: d.ans[qi], total_score: d.scr[qi], status: 'completed', overall_comment: d.scr[qi] >= a1Full[qi] * 0.8 ? '优秀' : d.scr[qi] > 0 ? '需加强' : '未掌握', completed_at: '2026-07-18T10:00:00+08:00' }).run();
-      if (d.scr[qi] < a1Full[qi] * 0.8) {
-        ebId++;
-        const et = d.scr[qi] === 0 ? 'empty' : ['knowledge', 'logic', 'careless', 'concept_confusion', 'method_error'][qi % 5];
-        db.insert(errorBook).values({ id: ebId, student_id: d.sid, question_id: qi + 1, knowledge_point_id: a1Kps[qi], assignment_id: 1, grading_task_id: gtId, student_answer: d.ans[qi], correct_answer: a1Ref[qi], error_type: et, error_analysis: `得分${d.scr[qi]}/${a1Full[qi]}`, review_status: 'pending' }).run();
+  // Helper: insert graded assignment answers (已完成批改)
+  function seedGraded(
+    assignId: number, qids: number[], fullScores: number[],
+    refs: string[], kps: number[], qtypes: string[],
+    data: {sid: number, ans: string[], scr: number[]}[],
+    subAt: string, gradedAt: string
+  ) {
+    for (const d of data) {
+      for (let qi = 0; qi < qids.length; qi++) {
+        ansId++; gtId++;
+        db.insert(answer).values({ id: ansId, assignment_id: assignId, student_id: d.sid, question_id: qids[qi], student_answer: d.ans[qi], is_submitted: true, submitted_at: subAt }).run();
+        const isGood = d.scr[qi] >= fullScores[qi] * 0.8;
+        db.insert(gradingTask).values({ id: gtId, answer_id: ansId, assignment_id: assignId, student_id: d.sid, question_id: qids[qi], knowledge_point_id: kps[qi], full_score: fullScores[qi], question_type: qtypes[qi], reference_answer: refs[qi], student_answer: d.ans[qi], total_score: d.scr[qi], status: 'completed', overall_comment: isGood ? '优秀' : d.scr[qi] > 0 ? '需加强' : '未掌握', completed_at: gradedAt }).run();
+        if (d.scr[qi] < fullScores[qi] * 0.8) {
+          ebId++;
+          const et = d.scr[qi] === 0 ? 'empty' : ['knowledge', 'logic', 'careless', 'concept_confusion', 'method_error'][qi % 5];
+          db.insert(errorBook).values({ id: ebId, student_id: d.sid, question_id: qids[qi], knowledge_point_id: kps[qi], assignment_id: assignId, grading_task_id: gtId, student_answer: d.ans[qi], correct_answer: refs[qi], error_type: et, error_analysis: `得分${d.scr[qi]}/${fullScores[qi]}`, review_status: 'pending' }).run();
+        }
       }
     }
   }
 
-  // 作业2: 5学生 x 5题
-  const a2Data = [
-    { sid: 3, ans: ['C', 'with open("file.txt", "r") as f:\n    lines = f.readlines()', 'C', 'class Student:\n    def __init__(self, name, score):\n        self.name = name\n        self.score = score\n    def is_pass(self):\n        return self.score >= 60', 'B'], scr: [20, 20, 20, 20, 20] },
-    { sid: 4, ans: ['C', 'with open("file.txt", "r") as f:\n    lines = f.readlines()', 'C', 'class Student:\n    def __init__(self, name, score):\n        self.name = name\n        self.score = score\n    def is_pass(self):\n        return self.score >= 60', 'B'], scr: [20, 20, 20, 20, 20] },
-    { sid: 5, ans: ['C', 'with open("file.txt", "r") as f:\n    lines = f.readlines()', 'C', 'class Student:\n    def __init__(self, name, score):\n        self.name = name\n        self.score = score\n    def is_pass(self):\n        return self.score >= 60', 'B'], scr: [20, 20, 20, 20, 20] },
-    { sid: 7, ans: ['B', 'f = open("file.txt"); lines = f.read()', 'C', 'class Student:\n    pass', 'A'], scr: [0, 8, 20, 0, 0] },
-    { sid: 10, ans: ['A', '', 'B', '', 'A'], scr: [0, 0, 0, 0, 0] },
-  ];
-  const a2Full = [20, 20, 20, 20, 20];
-  const a2Ref = ['C', 'with open("file.txt", "r") as f:\n    lines = f.readlines()', 'C', 'class Student:\n    def __init__(self, name, score):\n        self.name = name\n        self.score = score\n    def is_pass(self):\n        return self.score >= 60', 'B'];
-  const a2Kps = [7, 8, 9, 10, 10];
-
-  for (const d of a2Data) {
-    for (let qi = 0; qi < 5; qi++) {
-      ansId++; gtId++;
-      db.insert(answer).values({ id: ansId, assignment_id: 2, student_id: d.sid, question_id: qi + 7, student_answer: d.ans[qi], is_submitted: true, submitted_at: '2026-07-21T20:00:00+08:00' }).run();
-      db.insert(gradingTask).values({ id: gtId, answer_id: ansId, assignment_id: 2, student_id: d.sid, question_id: qi + 7, knowledge_point_id: a2Kps[qi], full_score: a2Full[qi], question_type: qi <= 2 ? 'single_choice' : 'short_answer', reference_answer: a2Ref[qi], student_answer: d.ans[qi], total_score: d.scr[qi], status: 'completed', overall_comment: d.scr[qi] >= 10 ? '优秀' : d.scr[qi] > 0 ? '需加强' : '未掌握', completed_at: '2026-07-22T10:00:00+08:00' }).run();
-      if (d.scr[qi] < 10) {
-        ebId++;
-        db.insert(errorBook).values({ id: ebId, student_id: d.sid, question_id: qi + 7, knowledge_point_id: a2Kps[qi], assignment_id: 2, grading_task_id: gtId, student_answer: d.ans[qi], correct_answer: a2Ref[qi], error_type: d.scr[qi] === 0 ? 'empty' : 'knowledge', error_analysis: `得分${d.scr[qi]}/${a2Full[qi]}`, review_status: 'pending' }).run();
+  // Helper: insert submitted assignment answers (已提交待批改)
+  function seedSubmitted(
+    assignId: number, qids: number[], fullScores: number[],
+    refs: string[], kps: number[], qtypes: string[],
+    data: {sid: number, ans: string[]}[],
+    subAt: string
+  ) {
+    for (const d of data) {
+      for (let qi = 0; qi < qids.length; qi++) {
+        ansId++; gtId++;
+        db.insert(answer).values({ id: ansId, assignment_id: assignId, student_id: d.sid, question_id: qids[qi], student_answer: d.ans[qi], is_submitted: true, submitted_at: subAt }).run();
+        db.insert(gradingTask).values({ id: gtId, answer_id: ansId, assignment_id: assignId, student_id: d.sid, question_id: qids[qi], knowledge_point_id: kps[qi], full_score: fullScores[qi], question_type: qtypes[qi], reference_answer: refs[qi], student_answer: d.ans[qi], total_score: 0, status: 'pending' }).run();
       }
     }
   }
 
-  // 作业3: 4学生 x 5题
-  const a3Data = [
-    { sid: 3, ans: ['B', '指针', 'B', '正确', 'A B D E C'], scr: [20, 20, 20, 20, 20] },
-    { sid: 4, ans: ['B', '指针', 'B', '正确', 'A B D E C'], scr: [20, 20, 20, 20, 20] },
-    { sid: 5, ans: ['B', '指针', 'B', '正确', 'A B D E C'], scr: [20, 20, 20, 20, 20] },
-    { sid: 8, ans: ['B', '指针', 'B', '错误', 'A B C D E'], scr: [20, 20, 20, 0, 0] },
-  ];
-  const a3Full = [20, 20, 20, 20, 20];
-  const a3Ref = ['B', '指针', 'B', '正确', 'A B D E C'];
-  const a3Kps = [11, 11, 12, 12, 13];
+  // ===================== 课程1: Python程序设计 =====================
+  // Assignment 1 (graded): Q[1,2,3,4,5] — 10 students
+  seedGraded(1, [1,2,3,4,5], [20,20,20,20,20],
+    ['C','C','正确','B','type()'], [1,1,1,3,3],
+    ['single_choice','single_choice','judgment','single_choice','fill_blank'],
+    [
+      {sid:3, ans:['C','C','正确','B','type()'], scr:[20,20,20,20,20]},
+      {sid:4, ans:['C','C','正确','B','type()'], scr:[20,20,20,20,20]},
+      {sid:5, ans:['C','C','正确','A','type()'], scr:[20,20,20,0,20]},
+      {sid:6, ans:['C','C','正确','B','type()'], scr:[20,20,20,20,16]},
+      {sid:7, ans:['C','C','正确','B','type'], scr:[20,20,20,20,12]},
+      {sid:8, ans:['C','A','正确','B','type()'], scr:[20,0,20,20,20]},
+      {sid:9, ans:['C','C','正确','B','type()'], scr:[20,20,20,20,20]},
+      {sid:10, ans:['A','C','错误','C','type'], scr:[0,20,0,0,8]},
+      {sid:11, ans:['C','C','正确','B','type()'], scr:[20,20,20,20,20]},
+      {sid:12, ans:['B','C','正确','B','type()'], scr:[0,20,20,20,10]},
+    ], '2026-07-03T20:00:00+08:00', '2026-07-06T10:00:00+08:00');
 
-  for (const d of a3Data) {
-    for (let qi = 0; qi < 5; qi++) {
-      ansId++; gtId++;
-      db.insert(answer).values({ id: ansId, assignment_id: 3, student_id: d.sid, question_id: qi + 12, student_answer: d.ans[qi], is_submitted: true, submitted_at: '2026-07-23T20:00:00+08:00' }).run();
-      db.insert(gradingTask).values({ id: gtId, answer_id: ansId, assignment_id: 3, student_id: d.sid, question_id: qi + 12, knowledge_point_id: a3Kps[qi], full_score: a3Full[qi], question_type: qi <= 1 ? 'single_choice' : (qi === 3 ? 'judgment' : 'short_answer'), reference_answer: a3Ref[qi], student_answer: d.ans[qi], total_score: d.scr[qi], status: 'completed', overall_comment: d.scr[qi] >= 16 ? '优秀' : d.scr[qi] > 0 ? '需加强' : '未掌握', completed_at: '2026-07-24T10:00:00+08:00' }).run();
-      if (d.scr[qi] < 16) {
-        ebId++;
-        db.insert(errorBook).values({ id: ebId, student_id: d.sid, question_id: qi + 12, knowledge_point_id: a3Kps[qi], assignment_id: 3, grading_task_id: gtId, student_answer: d.ans[qi], correct_answer: a3Ref[qi], error_type: d.scr[qi] === 0 ? 'empty' : 'knowledge', error_analysis: `得分${d.scr[qi]}/${a3Full[qi]}`, review_status: 'pending' }).run();
-      }
-    }
-  }
+  // Assignment 2 (graded): Q[6,7,8,9,10] — 5 students
+  seedGraded(2, [6,7,8,9,10], [20,20,20,20,20],
+    ['B','def add(a, b):\n    return a + b','def is_prime(n):\n    if n < 2:\n        return False\n    for i in range(2, int(n**0.5) + 1):\n        if n % i == 0:\n            return False\n    return True','C','ABD'],
+    [4,5,6,7,7],
+    ['single_choice','short_answer','code','single_choice','multiple_choice'],
+    [
+      {sid:3, ans:['B','def add(a, b):\n    return a + b','def is_prime(n):\n    if n < 2:\n        return False\n    for i in range(2, int(n**0.5) + 1):\n        if n % i == 0:\n            return False\n    return True','C','ABD'], scr:[20,20,20,20,20]},
+      {sid:4, ans:['B','def add(a, b):\n    return a + b','def is_prime(n):\n    if n < 2:\n        return False\n    for i in range(2, int(n**0.5) + 1):\n        if n % i == 0:\n            return False\n    return True','C','ABD'], scr:[20,20,20,20,20]},
+      {sid:5, ans:['B','def add(a, b):\n    return a + b','def is_prime(n):\n    if n < 2:\n        return False\n    for i in range(2, int(n**0.5) + 1):\n        if n % i == 0:\n            return False\n    return True','C','ABD'], scr:[20,20,20,20,20]},
+      {sid:7, ans:['B','def add(a,b): return a+b','def is_prime(n):\n    for i in range(2,n):\n        if n%i==0: return False\n    return True','C','AB'], scr:[20,12,14,20,0]},
+      {sid:10, ans:['A','','','A','AC'], scr:[0,0,0,0,0]},
+    ], '2026-07-08T20:00:00+08:00', '2026-07-11T10:00:00+08:00');
+
+  // Assignment 3 (graded): Q[11,12,13,14,15] — 4 students
+  seedGraded(3, [11,12,13,14,15], [20,20,20,20,20],
+    ['with open("file.txt", "r") as f:\n    lines = f.readlines()','C','正确','class Student:\n    def __init__(self, name, score):\n        self.name = name\n        self.score = score\n    def is_pass(self):\n        return self.score >= 60','class Stack:\n    def __init__(self):\n        self.items = []\n    def push(self, item):\n        self.items.append(item)\n    def pop(self):\n        return self.items.pop()\n    def is_empty(self):\n        return len(self.items) == 0'],
+    [8,9,9,10,10],
+    ['short_answer','single_choice','judgment','short_answer','code'],
+    [
+      {sid:3, ans:['with open("file.txt", "r") as f:\n    lines = f.readlines()','C','正确','class Student:\n    def __init__(self, name, score):\n        self.name = name\n        self.score = score\n    def is_pass(self):\n        return self.score >= 60','class Stack:\n    def __init__(self):\n        self.items = []\n    def push(self, item):\n        self.items.append(item)\n    def pop(self):\n        return self.items.pop()\n    def is_empty(self):\n        return len(self.items) == 0'], scr:[20,20,20,20,20]},
+      {sid:4, ans:['with open("file.txt", "r") as f:\n    lines = f.readlines()','C','正确','class Student:\n    def __init__(self, name, score):\n        self.name = name\n        self.score = score\n    def is_pass(self):\n        return self.score >= 60','class Stack:\n    def __init__(self):\n        self.items = []\n    def push(self, item):\n        self.items.append(item)\n    def pop(self):\n        return self.items.pop()\n    def is_empty(self):\n        return len(self.items) == 0'], scr:[20,20,20,20,20]},
+      {sid:7, ans:['f = open("file.txt"); lines = f.read()','C','错误','class Student:\n    pass','class Stack:\n    def push(self): pass'], scr:[6,20,0,0,4]},
+      {sid:10, ans:['','A','正确','',''], scr:[0,0,20,0,0]},
+    ], '2026-07-13T20:00:00+08:00', '2026-07-16T10:00:00+08:00');
+
+  // Assignment 4 (submitted): Q[1,3,5,7,9] — 4 students
+  seedSubmitted(4, [1,3,5,7,9], [20,20,20,20,20],
+    ['C','正确','type()','def add(a, b):\n    return a + b','C'],
+    [1,1,3,5,7],
+    ['single_choice','judgment','fill_blank','short_answer','single_choice'],
+    [
+      {sid:3, ans:['C','正确','type()','def add(a, b):\n    return a + b','C']},
+      {sid:4, ans:['C','正确','type()','def add(a,b): return a+b','C']},
+      {sid:7, ans:['C','正确','type','def sum(a,b): return a+b','B']},
+      {sid:10, ans:['A','错误','','','A']},
+    ], '2026-07-30T20:00:00+08:00');
+
+  // ===================== 课程2: 数据结构与算法 =====================
+  // Assignment 7 (graded): Q[16,17,18,19] — 4 students
+  seedGraded(7, [16,17,18,19], [25,25,25,25],
+    ['B','指针','B','正确'], [11,11,12,12],
+    ['single_choice','fill_blank','single_choice','judgment'],
+    [
+      {sid:3, ans:['B','指针','B','正确'], scr:[25,25,25,25]},
+      {sid:4, ans:['B','指针','B','正确'], scr:[25,25,25,25]},
+      {sid:7, ans:['B','指针','B','错误'], scr:[25,25,25,0]},
+      {sid:10, ans:['A','数据','A','正确'], scr:[0,0,0,25]},
+    ], '2026-07-10T20:00:00+08:00', '2026-07-13T10:00:00+08:00');
+
+  // Assignment 8 (graded): Q[20,21] — 4 students
+  seedGraded(8, [20,21], [40,60],
+    ['A B D E C','ABC'], [13,13],
+    ['short_answer','multiple_choice'],
+    [
+      {sid:3, ans:['A B D E C','ABC'], scr:[40,60]},
+      {sid:4, ans:['A B D E C','ABC'], scr:[40,60]},
+      {sid:7, ans:['A B C D E','ABC'], scr:[0,60]},
+      {sid:10, ans:['A B C','AB'], scr:[0,0]},
+    ], '2026-07-15T20:00:00+08:00', '2026-07-18T10:00:00+08:00');
+
+  // Assignment 9 (graded): Q[22,23] — 4 students
+  seedGraded(9, [22,23], [40,60],
+    ['B','def bubble_sort(arr):\n    n = len(arr)\n    for i in range(n):\n        for j in range(0, n-i-1):\n            if arr[j] > arr[j+1]:\n                arr[j], arr[j+1] = arr[j+1], arr[j]\n    return arr'],
+    [14,14], ['single_choice','code'],
+    [
+      {sid:3, ans:['B','def bubble_sort(arr):\n    n = len(arr)\n    for i in range(n):\n        for j in range(0, n-i-1):\n            if arr[j] > arr[j+1]:\n                arr[j], arr[j+1] = arr[j+1], arr[j]\n    return arr'], scr:[40,60]},
+      {sid:4, ans:['B','def bubble_sort(arr):\n    n = len(arr)\n    for i in range(n):\n        for j in range(0, n-i-1):\n            if arr[j] > arr[j+1]:\n                arr[j], arr[j+1] = arr[j+1], arr[j]\n    return arr'], scr:[40,60]},
+      {sid:7, ans:['B','def sort(arr):\n    arr.sort()\n    return arr'], scr:[40,18]},
+      {sid:10, ans:['C',''], scr:[0,0]},
+    ], '2026-07-20T20:00:00+08:00', '2026-07-23T10:00:00+08:00');
+
+  // Assignment 10 (submitted): Q[16,18,20,22] — 4 students
+  seedSubmitted(10, [16,18,20,22], [25,25,25,25],
+    ['B','B','A B D E C','B'], [11,12,13,14],
+    ['single_choice','single_choice','short_answer','single_choice'],
+    [
+      {sid:3, ans:['B','B','A B D E C','B']},
+      {sid:4, ans:['B','B','A B D E C','B']},
+      {sid:7, ans:['B','B','A B C D E','B']},
+      {sid:10, ans:['A','A','','C']},
+    ], '2026-07-30T20:00:00+08:00');
+
+  // ===================== 课程3: 数据库原理 =====================
+  // Assignment 13 (graded): Q[24,25,26] — 4 students
+  seedGraded(13, [24,25,26], [30,30,40],
+    ['B','DROP','SELECT * FROM students;'], [29,29,29],
+    ['single_choice','fill_blank','short_answer'],
+    [
+      {sid:3, ans:['B','DROP','SELECT * FROM students;'], scr:[30,30,40]},
+      {sid:4, ans:['B','DROP','SELECT * FROM students;'], scr:[30,30,40]},
+      {sid:7, ans:['B','drop','SELECT * FROM students'], scr:[30,0,32]},
+      {sid:10, ans:['C','DELETE',''], scr:[0,0,0]},
+    ], '2026-07-14T20:00:00+08:00', '2026-07-17T10:00:00+08:00');
+
+  // Assignment 14 (graded): Q[27,28] — 4 students
+  seedGraded(14, [27,28], [50,50],
+    ['SELECT c.class_name, AVG(s.score) as avg_score\nFROM scores s\nJOIN classes c ON s.class_id = c.id\nGROUP BY c.class_name;','ABC'],
+    [30,30], ['short_answer','multiple_choice'],
+    [
+      {sid:3, ans:['SELECT c.class_name, AVG(s.score) as avg_score\nFROM scores s\nJOIN classes c ON s.class_id = c.id\nGROUP BY c.class_name;','ABC'], scr:[50,50]},
+      {sid:4, ans:['SELECT c.class_name, AVG(s.score) as avg_score\nFROM scores s\nJOIN classes c ON s.class_id = c.id\nGROUP BY c.class_name;','ABC'], scr:[50,50]},
+      {sid:7, ans:['SELECT class_name, AVG(score) FROM scores GROUP BY class_name;','ABC'], scr:[35,50]},
+      {sid:10, ans:['','AB'], scr:[0,0]},
+    ], '2026-07-19T20:00:00+08:00', '2026-07-22T10:00:00+08:00');
+
+  // Assignment 15 (graded): Q[29,30] — 4 students
+  seedGraded(15, [29,30], [50,50],
+    ['B','错误'], [31,31],
+    ['single_choice','judgment'],
+    [
+      {sid:3, ans:['B','错误'], scr:[50,50]},
+      {sid:4, ans:['B','错误'], scr:[50,50]},
+      {sid:7, ans:['B','正确'], scr:[50,0]},
+      {sid:10, ans:['A','正确'], scr:[0,0]},
+    ], '2026-07-24T20:00:00+08:00', '2026-07-27T10:00:00+08:00');
+
+  // Assignment 16 (submitted): Q[24,26,28,30] — 4 students
+  seedSubmitted(16, [24,26,28,30], [25,25,25,25],
+    ['B','SELECT * FROM students;','ABC','错误'], [29,29,30,31],
+    ['single_choice','short_answer','multiple_choice','judgment'],
+    [
+      {sid:3, ans:['B','SELECT * FROM students;','ABC','错误']},
+      {sid:4, ans:['B','SELECT * FROM students;','ABC','错误']},
+      {sid:7, ans:['B','SELECT * FROM students','ABC','正确']},
+      {sid:10, ans:['C','','AB','正确']},
+    ], '2026-07-30T20:00:00+08:00');
+
+  // ===================== 课程4: 深度学习框架 =====================
+  // Assignment 19 (graded): Q[31,32,33,34] — 4 students
+  seedGraded(19, [31,32,33,34], [25,25,25,25],
+    ['A','C','C','B'], [42,46,57,59],
+    ['single_choice','single_choice','single_choice','single_choice'],
+    [
+      {sid:3, ans:['A','C','C','B'], scr:[25,25,25,25]},
+      {sid:4, ans:['A','C','C','B'], scr:[25,25,25,25]},
+      {sid:7, ans:['A','B','C','C'], scr:[25,0,25,0]},
+      {sid:10, ans:['B','A','A','A'], scr:[0,0,0,0]},
+    ], '2026-07-17T20:00:00+08:00', '2026-07-20T10:00:00+08:00');
+
+  // Assignment 20 (graded): Q[35,36,37,38] — 4 students
+  seedGraded(20, [35,36,37,38], [25,25,25,25],
+    ['C','B','plot()','B'], [62,68,73,78],
+    ['single_choice','single_choice','fill_blank','single_choice'],
+    [
+      {sid:3, ans:['C','B','plot()','B'], scr:[25,25,25,25]},
+      {sid:4, ans:['C','B','plot()','B'], scr:[25,25,25,25]},
+      {sid:7, ans:['C','B','plt.plot()','B'], scr:[25,25,20,25]},
+      {sid:10, ans:['A','A','hist()','A'], scr:[0,0,0,0]},
+    ], '2026-07-22T20:00:00+08:00', '2026-07-25T10:00:00+08:00');
+
+  // Assignment 21 (graded): Q[39,40,41,42,43] — 4 students
+  seedGraded(21, [39,40,41,42,43], [20,20,20,20,20],
+    ['B','B','C','B','通过链式法则从输出层向输入层逐层计算损失函数对各参数的梯度，然后用梯度下降更新参数'],
+    [86,89,92,97,98],
+    ['single_choice','single_choice','single_choice','single_choice','short_answer'],
+    [
+      {sid:3, ans:['B','B','C','B','通过链式法则从输出层向输入层逐层计算损失函数对各参数的梯度，然后用梯度下降更新参数'], scr:[20,20,20,20,20]},
+      {sid:4, ans:['B','B','C','B','通过链式法则从输出层向输入层逐层计算损失函数对各参数的梯度，然后用梯度下降更新参数'], scr:[20,20,20,20,20]},
+      {sid:7, ans:['B','B','C','A','用链式法则计算梯度'], scr:[20,20,20,0,8]},
+      {sid:10, ans:['A','A','A','A',''], scr:[0,0,0,0,0]},
+    ], '2026-07-27T20:00:00+08:00', '2026-07-30T10:00:00+08:00');
+
+  // Assignment 22 (submitted): Q[44,45,46,47] — 4 students
+  seedSubmitted(22, [44,45,46,47], [25,25,25,25],
+    ['B','C','B','B'], [101,104,113,118],
+    ['single_choice','single_choice','single_choice','single_choice'],
+    [
+      {sid:3, ans:['B','C','B','B']},
+      {sid:4, ans:['B','C','B','B']},
+      {sid:7, ans:['B','C','A','B']},
+      {sid:10, ans:['A','A','A','A']},
+    ], '2026-07-30T20:00:00+08:00');
+
   console.log(`  ✅ 作答${ansId}条, 批改${gtId}条, 错题${ebId}条`);
 
   // ===================== 10. 知识掌握度 =====================
@@ -594,7 +784,7 @@ async function seed() {
   console.log(`  学校:1 学院:1 专业:1 班级:2`);
   console.log(`  教师:2 学生:10 课程:4 知识点:143`);
   console.log(`  知识图谱节点:${KGN.length} 边:${KGE.length}`);
-  console.log(`  题目:50 作业:8`);
+  console.log(`  题目:50 作业:24`);
   console.log(`  作答:${ansId} 批改:${gtId} 错题:${ebId}`);
   console.log(`  知识掌握度:${masteryValues.length}`);
   console.log('================================');
