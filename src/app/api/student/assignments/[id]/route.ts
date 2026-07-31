@@ -114,6 +114,7 @@ export async function GET(
             full_score: gradingMap.get(a.question_id)!.full_score,
             dimension_scores: gradingMap.get(a.question_id)!.dimension_scores,
             annotations: gradingMap.get(a.question_id)!.annotations,
+            status: gradingMap.get(a.question_id)!.status,
           } : null,
         })),
       },

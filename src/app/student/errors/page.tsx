@@ -75,7 +75,7 @@ export default function StudentErrors() {
   const [kpFilterName, setKpFilterName] = useState('');
   const [toast, setToast] = useState<{ message: string; kpName: string } | null>(null);
 
-  // Data loading
+  // ─── Data loading via apiFetch ───
   useEffect(() => {
     setMounted(true);
     getCurrentUser().then((user) => {
@@ -103,7 +103,7 @@ export default function StudentErrors() {
     });
   }, [kpIdFromQuery]);
 
-  // Toast auto-dismiss
+  // Toast auto-dismiss — must be before any early return
   useEffect(() => {
     if (toast) { const t = setTimeout(() => setToast(null), 4000); return () => clearTimeout(t); }
   }, [toast]);
@@ -116,6 +116,7 @@ export default function StudentErrors() {
         body: JSON.stringify({ error_id: errorId, review_status: 'mastered' }),
       });
       setErrors(prev => prev.map(e => e.id === errorId ? { ...e, review_status: 'mastered' } : e));
+      // Show toast
       const err = errors.find(e => e.id === errorId);
       if (err) setToast({ message: '已掌握！知识图谱掌握度已同步更新', kpName: err.knowledge_point_name });
     } catch {}

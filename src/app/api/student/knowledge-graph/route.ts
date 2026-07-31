@@ -110,6 +110,71 @@ const CURRICULUM: Record<number, {
       ]},
     ],
   },
+
+  3: {
+    textbook: '《数据库系统概论（第5版）》王珊 萨师煊 高等教育出版社',
+    chapters: [
+      { ch: 1, name: '数据库基础', sections: [
+        { sec: 1, name: '关系模型与ER图', kpIds: [28] },
+        { sec: 2, name: '数据库范式', kpIds: [33] },
+        { sec: 3, name: '数据库设计方法论', kpIds: [38] },
+      ]},
+      { ch: 2, name: 'SQL语言', sections: [
+        { sec: 1, name: 'SQL基础查询', kpIds: [29] },
+        { sec: 2, name: '视图与权限管理', kpIds: [35] },
+      ]},
+      { ch: 3, name: '高级SQL与优化', sections: [
+        { sec: 1, name: 'SQL高级查询', kpIds: [30] },
+        { sec: 2, name: '索引与优化', kpIds: [31] },
+        { sec: 3, name: '存储过程与触发器', kpIds: [34] },
+      ]},
+      { ch: 4, name: '事务与安全', sections: [
+        { sec: 1, name: '事务与并发控制', kpIds: [32] },
+        { sec: 2, name: '数据库安全与加密', kpIds: [40] },
+        { sec: 3, name: 'JDBC与数据库连接', kpIds: [39] },
+      ]},
+      { ch: 5, name: '运维与NoSQL', sections: [
+        { sec: 1, name: '数据库备份与恢复', kpIds: [36] },
+        { sec: 2, name: 'NoSQL数据库简介', kpIds: [37] },
+        { sec: 3, name: '分布式数据库', kpIds: [41] },
+      ]},
+    ],
+  },
+  4: {
+    textbook: '《深度学习框架》课程教材',
+    chapters: [
+      { ch: 1, name: '项目一 搭建深度学习开发环境', sections: [
+        { sec: 1, name: '人工智能与深度学习导论', kpIds: [42,43,44,45,46,47,48,49,50,51] },
+        { sec: 2, name: '应用领域与框架生态', kpIds: [52,53,54,55,56,57,58,59,60,61] },
+      ]},
+      { ch: 2, name: '项目二 夯实深度学习开发基础', sections: [
+        { sec: 1, name: 'NumPy科学计算', kpIds: [62,63,64,65,66,67,68,69,70,71] },
+        { sec: 2, name: '可视化与机器学习库', kpIds: [72,73,74,75,76,77,78,79,80] },
+        { sec: 3, name: 'TensorFlow基础操作', kpIds: [81,82,83,84,85,86,87] },
+      ]},
+      { ch: 3, name: '项目三 构建神经网络', sections: [
+        { sec: 1, name: '神经元与网络结构', kpIds: [88,89,90,91] },
+        { sec: 2, name: '激活函数', kpIds: [92,93,94] },
+        { sec: 3, name: '训练与优化', kpIds: [95,96,97,98,99] },
+      ]},
+      { ch: 4, name: '项目四 卷积神经网络', sections: [
+        { sec: 1, name: 'CNN基本思想', kpIds: [100,101,102,103,104,105] },
+        { sec: 2, name: '经典CNN与实践', kpIds: [106,107,108] },
+        { sec: 3, name: '自然语言数据处理', kpIds: [109,110,111,112] },
+        { sec: 4, name: '循环神经网络结构', kpIds: [113,114,115,116] },
+      ]},
+      { ch: 5, name: '项目五 循环神经网络', sections: [
+        { sec: 1, name: '门控循环网络', kpIds: [117,118,119,120,121,122,123] },
+      ]},
+      { ch: 6, name: '项目六 生成对抗神经网络', sections: [
+        { sec: 1, name: 'GAN模型与训练', kpIds: [124,125,126,127,128,129,130,131,132] },
+        { sec: 2, name: 'GAN核心知识点', kpIds: [133,134] },
+      ]},
+      { ch: 7, name: '项目七 迁移学习', sections: [
+        { sec: 1, name: '迁移学习原理', kpIds: [135,136,137,138,139,140,141,142,143] },
+      ]},
+    ],
+  },
 };
 
 function masteryColor(m: number): string {
@@ -210,7 +275,8 @@ export async function GET(req: NextRequest) {
   const edges: any[] = [];
 
   // Root node
-  const shortName = courseId === 1 ? 'Python' : '数据结构';
+  const shortNames: Record<number, string> = { 1: 'Python', 2: '数据结构', 3: '数据库', 4: '深度学习' };
+  const shortName = shortNames[courseId] || courseData.name;
   nodes.push({
     id: `course_${courseId}`,
     name: shortName,

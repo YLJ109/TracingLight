@@ -79,19 +79,39 @@ export async function POST(request: NextRequest) {
       0.7
     );
 
-    // 3. 存入题库
-    const questionsToInsert = (Array.isArray(result) ? result : [result]).map((q) => ({
-      course_id: course_id || kp.course_id,
-      knowledge_point_id,
-      question_type: q.question_type || question_type,
-      difficulty: q.difficulty || difficulty,
-      content: q.content,
-      options: q.options || null,
-      answer: q.answer,
-      analysis: q.analysis || "",
-      default_score: q.default_score || 10,
-      source: "ai" as const,
-    }));
+    // 3. 存入题库（处理AI返回格式兼容性）
+    const questionsToInsert = (Array.isArray(result) ? result : [result]).map((q) => {
+      // 转换选项格式：数组["A.xxx","B.xxx"] → 对象{"A":"xxx","B":"xxx"}
+      let opts: Record<string, string> | null = null;
+      if (q.options) {
+        if (Array.isArray(q.options)) {
+          opts = {};
+          q.options.forEach((opt: string) => {
+            const m = opt.match(/^([A-Z])[.、．]\s*(.+)/);
+            if (m) opts![m[1]] = m[2].trim();
+            else {
+              const letter = String.fromCharCode(65 + q.options!.indexOf(opt));
+              opts![letter] = opt.replace(/^[A-Z][.、．]\s*/, '').trim() || opt;
+            }
+          });
+        } else if (typeof q.options === 'object') {
+          opts = q.options as Record<string, string>;
+        }
+      }
+
+      return {
+        course_id: course_id || kp.course_id,
+        knowledge_point_id,
+        question_type: q.question_type || question_type,
+        difficulty: q.difficulty || difficulty,
+        content: q.content || '',
+        options: opts,
+        answer: q.answer || '',
+        analysis: q.analysis || '（暂无解析）',
+        default_score: q.default_score || 10,
+        source: "ai" as const,
+      };
+    });
 
     let inserted: Array<typeof question.$inferSelect> = [];
     try {

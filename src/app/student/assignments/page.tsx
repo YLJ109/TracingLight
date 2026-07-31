@@ -246,11 +246,6 @@ export default function StudentAssignments() {
 
   return (
     <div className="space-y-6 animate-fade-in-up">
-      <div>
-        <h1 className="text-xl font-bold text-slate-800">我的作业</h1>
-        <p className="text-sm text-slate-500">查看和提交作业</p>
-      </div>
-
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
         <Card>
@@ -414,7 +409,7 @@ export default function StudentAssignments() {
             <div className="space-y-4 py-2">
               <div className="flex items-center gap-4 text-sm">
                 <span className="font-medium text-teal-600">
-                  总分: {reviewAssignment?.total_score != null ? fmt(reviewAssignment.total_score) : ''}/{reviewAssignment?.assignment_total != null ? fmt(reviewAssignment.assignment_total) : ''}
+                  总分: {reviewAssignment?.my_score != null ? fmt(reviewAssignment.my_score) : ''}/{reviewAssignment?.total_score != null ? fmt(reviewAssignment.total_score) : ''}
                 </span>
                 <span className="text-slate-400">共 {reviewQuestions.length} 题</span>
               </div>

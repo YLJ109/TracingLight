@@ -82,60 +82,57 @@ export async function POST(request: NextRequest) {
       let errorType = '';
       const annotations: Array<Record<string, unknown>> = [];
 
-      if (!stuAnswer) {
+      // === Objective questions: direct comparison, 0 or full score ===
+      const OBJECTIVE_TYPES = ['single_choice', 'multiple_choice', 'multi_choice', 'judgment', 'fill_blank'];
+      const isObjective = OBJECTIVE_TYPES.includes(q.question_type);
+
+      if (!stuAnswer || stuAnswer === '___' || stuAnswer === '（未作答）') {
         // Empty answer
         totalScore = 0;
         errorType = 'empty';
         annotations.push({
           content: '未作答',
           type: 'empty',
-          comment: '该题未作答，请加强相关知识点学习',
+          comment: '该题未作答',
           point_deduction: fullScore,
         });
-      } else if (q.question_type === 'single_choice' || q.question_type === 'judgment') {
-        // Objective questions: exact match
-        if (stuAnswer === refAnswer) {
+      } else if (isObjective) {
+        // Objective questions: exact match, full or zero
+        const sa = stuAnswer.trim().toLowerCase();
+        const ca = refAnswer.toLowerCase();
+        if (sa === ca) {
           totalScore = fullScore;
-        } else {
-          totalScore = 0;
-          errorType = 'concept_confusion';
-          annotations.push({
-            content: q.knowledge_point_id ? '概念混淆' : '答案错误',
-            type: 'concept_confusion',
-            comment: `正确答案是 ${refAnswer}，你的答案是 ${stuAnswer}`,
-            point_deduction: fullScore,
-          });
-        }
-      } else if (q.question_type === 'fill_blank') {
-        // Fill blank: case-insensitive trim comparison
-        if (stuAnswer.toLowerCase() === refAnswer.toLowerCase()) {
-          totalScore = fullScore;
-        } else if (stuAnswer.length > 0 && refAnswer.toLowerCase().includes(stuAnswer.toLowerCase())) {
+        } else if (q.question_type === 'fill_blank' && ca.includes(sa) && sa.length >= ca.length * 0.5) {
+          // Fill blank partial match
           totalScore = Math.floor(fullScore * 0.5);
           errorType = 'incomplete';
-          annotations.push({
-            content: '答案不完整',
-            type: 'incomplete',
-            comment: `正确答案是 ${refAnswer}，你的答案不够完整`,
-            point_deduction: fullScore - totalScore,
-          });
+          annotations.push({ content: '答案不完整', type: 'incomplete', comment: `正确答案是 ${refAnswer}`, point_deduction: fullScore - totalScore });
         } else {
           totalScore = 0;
-          errorType = 'wrong';
-          annotations.push({
-            content: '答案错误',
-            type: 'wrong',
-            comment: `正确答案是 ${refAnswer}，你的答案是 ${stuAnswer}`,
-            point_deduction: fullScore,
-          });
+          errorType = q.question_type === 'fill_blank' ? 'knowledge' : 'concept_confusion';
+          annotations.push({ content: '答案错误', type: errorType, comment: `正确答案是 ${refAnswer}`, point_deduction: fullScore });
         }
       } else {
-        // Short answer: lenient - give partial credit if answer is non-empty
-        if (stuAnswer.length > 0) {
-          totalScore = Math.floor(fullScore * 0.7);
-        } else {
-          totalScore = 0;
-          errorType = 'empty';
+        // Subjective questions (short_answer, code): give reasonable partial credit
+        // Use reference answer length ratio as baseline, with reasonable floor/ceiling
+        const saLen = stuAnswer.length;
+        const caLen = refAnswer.length || 1;
+        const lenRatio = Math.min(saLen / caLen, 1.5);
+        // Similarity heuristic: common words ratio
+        const saWords = new Set(stuAnswer.toLowerCase().split(/\s+/).filter((w: string) => w.length > 1));
+        const caWords = refAnswer.toLowerCase().split(/\s+/).filter((w: string) => w.length > 1);
+        const commonWords = caWords.filter((w: string) => saWords.has(w)).length;
+        const wordRatio = caWords.length > 0 ? commonWords / caWords.length : 0.5;
+        // Combined score: 30% length + 70% word match
+        const similarity = lenRatio * 0.3 + wordRatio * 0.7;
+        // Score range: minimum 30% for any serious attempt, max 95% (leave room for perfection)
+        const scoreRatio = Math.max(0.3, Math.min(0.95, similarity));
+        totalScore = Math.round(fullScore * scoreRatio);
+        // Annotations for non-perfect scores
+        if (scoreRatio < 0.6) {
+          annotations.push({ content: '答案与参考答案存在较大差异', type: 'knowledge', comment: `建议复习相关知识点，对比参考答案 ${refAnswer.substring(0, 100)}`, point_deduction: fullScore - totalScore });
+        } else if (scoreRatio < 0.85) {
+          annotations.push({ content: '部分要点正确', type: 'incomplete', comment: '部分要点缺失或不准确', point_deduction: fullScore - totalScore });
         }
       }
 

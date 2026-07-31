@@ -75,15 +75,15 @@ export async function GET(req: NextRequest) {
       short_name: course.short_name,
     }).from(course).orderBy(course.id).all();
 
-    // Get knowledge points for filter (if course_id provided)
-    let allKps: { id: number; name: string }[] = [];
-    if (course_id) {
-      allKps = db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
-        .from(knowledgePoint)
-        .where(eq(knowledgePoint.course_id, parseInt(course_id)))
-        .orderBy(knowledgePoint.id)
-        .all();
-    }
+    // Get ALL knowledge points (always return for AI question generation)
+    const allKps = db.select({
+      id: knowledgePoint.id,
+      name: knowledgePoint.name,
+      course_id: knowledgePoint.course_id,
+    })
+      .from(knowledgePoint)
+      .orderBy(knowledgePoint.id)
+      .all();
 
     return NextResponse.json({
       success: true,

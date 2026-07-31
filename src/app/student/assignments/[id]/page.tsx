@@ -61,9 +61,9 @@ function fmt(n: number): string {
 
 const typeLabels: Record<string, string> = {
   single_choice: '单选题', multiple_choice: '多选题', multi_choice: '多选题',
-  judgment: '判断题', '选择题': '单选题', '多选题': '多选题', '判断题': '判断题',
+  judgment: '判断题', 选择题: '单选题', 多选题: '多选题', 判断题: '判断题',
   fill_blank: '填空题', short_answer: '简答题', essay: '论述题',
-  '填空题': '填空题', '简答题': '简答题', '论述题': '论述题',
+  填空题: '填空题', 简答题: '简答题', 论述题: '论述题',
   code: '编程题', concept_confusion: '概念混淆', calculation_error: '计算错误',
   logic_error: '逻辑错误', knowledge_missing: '知识缺失', careless: '粗心大意', empty: '未作答',
 };
@@ -91,7 +91,7 @@ export default function StudentAssignmentDetailPage() {
   const redoMode = searchParams.get('redo') === 'true';
   const draftKey = `tracinglight_draft_${assignmentId}`;
 
-  // Load assignment data + restore draft from localStorage
+  // ── Load assignment data + restore draft from localStorage ──
   useEffect(() => {
     getCurrentUser().then((user) => {
       const studentId = String(user?.id || 3);
@@ -113,6 +113,7 @@ export default function StudentAssignmentDetailPage() {
               const draft = localStorage.getItem(draftKey);
               if (draft) {
                 const draftData = JSON.parse(draft) as Record<string, string>;
+                // Only overlay if server doesn't have submitted answer
                 for (const [qId, val] of Object.entries(draftData)) {
                   const numId = Number(qId);
                   if (!data.data.is_submitted || redoMode) {
@@ -130,7 +131,7 @@ export default function StudentAssignmentDetailPage() {
     });
   }, [assignmentId]);
 
-  // Auto-save draft to localStorage (debounced 2s)
+  // ── Auto-save draft to localStorage (debounced 2s) ──
   useEffect(() => {
     if (!draftRestored || submitted) return;
     const timer = setTimeout(() => {
@@ -320,7 +321,7 @@ export default function StudentAssignmentDetailPage() {
                             const isCorrectOpt = correctAnswer === val;
                             let border = 'border-slate-200 hover:border-slate-300';
                             let bg = '';
-                            let icon: React.ReactNode = null;
+                            let icon = null;
                             if (isGraded) {
                               if (isSelected && isCorrectOpt) {
                                 border = 'border-green-400'; bg = 'bg-green-50';
@@ -352,20 +353,8 @@ export default function StudentAssignmentDetailPage() {
                           })}
                         </div>
                       ) : /* Options for single/multi choice (non-judgment questions with options) */
-                      (() => {
-                        // Parse options: support string (JSON), array, or object format
-                        let rawOpts: string[] | null = null;
-                        try {
-                          rawOpts = typeof q.options === 'string'
-                            ? JSON.parse(q.options)
-                            : (Array.isArray(q.options) ? q.options : null);
-                        } catch { rawOpts = null; }
-                        return rawOpts && rawOpts.length > 0;
-                      })() ? (
+                      (() => { const opts = typeof q.options === 'string' ? JSON.parse(q.options) : q.options; return opts && opts.length > 0; })() ? (
                         (() => {
-                          const rawOpts: string[] = typeof q.options === 'string'
-                            ? JSON.parse(q.options)
-                            : (q.options as string[]);
                           const isMulti = q.question_type === 'multi_choice' || q.question_type === 'multiple_choice';
                           const selectedLetters = isMulti
                             ? (answers[q.id] || '').split(',').filter(Boolean)
@@ -379,13 +368,13 @@ export default function StudentAssignmentDetailPage() {
                             // Checkbox for multiple choice
                             return (
                               <div className="grid grid-cols-2 gap-2 mb-3">
-                                {rawOpts.map((opt: string, oi: number) => {
+                                {(typeof q.options === 'string' ? JSON.parse(q.options) : q.options)!.map((opt: string, oi: number) => {
                                   const optLetter = opt.charAt(0);
                                   const isSelected = selectedLetters.includes(optLetter);
                                   const isCorrectOpt = correctLetters.includes(optLetter);
                                   let border = 'border-slate-200 hover:border-slate-300';
                                   let bg = '';
-                                  let icon: React.ReactNode = null;
+                                  let icon = null;
                                   if (isGraded) {
                                     if (isSelected && isCorrectOpt) {
                                       border = 'border-green-400'; bg = 'bg-green-50';
@@ -431,13 +420,13 @@ export default function StudentAssignmentDetailPage() {
                             // Radio for single choice
                             return (
                               <div className="grid grid-cols-2 gap-2 mb-3">
-                                {rawOpts.map((opt: string, oi: number) => {
+                                {(typeof q.options === 'string' ? JSON.parse(q.options) : q.options)!.map((opt: string, oi: number) => {
                                   const optLetter = opt.charAt(0);
                                   const isSelected = answers[q.id] === optLetter;
                                   const isCorrectOpt = correctAnswer && correctAnswer === optLetter;
                                   let border = 'border-slate-200 hover:border-slate-300';
                                   let bg = '';
-                                  let icon: React.ReactNode = null;
+                                  let icon = null;
                                   if (isGraded) {
                                     if (isSelected && isCorrectOpt) {
                                       border = 'border-green-400'; bg = 'bg-green-50';
@@ -509,8 +498,16 @@ export default function StudentAssignmentDetailPage() {
                               </div>
                             )}
                           </div>
+                          {/* Show correct answer when wrong */}
+                          {existingAnswer!.grading.total_score < existingAnswer!.grading.full_score && (q as any).answer && (
+                            <div className="mt-2 p-2 bg-white rounded border border-green-200">
+                              <p className="text-xs text-green-600 font-medium mb-1">✓ 正确答案：</p>
+                              <p className="text-sm text-green-700">{(q as any).answer}</p>
+                            </div>
+                          )}
                           {existingAnswer!.grading.annotations?.length > 0 && (
                             <div className="mt-2 space-y-1">
+                              <p className="text-xs font-medium text-red-600 mb-1">AI批改点评：</p>
                               {existingAnswer!.grading.annotations.map((ann, ai) => (
                                 <p key={ai} className="text-xs text-red-600">• {ann.comment}</p>
                               ))}
@@ -525,7 +522,7 @@ export default function StudentAssignmentDetailPage() {
             );
           })}
 
-          {detail.my_score === null && (
+          {!submitted && (
             <div className="flex justify-end gap-3 pt-4">
               <Button
                 onClick={handleSave}

@@ -18,10 +18,9 @@ export async function GET(request: NextRequest) {
 
     const sid = parseInt(studentId);
 
-    // Get published assignments ordered by created_at desc
+    // Get all assignments
     const assignments = db.select()
       .from(assignment)
-      .where(eq(assignment.status, 'published'))
       .orderBy(desc(assignment.created_at))
       .all();
 

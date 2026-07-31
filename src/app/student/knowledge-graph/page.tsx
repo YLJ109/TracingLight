@@ -335,7 +335,7 @@ export default function KnowledgeGraphPage() {
           </div>
           {/* Dynamic course tabs */}
           <div className="flex bg-slate-100 rounded-lg p-0.5">
-            {(courses.length>0?courses:[{id:1,name:'Python程序设计'},{id:2,name:'数据结构与算法'}]).map(c=>(
+            {(courses.length>0?courses:[{id:1,name:'Python程序设计'},{id:2,name:'数据结构与算法'},{id:3,name:'数据库原理'},{id:4,name:'深度学习框架'}]).map(c=>(
               <button key={c.id} onClick={()=>setCourseId(c.id)}
                 className={`px-3.5 py-1.5 text-sm font-medium rounded-md transition-all duration-200 ${
                   courseId===c.id?'bg-white text-slate-800 shadow-sm':'text-slate-500 hover:text-slate-700'

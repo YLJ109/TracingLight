@@ -308,6 +308,7 @@ export default function TeacherGradeDetailPage() {
                 {/* Grading annotations */}
                 {isGraded && g.annotations && (g.annotations as Array<Record<string, unknown>>).length > 0 && (
                   <div className="mt-3 space-y-2">
+                    <p className="text-xs font-medium text-red-600 mb-1">AI批改详情（扣分项）：</p>
                     {(g.annotations as Array<Record<string, unknown>>).map((ann: Record<string, unknown>, i: number) => (
                       <div key={i} className="p-2 bg-red-50 border border-red-100 rounded text-sm">
                         <span className="font-medium text-red-700">{ann.content as string}</span>
@@ -315,6 +316,47 @@ export default function TeacherGradeDetailPage() {
                         {ann.comment ? <p className="text-red-500 text-xs mt-1">{String(ann.comment)}</p> : null}
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {/* Teacher override: show AI score and manual override option */}
+                {isGraded && (
+                  <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <div className="flex items-center gap-4 text-sm">
+                      <span className="text-muted-foreground">AI评分：</span>
+                      <span className="font-bold text-amber-700">{fmt(g.total_score)}/{fmt(g.full_score)}</span>
+                      <span className="text-muted-foreground">|</span>
+                      <span className="text-muted-foreground">教师修改：</span>
+                      <input
+                        type="number"
+                        className="w-16 px-2 py-1 border rounded text-sm font-bold"
+                        defaultValue={g.teacher_override_score ?? g.total_score}
+                        min={0}
+                        max={g.full_score}
+                        onChange={e => {
+                          const val = Number(e.target.value);
+                          if (!isNaN(val) && val >= 0 && val <= g.full_score) {
+                            apiFetch('/api/teacher/assignments/grade/override', {
+                              method: 'POST',
+                              body: JSON.stringify({ grading_task_id: g.id, override_score: val }),
+                            });
+                          }
+                        }}
+                      />
+                      <span className="text-muted-foreground">/ {fmt(g.full_score)}</span>
+                    </div>
+                    <textarea
+                      className="w-full mt-2 px-2 py-1 border rounded text-sm"
+                      rows={2}
+                      placeholder="教师评语（可选）"
+                      defaultValue={g.teacher_override_comment || ''}
+                      onBlur={e => {
+                        apiFetch('/api/teacher/assignments/grade/override', {
+                          method: 'POST',
+                          body: JSON.stringify({ grading_task_id: g.id, override_comment: e.target.value }),
+                        });
+                      }}
+                    />
                   </div>
                 )}
               </CardContent>
