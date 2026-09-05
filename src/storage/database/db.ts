@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS assignment (id INTEGER PRIMARY KEY AUTOINCREMENT, cou
 CREATE INDEX IF NOT EXISTS asgn_course_id_idx ON assignment(course_id);
 CREATE INDEX IF NOT EXISTS asgn_status_idx ON assignment(status);
 CREATE TABLE IF NOT EXISTS answer (id INTEGER PRIMARY KEY AUTOINCREMENT, assignment_id INTEGER NOT NULL REFERENCES assignment(id) ON DELETE CASCADE, student_id INTEGER NOT NULL REFERENCES user(id), question_id INTEGER NOT NULL REFERENCES question(id), student_answer TEXT, is_submitted INTEGER DEFAULT 0, submitted_at TEXT, returned INTEGER DEFAULT 0, returned_at TEXT, return_comment TEXT, created_at TEXT DEFAULT (CURRENT_TIMESTAMP));
+CREATE TABLE IF NOT EXISTS grading_config (id INTEGER PRIMARY KEY AUTOINCREMENT, teacher_id INTEGER NOT NULL REFERENCES user(id), name TEXT NOT NULL, course_id INTEGER, question_type TEXT, scoring_criteria TEXT, deduction_rules TEXT, comment_style TEXT, grade_levels TEXT, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (CURRENT_TIMESTAMP), updated_at TEXT);
 CREATE INDEX IF NOT EXISTS ans_assignment_id_idx ON answer(assignment_id);
 CREATE INDEX IF NOT EXISTS ans_student_id_idx ON answer(student_id);
 CREATE UNIQUE INDEX IF NOT EXISTS ans_unique_idx ON answer(assignment_id, student_id, question_id);

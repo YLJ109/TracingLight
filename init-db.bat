@@ -1,32 +1,73 @@
 @echo off
+setlocal EnableExtensions EnableDelayedExpansion
+title TracingLight Database Reset
 cd /d "%~dp0"
 
-echo ============================================
-echo   TracingLight - Database Init (Fresh)
-echo ============================================
 echo.
+echo  ============================================
+echo    TracingLight - Database Reset (Fresh)
+echo  ============================================
+echo.
+echo   WARNING: All data will be replaced with
+echo   fresh demo data (accounts stay the same).
+echo.
+set /p CONFIRM="  Type Y to continue: "
+if /i not "!CONFIRM!"=="Y" (
+    echo  Cancelled.
+    pause
+    exit /b 0
+)
 
-REM Clean everything
-echo [1/2] Cleaning old data...
+REM ---------- 0. Make sure server is not running ----------
+netstat -ano | findstr /R /C:":5000 .*LISTENING" >nul 2>nul
+if not errorlevel 1 (
+    echo  [ERROR] The server is running on port 5000.
+    echo          Stop it first (close the server window, or
+    echo          run: taskkill /PID ^<number^> /F after netstat -ano ^| findstr :5000^)
+    echo          Otherwise the old data would be written back.
+    pause
+    exit /b 1
+)
+
+REM ---------- 1. Check dependencies ----------
+where node >nul 2>nul
+if errorlevel 1 (
+    echo  [ERROR] Node.js is not installed.
+    pause
+    exit /b 1
+)
+if not exist "node_modules" (
+    echo  [ERROR] Dependencies not installed. Run setup.bat first.
+    pause
+    exit /b 1
+)
+
+REM ---------- 2. Clean database ----------
+echo  [1/2] Deleting old database...
 if exist "data\tracinglight.db" (
     del /q "data\tracinglight.db"
-    echo   Old database deleted
+    echo    Old database deleted
 )
 if exist "data\_test.db" del /q "data\_test.db"
 if not exist "data" mkdir data
-echo   Clean done
 echo.
 
-REM Run seed
-echo [2/2] Seeding database...
+REM ---------- 3. Seed ----------
+echo  [2/2] Seeding database, please wait...
 call npx tsx src/storage/database/seed.ts
-if %errorlevel% neq 0 (
-    echo [ERROR] Seed failed
-    pause & exit /b 1
+if errorlevel 1 (
+    echo.
+    echo  [ERROR] Seed failed.
+    pause
+    exit /b 1
 )
 
 echo.
-echo ============================================
-echo   Done! Now run start.bat
-echo ============================================
+echo  ============================================
+echo    Database reset complete!
+echo    Next: run start.bat  ^(http://localhost:5000^)
+echo    Demo accounts: teacher_wang / stu_zhang
+echo  ============================================
+echo.
 pause
+endlocal
