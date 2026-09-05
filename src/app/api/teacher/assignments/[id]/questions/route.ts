@@ -3,6 +3,7 @@ import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
 import { eq, inArray, and } from 'drizzle-orm';
 import { assignment, question, knowledgePoint, answer, gradingTask, user, course } from '@/storage/database/shared/schema';
+import { getTeacherCourseIds, getTeacherClassIds } from '@/lib/teacher-scope';
 
 // GET /api/teacher/assignments/[id]/questions - 获取作业包含的题目详情+学生提交情况
 export async function GET(
@@ -25,6 +26,13 @@ export async function GET(
     if (!asgn) {
       return NextResponse.json({ error: '作业不存在' }, { status: 404 });
     }
+
+    // 跨租户隔离：作业必须属于本人课程
+    const myCourseIds = getTeacherCourseIds(authUser.userId);
+    if (!myCourseIds.includes(asgn.course_id)) {
+      return NextResponse.json({ error: '无权访问该作业' }, { status: 403 });
+    }
+    const myClassIds = getTeacherClassIds(authUser.userId);
 
     // 获取关联的课程名称
     const courseRow = db.select({ id: assignment.course_id, name: course.name })
@@ -98,14 +106,20 @@ export async function GET(
       ? scores.reduce((sum, g) => sum + (g.total_score || 0), 0) / scores.length
       : 0;
 
-    // Get all students
-    const allStudents = db.select({
-      id: user.id,
-      real_name: user.real_name,
-      student_level: user.student_level,
-    }).from(user)
-      .where(and(eq(user.role, 'student'), eq(user.is_active, true)))
-      .all();
+    // 学生集合：仅本人授课班级的学生
+    const allStudents = myClassIds.length > 0
+      ? db.select({
+          id: user.id,
+          real_name: user.real_name,
+          student_level: user.student_level,
+        }).from(user)
+          .where(and(
+            eq(user.role, 'student'),
+            eq(user.is_active, true),
+            inArray(user.class_id, myClassIds)
+          ))
+          .all()
+      : [];
 
     // Get all answers for this assignment
     const allAnswers = db.select({

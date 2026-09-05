@@ -6,9 +6,10 @@ import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { getCurrentUser, signOut, type CurrentUser } from '@/lib/auth-helper';
 import {
-  LayoutDashboard, BookOpen, BookMarked,
+  BookOpen, BookMarked, BarChart3,
   Network, LogOut, CalendarDays,
-  ChevronRight, Lightbulb
+  ChevronRight, Lightbulb, FolderOpen,
+  MessageCircle, Megaphone
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,12 +19,15 @@ import { EyeCareToggle } from '@/components/eye-care-toggle';
 import MobileTabBar from '@/components/mobile-tab-bar';
 
 const navItems = [
-  { href: '/student', label: '我的学情', icon: LayoutDashboard },
+  { href: '/student/overview', label: '我的学情', icon: BarChart3 },
   { href: '/student/assignments', label: '我的作业', icon: BookOpen },
+  { href: '/student/materials', label: '学习材料', icon: FolderOpen },
   { href: '/student/errors', label: '错题本', icon: BookMarked },
   { href: '/student/knowledge-graph', label: '知识图谱', icon: Network },
   { href: '/student/study-plan', label: '学习规划', icon: CalendarDays },
   { href: '/student/recommend', label: '个性化推荐', icon: Lightbulb },
+  { href: '/student/assistant', label: 'AI 答疑', icon: MessageCircle },
+  { href: '/student/announcements', label: '公告通知', icon: Megaphone },
 ];
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
@@ -66,20 +70,20 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
   };
 
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="flex h-screen bg-background">
       {/* Sidebar */}
-      <aside className="hidden md:flex w-60 bg-white border-r flex flex-col shrink-0">
-        <div className="p-4 border-b">
-          <div className="flex items-center gap-2">
-            <img src="/logo.png" alt="溯光" className="w-8 h-8 rounded-lg shadow-sm" />
+      <aside className="hidden md:flex w-60 bg-white border-r border-slate-200/70 text-slate-800 flex-col shrink-0">
+        <div className="p-4 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <img src="/logo.png" alt="溯光" className="w-9 h-9 rounded-lg" />
             <div>
-              <h2 className="font-bold text-sm text-slate-800">溯光 TracingLight</h2>
+              <h2 className="font-semibold text-sm tracking-wide">溯光 TracingLight</h2>
               <p className="text-xs text-slate-400">学生端</p>
             </div>
           </div>
         </div>
 
-        <nav className="flex-1 p-2 space-y-0.5 overflow-auto">
+        <nav className="flex-1 p-2.5 space-y-0.5 overflow-auto">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             return (
@@ -89,8 +93,8 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
                 className={cn(
                   'flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all',
                   isActive
-                    ? 'bg-teal-50 text-teal-700 font-medium'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+                    ? 'bg-violet-100 text-violet-800 font-medium shadow-[inset_2px_0_0_0_#8b5cf6]'
+                    : 'text-slate-600 hover:bg-violet-50 hover:text-violet-700'
                 )}
               >
                 <item.icon className="w-4 h-4" />
@@ -100,18 +104,18 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
           })}
         </nav>
 
-        <div className="p-3 border-t">
+        <div className="p-3 border-t border-slate-100">
           <div className="flex items-center gap-3 px-2 py-2">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center text-white text-xs font-bold">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center text-white text-xs font-bold">
               {currentUser.real_name[0]}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-slate-800 truncate">{currentUser.real_name}</p>
-              <Badge className={`${getLevelClass(currentUser.student_level)} text-[10px] px-1.5 py-0`}>
+              <p className="text-sm font-medium truncate text-slate-800">{currentUser.real_name}</p>
+              <Badge className={`${getLevelClass(currentUser.student_level)} text-[10px] px-1.5 py-0 border-0`}>
                 {getLevelLabel(currentUser.student_level)}
               </Badge>
             </div>
-            <Button variant="ghost" size="icon" className="text-slate-400 hover:text-slate-600 h-7 w-7" onClick={handleLogout}>
+            <Button variant="ghost" size="icon" className="text-slate-400 hover:text-red-500 hover:bg-red-50 h-7 w-7" onClick={handleLogout}>
               <LogOut className="w-3.5 h-3.5" />
             </Button>
           </div>
@@ -120,11 +124,11 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-14 bg-white border-b flex items-center justify-between px-6 shrink-0">
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <Link href="/student" className="hover:text-slate-700">学生端</Link>
+        <header className="relative z-50 h-14 bg-white/80 backdrop-blur-md border-b border-border flex items-center justify-between px-6 shrink-0">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Link href="/student" className="hover:text-foreground transition-colors">学生端</Link>
             <ChevronRight className="w-3 h-3" />
-            <span className="text-slate-800 font-medium">
+            <span className="text-foreground font-medium">
               {navItems.find(n => n.href === pathname)?.label || '我的学情'}
             </span>
           </div>
@@ -133,7 +137,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
             <NotificationBell />
           </div>
         </header>
-        <div className="p-3 md:p-6 pb-20 md:pb-6 flex-1 min-h-0 overflow-auto">
+        <div className="page-surface p-3 md:p-6 pb-20 md:pb-6 flex-1 min-h-0 overflow-auto">
           <ErrorBoundary>{children}</ErrorBoundary>
         </div>
       </main>

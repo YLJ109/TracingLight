@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAIClient, HeaderUtils, invokeStructured } from "@/lib/ai/client";
+import { createAIClient, HeaderUtils, invokeStructured, aiErrorResponse } from "@/lib/ai/client";
 import { ERROR_ANALYSIS_SYSTEM_PROMPT, buildErrorAnalysisPrompt } from "@/lib/ai/prompts/error-analysis";
 import { getDb } from "@/storage/database/db";
 import { errorBook, user, question, knowledgePoint } from "@/storage/database/shared/schema";
@@ -21,7 +21,8 @@ interface ErrorAnalysisResult {
 
 export async function POST(request: NextRequest) {
   try {
-    const userAuth = await requireAuth(request);
+    const userAuth = await requireAuth(request, 'student');
+    if (!userAuth) return NextResponse.json({ error: '未登录' }, { status: 401 });
     const body = await request.json();
     const { error_book_id } = body;
 
@@ -40,6 +41,11 @@ export async function POST(request: NextRequest) {
 
     if (!ebData) {
       return NextResponse.json({ error: "错题不存在" }, { status: 404 });
+    }
+
+    // 校验错题归属当前学生，防止越权解析/篡改他人错题（IDOR）
+    if (ebData.student_id !== userAuth.userId) {
+      return NextResponse.json({ error: "无权操作该错题" }, { status: 403 });
     }
 
     // 单独查询关联的 question 和 knowledge_point
@@ -112,9 +118,11 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     if (error && typeof (error as { status?: number }).status === "number") return error as NextResponse;
+    const cfgErr = aiErrorResponse(error);
+    if (cfgErr) return cfgErr;
     console.error("Error analysis failed:", error);
     return NextResponse.json(
-      { error: "错题解析失败：" + (error instanceof Error ? error.message : "未知错误") },
+      { error: "错题解析失败，请稍后重试" },
       { status: 500 }
     );
   }

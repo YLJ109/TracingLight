@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAIClient, HeaderUtils, invokeStructured } from "@/lib/ai/client";
+import { createAIClient, HeaderUtils, invokeStructured, aiErrorResponse } from "@/lib/ai/client";
 import { QUESTION_GEN_SYSTEM_PROMPT, buildQuestionGenPrompt } from "@/lib/ai/prompts/question-gen";
 import { requireAuth } from "@/lib/server-auth";
 import { getDb } from "@/storage/database/db";
 import { knowledgePoint, course, question } from "@/storage/database/shared/schema";
 import { eq } from "drizzle-orm";
+import { isCourseInTeacherScope } from "@/lib/teacher-scope";
 
 interface GeneratedQuestion {
   content: string;
@@ -49,6 +50,13 @@ export async function POST(request: NextRequest) {
     // 单独查询关联的课程
     const courseRows = db.select().from(course).where(eq(course.id, kp.course_id)).limit(1).all();
     const courseData = courseRows[0] || null;
+
+    // 跨租户隔离：出题课程必须为本人授课课程，防越权向他人课程/知识点出题
+    const kpCourseId = kp.course_id ?? course_id ?? null;
+    const outCourseId = course_id ?? kpCourseId;
+    if (outCourseId == null || !isCourseInTeacherScope(user.userId, Number(outCourseId))) {
+      return NextResponse.json({ error: "无权在该课程生成题目" }, { status: 403 });
+    }
 
     // 2. 调用 AI 出题
     const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
@@ -114,10 +122,14 @@ export async function POST(request: NextRequest) {
     });
 
     let inserted: Array<typeof question.$inferSelect> = [];
-    try {
-      inserted = db.insert(question).values(questionsToInsert).returning().all();
-    } catch (insErr) {
-      console.error("Insert questions error:", insErr);
+    // P2-6：persist=false 时不入库，先返回给教师预览审校（确认后再经题库接口入库）
+    const persist = body?.persist !== false;
+    if (persist) {
+      try {
+        inserted = db.insert(question).values(questionsToInsert).returning().all();
+      } catch (insErr) {
+        console.error("Insert questions error:", insErr);
+      }
     }
 
     return NextResponse.json({
@@ -126,13 +138,16 @@ export async function POST(request: NextRequest) {
         generated: questionsToInsert,
         inserted: inserted || [],
         count: questionsToInsert.length,
+        persisted: persist,
       },
     });
   } catch (error) {
     if (error && typeof (error as { status?: number }).status === "number") return error as NextResponse;
+    const cfgErr = aiErrorResponse(error);
+    if (cfgErr) return cfgErr;
     console.error("Question generation failed:", error);
     return NextResponse.json(
-      { error: "AI出题失败：" + (error instanceof Error ? error.message : "未知错误") },
+      { error: "AI出题失败，请稍后重试" },
       { status: 500 }
     );
   }

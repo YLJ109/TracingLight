@@ -92,10 +92,10 @@ export default function TeacherAnnouncementsPage() {
   );
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-6 animate-fade-in-up">
+    <div className="max-w-5xl mx-auto space-y-6 animate-fade-in-up">
       <div className="flex items-center gap-3">
         <Megaphone className="w-7 h-7 text-teal-600" />
-        <h1 className="text-2xl font-bold text-slate-800">公告管理</h1>
+        <h1 className="page-title">公告管理</h1>
       </div>
 
       {/* 发布新公告 */}

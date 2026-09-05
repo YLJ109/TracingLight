@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/storage/database/db";
 import { requireAuth } from "@/lib/server-auth";
-import { createAIClient, invokeStructured } from "@/lib/ai/client";
+import { createAIClient, aiErrorResponse, invokeStructured } from "@/lib/ai/client";
 import { studentSchedule, knowledgeMasteryLog, knowledgePoint, examSchedule, user, studyPlan } from "@/storage/database/shared/schema";
 import { eq, and, gte, desc, asc } from "drizzle-orm";
 
@@ -51,16 +51,13 @@ const PLAN_SYSTEM_PROMPT = `你是溯光智慧教育平台的学习规划智能�
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { student_id, course_id } = body;
+    const { course_id } = body;
     const authUser = await requireAuth(request, 'student');
     if (!authUser) return NextResponse.json({ error: '未登录' }, { status: 401 });
 
-    if (!student_id) {
-      return NextResponse.json({ success: false, error: "缺少student_id" }, { status: 400 });
-    }
-
     const db = getDb();
-    const sid = parseInt(student_id);
+    // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
+    const sid = authUser.userId;
     const cid = course_id ? parseInt(course_id) : 1;
 
     // 1. 获取学生课表
@@ -153,13 +150,21 @@ ${JSON.stringify(examInfo, null, 2)}
     const client = createAIClient();
     const plan = await invokeStructured<StudyPlanResult>(client, PLAN_SYSTEM_PROMPT, userPrompt, 0.5);
 
+    // 修正日期：AI 返回的日期不可靠，强制映射为「明天开始的连续 N 天」
+    const uniqueDates = [...new Set((plan.weeklyPlan || []).map((item) => item.date))];
+    const dateMap = new Map<string, string>();
+    uniqueDates.forEach((_, i) => {
+      const d = new Date(Date.now() + (i + 1) * 86400000);
+      dateMap.set(uniqueDates[i], d.toISOString().split('T')[0]);
+    });
+
     // 6. 保存到数据库
     if (plan.weeklyPlan?.length > 0) {
       const planItems = plan.weeklyPlan.map((item) => ({
         student_id: sid,
         course_id: cid,
         plan_name: `${item.subject} - ${item.content?.slice(0, 30) || item.timeSlot}`,
-        plan_date: item.date,
+        plan_date: dateMap.get(item.date) || item.date,
         time_slot: item.timeSlot,
         subject: item.subject,
         content: item.content,
@@ -178,7 +183,7 @@ ${JSON.stringify(examInfo, null, 2)}
       success: true,
       data: {
         weeklyPlan: (plan.weeklyPlan || []).map((item) => ({
-          plan_date: item.date,
+          plan_date: dateMap.get(item.date) || item.date,
           time_slot: item.timeSlot,
           subject: item.subject,
           content: item.content,
@@ -194,7 +199,9 @@ ${JSON.stringify(examInfo, null, 2)}
     });
   } catch (error: unknown) {
     if (error && typeof (error as { status?: number }).status === "number") return error as NextResponse;
-    const errMsg = error instanceof Error ? error.message : "未知错误";
+    const cfgErr = aiErrorResponse(error);
+    if (cfgErr) return cfgErr;
+    const errMsg = "操作失败，请稍后重试";
     return NextResponse.json({ success: false, error: errMsg }, { status: 500 });
   }
 }

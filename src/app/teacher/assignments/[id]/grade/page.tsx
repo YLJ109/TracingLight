@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { renderRichContent } from '@/lib/rich-text';
 import { ArrowLeft, CheckCircle, XCircle, AlertTriangle, Loader2, Sparkles } from 'lucide-react';
 import { getCurrentUser } from '@/lib/auth-helper';
 
@@ -31,6 +32,8 @@ interface QuestionDetail {
     dimension_scores: Record<string, number>;
     annotations: Array<{ content: string; type: string; comment: string; point_deduction: number }>;
     status: string;
+    teacher_override_score: number | null;
+    teacher_override_comment: string | null;
   } | null;
 }
 
@@ -134,6 +137,34 @@ export default function TeacherGradeDetailPage() {
     }
   };
 
+  // 退回重做（学习通式闭环）
+  const [returnOpen, setReturnOpen] = useState(false);
+  const [returnComment, setReturnComment] = useState('');
+  const [returning, setReturning] = useState(false);
+  const handleReturn = async () => {
+    setReturning(true);
+    try {
+      const res = await apiFetch('/api/teacher/assignments/return', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignment_id: Number(id), student_id: Number(studentId), comment: returnComment }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setMessage('已退回该学生的作业，学生可修改后重新提交');
+        setReturnOpen(false);
+        setReturnComment('');
+        fetchData();
+      } else {
+        setMessage('退回失败：' + (json.error || '未知错误'));
+      }
+    } catch {
+      setMessage('退回请求失败');
+    } finally {
+      setReturning(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
@@ -166,7 +197,7 @@ export default function TeacherGradeDetailPage() {
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">批改详情</h1>
+            <h1 className="page-title">批改详情</h1>
             <p className="text-sm text-muted-foreground">
               {assignment.title} · {assignment.course.name}
             </p>
@@ -239,6 +270,52 @@ export default function TeacherGradeDetailPage() {
         </div>
       )}
 
+      {/* 确认状态提示：AI 批改后需教师确认分数 */}
+      {(() => {
+        const graded = details.filter((d) => d.grading?.status === 'completed');
+        const confirmed = graded.filter((d) => d.grading?.teacher_override_score != null).length;
+        if (graded.length === 0) return null;
+        return (
+          <div className={`p-3 rounded-lg text-sm border ${confirmed === graded.length ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+            {confirmed === graded.length
+              ? `✅ 已全部确认（${confirmed}/${graded.length} 题）——学生端成绩以你的确认分为准`
+              : `⏳ AI 已批改 ${graded.length} 题，其中 ${confirmed} 题经你确认、${graded.length - confirmed} 题暂按 AI 评分生效——逐题修改分数即视为确认`}
+          </div>
+        );
+      })()}
+
+      {/* 退回重做（学习通式闭环） */}
+      <Card className="border-amber-200 bg-amber-50/50">
+        <CardContent className="p-4">
+          {!returnOpen ? (
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-amber-800">学生作业需要修改？</p>
+                <p className="text-xs text-amber-600 mt-0.5">退回后学生将收到通知，可修改并重新提交，重新提交后可再次批改</p>
+              </div>
+              <Button size="sm" variant="outline" className="border-amber-300 text-amber-700 hover:bg-amber-100 shrink-0" onClick={() => setReturnOpen(true)}>
+                退回重做
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <textarea
+                value={returnComment}
+                onChange={(e) => setReturnComment(e.target.value)}
+                placeholder="退回理由（可选，将通知给学生）"
+                className="w-full text-sm border border-amber-200 rounded-lg p-2 outline-none focus:ring-2 focus:ring-amber-200 min-h-[60px]"
+              />
+              <div className="flex gap-2 justify-end">
+                <Button size="sm" variant="ghost" onClick={() => setReturnOpen(false)}>取消</Button>
+                <Button size="sm" disabled={returning} className="bg-amber-600 hover:bg-amber-700 text-white" onClick={handleReturn}>
+                  {returning ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null} 确认退回
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Question Details */}
       <div className="space-y-4">
         <h2 className="text-lg font-semibold text-slate-800">逐题详情</h2>
@@ -291,17 +368,21 @@ export default function TeacherGradeDetailPage() {
                   )}
                 </div>
 
-                {/* Answer comparison */}
+                {/* Answer comparison：对错着色（学生答案对绿错红，参考答案绿） */}
                 <div className="grid grid-cols-2 gap-4 mt-4 p-3 bg-slate-50 rounded-lg">
-                  <div>
+                  <div className={`rounded-lg p-2 border ${!a?.student_answer ? 'border-red-200 bg-red-50' : isCorrect ? 'border-emerald-300 bg-emerald-50' : 'border-red-300 bg-red-50'}`}>
                     <p className="text-xs text-muted-foreground mb-1">学生作答</p>
-                    <p className={`text-sm font-medium ${!a?.student_answer ? 'text-red-400 italic' : 'text-slate-700'}`}>
-                      {a?.student_answer || '（未作答）'}
-                    </p>
+                    {a?.student_answer && /<(img|table|p|div|pre|ul|ol|h\d|br)[\s>]/i.test(a.student_answer) ? (
+                      <div className="text-sm font-medium rich-view" dangerouslySetInnerHTML={{ __html: renderRichContent(a.student_answer) }} />
+                    ) : (
+                      <p className={`text-sm font-medium ${!a?.student_answer ? 'text-red-400 italic' : isCorrect ? 'text-emerald-700' : 'text-red-600'}`}>
+                        {a?.student_answer || '（未作答）'}
+                      </p>
+                    )}
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">参考答案</p>
-                    <p className="text-sm font-medium text-emerald-700">{q.answer}</p>
+                  <div className="rounded-lg p-2 border border-emerald-300 bg-emerald-50">
+                    <p className="text-xs text-muted-foreground mb-1">参考答案（正确）</p>
+                    <p className="text-sm font-semibold text-emerald-700">{q.answer || '—'}</p>
                   </div>
                 </div>
 
@@ -319,18 +400,26 @@ export default function TeacherGradeDetailPage() {
                   </div>
                 )}
 
-                {/* Teacher override: show AI score and manual override option */}
+                {/* 教师确认：改分提交后以教师分为准；留空则按 AI 分生效 */}
                 {isGraded && (
                   <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                     <div className="flex items-center gap-4 text-sm">
                       <span className="text-muted-foreground">AI评分：</span>
-                      <span className="font-bold text-amber-700">{fmt(g.total_score)}/{fmt(g.full_score)}</span>
+                      <span className={`font-bold ${g.teacher_override_score != null ? 'text-slate-400 line-through' : 'text-amber-700'}`}>{fmt(g.total_score)}/{fmt(g.full_score)}</span>
+                      {g.teacher_override_score != null && (
+                        <>
+                          <span className="text-muted-foreground">→</span>
+                          <Badge className="text-xs bg-emerald-50 text-emerald-700 border-0">已确认</Badge>
+                          <span className="font-bold text-emerald-700">{fmt(g.teacher_override_score)}/{fmt(g.full_score)}</span>
+                        </>
+                      )}
                       <span className="text-muted-foreground">|</span>
-                      <span className="text-muted-foreground">教师修改：</span>
+                      <span className="text-muted-foreground">教师确认分：</span>
                       <input
                         type="number"
                         className="w-16 px-2 py-1 border rounded text-sm font-bold"
-                        defaultValue={g.teacher_override_score ?? g.total_score}
+                        defaultValue={g.teacher_override_score ?? ''}
+                        placeholder={String(fmt(g.total_score))}
                         min={0}
                         max={g.full_score}
                         onChange={e => {
@@ -345,6 +434,7 @@ export default function TeacherGradeDetailPage() {
                       />
                       <span className="text-muted-foreground">/ {fmt(g.full_score)}</span>
                     </div>
+                    <p className="text-[11px] text-amber-600 mt-1.5">填入分数并失焦即提交确认——学生端成绩将以你的分数为准；留空则按 AI 评分生效。</p>
                     <textarea
                       className="w-full mt-2 px-2 py-1 border rounded text-sm"
                       rows={2}

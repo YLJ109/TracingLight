@@ -13,7 +13,7 @@ import { eq } from 'drizzle-orm';
 export interface ServerUser {
   userId: number;
   username: string;
-  role: 'teacher' | 'student';
+  role: 'teacher' | 'student' | 'admin' | 'assistant';
   studentLevel: string | null;
   classId: number | null;
 }
@@ -29,7 +29,7 @@ function getJwtSecret(): string {
 interface JwtPayload {
   userId: number;
   username: string;
-  role: 'teacher' | 'student';
+  role: 'teacher' | 'student' | 'admin' | 'assistant';
   studentLevel: string | null;
   classId: number | null;
   iat?: number;
@@ -66,7 +66,7 @@ export async function getServerUser(request: Request): Promise<ServerUser | null
     return {
       userId: userData.id,
       username: userData.username,
-      role: userData.role as 'teacher' | 'student',
+      role: userData.role as 'teacher' | 'student' | 'admin' | 'assistant',
       studentLevel: userData.student_level,
       classId: userData.class_id,
     };
@@ -83,7 +83,7 @@ export async function getServerUser(request: Request): Promise<ServerUser | null
  */
 export async function requireAuth(
   request: Request,
-  requiredRole?: 'teacher' | 'student'
+  requiredRole?: 'teacher' | 'student' | 'admin' | 'assistant'
 ): Promise<ServerUser | null> {
   const user = await getServerUser(request);
   if (!user) return null;

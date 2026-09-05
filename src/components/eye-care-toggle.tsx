@@ -55,9 +55,9 @@ export function EyeCareToggle() {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>❄ 冷</span>
-              <span>色温调节</span>
-              <span>暖 🔥</span>
+              <span>偏冷</span>
+              <span>暖度</span>
+              <span>偏暖</span>
             </div>
             <input
               type="range"
@@ -88,8 +88,8 @@ export function EyeCareToggle() {
 
           <p className="text-[11px] text-slate-400 mt-3 leading-relaxed">
             {enabled
-              ? `当前色温 ${warmth} — 降低蓝光，缓解眼疲劳`
-              : "开启后降低屏幕蓝光，保护视力"}
+              ? `暖度 ${warmth} — 暖米绿低蓝光配色，缓解长时间阅读疲劳`
+              : "开启后切换为暖米绿低蓝光配色，保护视力"}
           </p>
         </div>
       )}

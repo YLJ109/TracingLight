@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
-import { eq, desc, and, inArray } from 'drizzle-orm';
+import { eq, desc, and, inArray, type SQL } from 'drizzle-orm';
+import { getTeacherCourseIds, getTeacherClassIds } from '@/lib/teacher-scope';
 import {
   user,
   gradingTask,
@@ -9,6 +10,8 @@ import {
   errorBook,
   knowledgePoint,
   assignment,
+  course,
+  classInfo,
 } from '@/storage/database/shared/schema';
 
 export async function GET(request: NextRequest) {
@@ -17,16 +20,97 @@ export async function GET(request: NextRequest) {
     if (!authUser) return NextResponse.json({ error: '未登录' }, { status: 401 });
     const db = getDb();
 
+    // ============ 教师数据范围（跨租户隔离） ============
+    // 该教师只允许访问自己授课的课程/班级/学生，其他教师数据一律不可见
+    const myCourseIds = getTeacherCourseIds(authUser.userId);
+    const myClassIds = getTeacherClassIds(authUser.userId);
+
+    // ============ 筛选参数 ============
+    const sp = request.nextUrl.searchParams;
+    const courseId = sp.get('course_id') ? Number(sp.get('course_id')) : null;
+    const classId = sp.get('class_id') ? Number(sp.get('class_id')) : null;
+
+    // 校验：courseId/classId 必须在教师本人范围内，否则视为越权访问返回空
+    if (courseId != null && !myCourseIds.includes(courseId)) {
+      return NextResponse.json({ error: '无权访问该课程' }, { status: 403 });
+    }
+    if (classId != null && !myClassIds.includes(classId)) {
+      return NextResponse.json({ error: '无权访问该班级' }, { status: 403 });
+    }
+
+    // 筛选选项：仅本人授课课程 / 本人授课班级
+    const courses = myCourseIds.length > 0
+      ? db.select({ id: course.id, name: course.name, class_id: course.class_id })
+          .from(course).where(inArray(course.id, myCourseIds)).all()
+      : [];
+    const classes = myClassIds.length > 0
+      ? db.select({ id: classInfo.id, name: classInfo.name, grade: classInfo.grade })
+          .from(classInfo).where(inArray(classInfo.id, myClassIds)).all()
+      : [];
+
+    // ============ 学生集合过滤 ============
+    let studentCond = and(
+      eq(user.role, 'student'),
+      eq(user.is_active, true),
+      myClassIds.length > 0 ? inArray(user.class_id, myClassIds) : eq(user.id, -1)
+    );
+    let targetClassId: number | null = null;
+    if (classId) {
+      targetClassId = classId;
+    } else if (courseId) {
+      const c = db.select({ class_id: course.class_id }).from(course)
+        .where(eq(course.id, courseId)).get();
+      targetClassId = c?.class_id ?? null;
+    }
+    if (targetClassId != null) {
+      studentCond = and(studentCond, eq(user.class_id, targetClassId));
+    }
+
     // 1. Get all active students
     const students = db.select({
       id: user.id,
       real_name: user.real_name,
       student_level: user.student_level,
     }).from(user)
-      .where(and(eq(user.role, 'student'), eq(user.is_active, true)))
+      .where(studentCond)
       .all();
 
-    // 2. Get grading tasks with dimension scores
+    // ============ 数据范围过滤（跨租户 + 课程筛选） ============
+    // 本教师全部作业 ID，用于把 grading 收敛到本人作业，防止他人作业成绩混入
+    const myAssignmentIds = getTeacherCourseIds(authUser.userId).length > 0
+      ? db.select({ id: assignment.id }).from(assignment)
+          .where(inArray(assignment.course_id, myCourseIds)).all().map((a) => a.id)
+      : [];
+    // 本教师全部学生 ID，用于把掌握度/错题收敛到本人班级学生
+    const myStudentIds = myClassIds.length > 0
+      ? db.select({ id: user.id }).from(user)
+          .where(and(eq(user.role, 'student'), inArray(user.class_id, myClassIds)))
+          .all().map((u) => u.id)
+      : [];
+
+    const courseAssignmentIds = courseId
+      ? db.select({ id: assignment.id }).from(assignment)
+          .where(eq(assignment.course_id, courseId)).all().map((a) => a.id)
+      : null;
+    const courseKpIds = courseId
+      ? db.select({ id: knowledgePoint.id }).from(knowledgePoint)
+          .where(eq(knowledgePoint.course_id, courseId)).all().map((k) => k.id)
+      : null;
+
+    // 2. Get grading tasks with dimension scores（限定：本人课程内的作业）
+    const gradingConds: SQL[] = [
+      eq(gradingTask.status, 'completed'),
+      myAssignmentIds.length > 0
+        ? inArray(gradingTask.assignment_id, myAssignmentIds)
+        : eq(gradingTask.id, -1),
+    ];
+    if (courseId) {
+      gradingConds.push(
+        courseAssignmentIds && courseAssignmentIds.length > 0
+          ? inArray(gradingTask.assignment_id, courseAssignmentIds)
+          : eq(gradingTask.id, -1)
+      );
+    }
     const gradings = db.select({
       id: gradingTask.id,
       student_id: gradingTask.student_id,
@@ -39,37 +123,72 @@ export async function GET(request: NextRequest) {
       completed_at: gradingTask.completed_at,
       knowledge_point_id: gradingTask.knowledge_point_id,
     }).from(gradingTask)
-      .where(eq(gradingTask.status, 'completed'))
+      .where(and(...gradingConds))
       .all();
 
-    // 3. Get knowledge mastery data
+    // 3. Get knowledge mastery data（限定本人班级学生）
+    const masteryConds: SQL[] = [
+      myStudentIds.length > 0
+        ? inArray(knowledgeMasteryLog.student_id, myStudentIds)
+        : eq(knowledgeMasteryLog.id, -1),
+    ];
+    if (courseId) {
+      masteryConds.push(
+        courseKpIds && courseKpIds.length > 0
+          ? inArray(knowledgeMasteryLog.knowledge_point_id, courseKpIds)
+          : eq(knowledgeMasteryLog.id, -1)
+      );
+    }
     const masteryData = db.select({
       student_id: knowledgeMasteryLog.student_id,
       knowledge_point_id: knowledgeMasteryLog.knowledge_point_id,
       mastery_rate: knowledgeMasteryLog.mastery_rate,
-    }).from(knowledgeMasteryLog).all();
+    }).from(knowledgeMasteryLog)
+      .where(and(...masteryConds))
+      .all();
 
-    // 4. Get error book data
+    // 4. Get error book data（限定本人班级学生）
+    const errorConds: SQL[] = [
+      myStudentIds.length > 0
+        ? inArray(errorBook.student_id, myStudentIds)
+        : eq(errorBook.id, -1),
+    ];
+    if (courseId) {
+      errorConds.push(
+        courseKpIds && courseKpIds.length > 0
+          ? inArray(errorBook.knowledge_point_id, courseKpIds)
+          : eq(errorBook.id, -1)
+      );
+    }
     const errors = db.select({
       student_id: errorBook.student_id,
       review_status: errorBook.review_status,
       knowledge_point_id: errorBook.knowledge_point_id,
-    }).from(errorBook).all();
+    }).from(errorBook)
+      .where(and(...errorConds))
+      .all();
 
-    // 5. Get all knowledge points
-    const allKps = db.select({
-      id: knowledgePoint.id,
-      name: knowledgePoint.name,
-      course_id: knowledgePoint.course_id,
-    }).from(knowledgePoint).all();
+    // 5. Get all knowledge points（限定本人课程，仅作名称字典）
+    const allKps = myCourseIds.length > 0
+      ? db.select({
+          id: knowledgePoint.id,
+          name: knowledgePoint.name,
+          course_id: knowledgePoint.course_id,
+        }).from(knowledgePoint).where(inArray(knowledgePoint.course_id, myCourseIds)).all()
+      : [];
 
-    // 6. Get assignments for trend computation
+    // 6. Get assignments for trend computation（限定本人课程作业）
+    let assignmentCond = myCourseIds.length > 0
+      ? inArray(assignment.course_id, myCourseIds)
+      : eq(assignment.id, -1);
+    if (courseId) assignmentCond = eq(assignment.course_id, courseId);
     const assignments = db.select({
       id: assignment.id,
       title: assignment.title,
       course_id: assignment.course_id,
       end_time: assignment.end_time,
     }).from(assignment)
+      .where(assignmentCond)
       .orderBy(assignment.end_time)
       .all();
 
@@ -216,6 +335,11 @@ export async function GET(request: NextRequest) {
         trendData,
         errorSummary,
         assignmentCompletion,
+        // 筛选选项
+        courses,
+        classes,
+        selectedCourseId: courseId,
+        selectedClassId: classId,
       },
     });
   } catch (e) {

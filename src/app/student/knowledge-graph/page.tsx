@@ -43,6 +43,9 @@ export default function KnowledgeGraphPage() {
   const [courseId, setCourseId] = useState(1);
   const [courses, setCourses] = useState<CourseInfo[]>([]);
   const [viewMode, setViewMode] = useState<'radial'|'tree'>('radial');
+  const [graphType, setGraphType] = useState<'knowledge'|'ability'|'ideology'>('knowledge');
+  const [tripleData, setTripleData] = useState<Array<{ id: number; name: string; description: string | null; knowledge: (string | undefined)[] }>>([]);
+  const [tripleLoading, setTripleLoading] = useState(false);
   const [maxDepth, setMaxDepth] = useState<number>(3); // 1=L1章, 2=L2节, 3=L3知识点(全部)
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -56,7 +59,7 @@ export default function KnowledgeGraphPage() {
 
   useEffect(() => { getCurrentUser().then(u => setStudentId(u?.id||3)); }, []);
   useEffect(() => {
-    apiFetch('/api/teacher/courses').then(r=>r.json()).then(d=>{if(d.success) setCourses(d.data||[]);}).catch(()=>{});
+    apiFetch('/api/student/courses').then(r=>r.json()).then(d=>{if(d.success) setCourses(d.data||[]);}).catch(()=>{});
   }, []);
 
   useEffect(() => {
@@ -74,6 +77,16 @@ export default function KnowledgeGraphPage() {
     });
     return ()=>{cancelled=true;};
   },[courseId,studentId]);
+
+  useEffect(() => {
+    if (graphType === 'knowledge') return;
+    setTripleLoading(true);
+    apiFetch(`/api/student/triple-graph?type=${graphType}&course_id=${courseId}`)
+      .then(r => r.json())
+      .then(d => { if (d.success) setTripleData(d.data || []); })
+      .catch(() => {})
+      .finally(() => setTripleLoading(false));
+  }, [graphType, courseId]);
 
   function rebuildRoot(h: any): any {
     const r: any = {...h.data, children: undefined};
@@ -113,7 +126,10 @@ export default function KnowledgeGraphPage() {
 
     const zoom = d3.zoom<SVGSVGElement,unknown>().scaleExtent([0.2,4]).on('zoom',(ev)=>g.attr('transform',ev.transform));
     svg.call(zoom as any); zoomRef.current=zoom;
-    svg.call(zoom.transform as any, d3.zoomIdentity.translate(W/2,H/2));
+    // 居中定位：径向布局以画布中心为圆心；横向树布局用左上留白（节点坐标已铺满画布）
+    svg.call(zoom.transform as any, viewMode==='radial'
+      ? d3.zoomIdentity.translate(W/2,H/2)
+      : d3.zoomIdentity.translate(60,60));
 
     if (viewMode==='radial') {
       const R = Math.min(W,H)/2-50;
@@ -322,16 +338,98 @@ export default function KnowledgeGraphPage() {
 
   const stat=graphData?.masteryStats;
 
+  if (graphType !== 'knowledge') {
+    return (
+      <div className="flex flex-col h-full bg-[#fafbfc]" style={{minHeight:0}}>
+        <div className="flex-none flex items-center justify-between px-5 py-2.5 bg-white border-b border-slate-200/50 z-20">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center">
+              <Target className="w-4 h-4 text-white" />
+            </div>
+            <h1 className="page-title">
+              {graphType === 'ability' ? '能力谱图' : '思政谱图'}
+            </h1>
+            {/* 图谱类型 Tab：固定在左侧标题旁 */}
+            <div className="flex bg-slate-100 rounded-lg p-0.5">
+              {([['knowledge','知识'],['ability','能力'],['ideology','思政']] as const).map(([k,l]) => (
+                <button key={k} onClick={() => setGraphType(k)}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${graphType===k?'bg-white text-slate-800 shadow-sm':'text-slate-500 hover:text-slate-700'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-auto p-6">
+          {tripleLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-4xl mx-auto">
+              {[0,1,2,3].map(i => <div key={i} className="h-32 rounded-xl bg-muted skeleton-shimmer" />)}
+            </div>
+          ) : tripleData.length === 0 ? (
+            <div className="text-center py-16 text-slate-400">
+              <Target className="w-12 h-12 mx-auto opacity-40" />
+              <p className="text-sm mt-3">该课程暂无{graphType === 'ability' ? '能力' : '思政'}图谱数据</p>
+              <p className="text-xs mt-1">切换其他课程查看</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-4xl mx-auto">
+              {tripleData.map((item, i) => (
+                <div key={item.id} className="rounded-2xl border border-slate-100 shadow-sm bg-white p-5 card-hover">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${i%2===0?'from-violet-500 to-fuchsia-500':'from-fuchsia-500 to-pink-500'} flex items-center justify-center text-white font-bold`}>
+                      {item.name[0]}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-800">{item.name}</p>
+                      <p className="text-xs text-slate-400">{item.knowledge.length} 个关联知识点</p>
+                    </div>
+                  </div>
+                  {item.description && <p className="text-sm text-slate-500 mt-3">{item.description}</p>}
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {item.knowledge.map(k => (
+                      <span key={k} className="px-2 py-1 rounded-md bg-violet-50 text-violet-600 text-xs font-medium">{k}</span>
+                    ))}
+                  </div>
+                  {/* 行动入口：让能力/思政维度可操作 */}
+                  <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
+                    <button
+                      onClick={() => router.push('/student/materials')}
+                      className="flex-1 text-xs py-1.5 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors"
+                    >去学习相关材料</button>
+                    <button
+                      onClick={() => router.push('/student/assistant')}
+                      className="flex-1 text-xs py-1.5 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
+                    >问 AI 老师</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full bg-[#fafbfc]" style={{minHeight:0}}>
       {/* Top bar */}
       <div className="flex-none flex items-center justify-between px-5 py-2.5 bg-white border-b border-slate-200/50 z-20">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center">
               <Layers className="w-4 h-4 text-white" />
             </div>
-            <h1 className="text-lg font-bold text-slate-800 tracking-tight">知识图谱</h1>
+            <h1 className="page-title">知识图谱</h1>
+          </div>
+          {/* 图谱类型 Tab */}
+          <div className="flex bg-slate-100 rounded-lg p-0.5">
+            {([['knowledge','知识'],['ability','能力'],['ideology','思政']] as const).map(([k,l]) => (
+              <button key={k} onClick={() => setGraphType(k)}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${graphType===k?'bg-white text-slate-800 shadow-sm':'text-slate-500 hover:text-slate-700'}`}>
+                {l}
+              </button>
+            ))}
           </div>
           {/* Dynamic course tabs */}
           <div className="flex bg-slate-100 rounded-lg p-0.5">

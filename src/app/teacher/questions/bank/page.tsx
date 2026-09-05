@@ -37,10 +37,12 @@ interface Question {
 
 const questionTypeLabels: Record<string, string> = {
   single_choice: '单选题',
+  multiple_choice: '多选题',
   multi_choice: '多选题',
   judgment: '判断题',
   fill_blank: '填空题',
   short_answer: '简答题',
+  essay: '论述题',
   programming: '编程题',
   code: '编程题',
 };
@@ -271,7 +273,7 @@ export default function QuestionBankPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">题库管理</h1>
+          <h1 className="page-title">题库管理</h1>
           <p className="text-sm text-slate-500 mt-1">共 {total} 道题目</p>
         </div>
         <Button onClick={openCreate} className="gap-2">
@@ -358,7 +360,7 @@ export default function QuestionBankPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-2">
                       <Badge variant="outline" className="text-xs">
-                        {questionTypeLabels[q.question_type] || q.question_type}
+                        {questionTypeLabels[q.question_type] || '其他题型'}
                       </Badge>
                       <Badge className={`text-xs ${difficultyColors[q.difficulty] || ''}`}>
                         {difficultyLabels[q.difficulty] || q.difficulty}

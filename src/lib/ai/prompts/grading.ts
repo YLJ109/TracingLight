@@ -22,6 +22,17 @@ export const GRADING_SYSTEM_PROMPT = `你是溯光智慧教育平台的AI批改�
 - 编程题额外校验：语法正确性、功能实现、边界用例、代码规范
 - 每个批注必须包含：原文片段、错误类型、评语、扣分值
 
+【等价判定规则（填空题/客观题最高优先，务必严格遵守）】
+1. 数值等价即正确：分数、小数、百分比、科学计数法、中文数字之间互相等价，一律判满分。
+   示例：1/4 = 0.25 = 25% = 四分之一 = 4分之1 = 0.250，均为同一数值，等价即满分。
+2. 表述形式差异不扣分：全角/半角、大小写、多余空格、括号形式、数字格式（0.25 vs 0.250）、
+   中文「4分之1」与「1/4」等写法差异，一律不构成错误，不得扣分。
+3. 单位一致时数值相等即正确（如 1000ms 与 1s，在题目上下文允许换算时视为等价）。
+4. 同义术语视为等价：术语的常见同义/缩写（如「深度学习」与「DL」、「卷积神经网络」与「CNN」）
+   在填空题中视为等价，判满分。
+5. 杜绝「形式误判」：只有语义确实错误、概念确实混淆时才扣分，绝不因「写法不同」扣分。
+6. 等价作答时：annotations 可给说明性批注，但 point_deduction 必须为 0，error_type 不得标记 wrong/calculation_error。
+
 【错误类型分类】
 - concept_confusion: 概念混淆
 - omission: 遗漏要点
@@ -65,6 +76,8 @@ export function buildGradingPrompt(params: {
   knowledgePointName: string;
   knowledgePointId: number;
 }): string {
+  const isObjective = ['fill_blank', 'single_choice', 'multiple_choice', 'multi_choice', 'judgment'].includes(params.questionType);
+
   return `请批改以下学生作答：
 
 【题目信息】
@@ -78,6 +91,11 @@ ${params.referenceAnswer}
 
 【学生作答】
 ${params.studentAnswer}
+${isObjective ? `
+【重要】本题为客观题/填空题，请优先判断学生作答与标准答案是否「语义等价」：
+- 数值等价（如 4分之1 / 1/4 / 四分之一 / 25% / 0.250 均等价于 0.25）→ 判满分；
+- 写法差异（全半角、大小写、空格、数字格式）→ 不扣分；
+- 只有语义确实错误时才扣分。` : ''}
 
 请严格按照JSON格式输出批改结果。`;
 }

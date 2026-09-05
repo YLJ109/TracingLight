@@ -29,9 +29,12 @@ interface ProfileResult {
 
 export async function POST(request: NextRequest) {
   try {
-    const userAuth = await requireAuth(request);
-    const body = await request.json();
-    const { student_id } = body;
+    const userAuth = await requireAuth(request, 'student');
+    if (!userAuth) return NextResponse.json({ error: '未登录' }, { status: 401 });
+    await request.json().catch(() => ({}));
+
+    // 数据归属强制绑定当前登录学生，杜绝越权（IDOR）
+    const student_id = userAuth.userId;
 
     if (!student_id) {
       return NextResponse.json(
@@ -156,7 +159,7 @@ export async function POST(request: NextRequest) {
     if (error && typeof (error as { status?: number }).status === "number") return error as NextResponse;
     console.error("Student profiling failed:", error);
     return NextResponse.json(
-      { error: "学情分析失败：" + (error instanceof Error ? error.message : "未知错误") },
+      { error: "学情分析失败，请稍后重试" },
       { status: 500 }
     );
   }

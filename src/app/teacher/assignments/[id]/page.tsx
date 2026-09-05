@@ -132,7 +132,7 @@ export default function TeacherAssignmentDetailPage() {
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">{detail.title}</h1>
+            <h1 className="page-title">{detail.title}</h1>
             <div className="flex items-center gap-3 mt-1">
               <Badge variant="secondary" className="gap-1">
                 <BookOpen className="w-3 h-3" /> {detail.course?.name}
@@ -149,7 +149,7 @@ export default function TeacherAssignmentDetailPage() {
         <div className="flex gap-3">
           <Button
             onClick={handleBatchGrade}
-            className="gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-lg shadow-indigo-200"
+            className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200"
           >
             <Sparkles className="w-4 h-4" /> AI 一键批改
           </Button>

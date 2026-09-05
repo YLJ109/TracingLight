@@ -15,14 +15,9 @@ export async function GET(
     const db = getDb();
     const { id } = await params;
     const assignmentId = parseInt(id);
-    const { searchParams } = new URL(request.url);
-    const studentId = searchParams.get('student_id');
 
-    if (!studentId) {
-      return NextResponse.json({ error: '缺少student_id参数' }, { status: 400 });
-    }
-
-    const sid = parseInt(studentId);
+    // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
+    const sid = user.userId;
 
     // 获取作业信息
     const assignmentRows = db.select()
@@ -83,7 +78,8 @@ export async function GET(
       is_submitted: answerMap.get(q.id)?.is_submitted || false,
       submitted_at: answerMap.get(q.id)?.submitted_at || null,
       grading: gradingMap.get(q.id) ? {
-        total_score: gradingMap.get(q.id)!.total_score,
+        total_score: gradingMap.get(q.id)!.teacher_override_score ?? gradingMap.get(q.id)!.total_score,
+        ai_score: gradingMap.get(q.id)!.total_score,
         full_score: gradingMap.get(q.id)!.full_score,
         dimension_scores: gradingMap.get(q.id)!.dimension_scores,
         annotations: gradingMap.get(q.id)!.annotations,
@@ -93,9 +89,13 @@ export async function GET(
 
     // 计算总分
     const totalScore = gradingTasks.reduce(
-      (sum: number, g) => sum + (g.total_score || 0), 0
+      (sum: number, g) => sum + (g.teacher_override_score ?? g.total_score ?? 0), 0
     );
     const isSubmitted = studentAnswers.length > 0 && studentAnswers.every((a) => a.is_submitted);
+
+    // 退回状态：任一题被退回即视为整份作业被退回
+    const isReturned = studentAnswers.some((a) => a.returned);
+    const returnComment = studentAnswers.find((a) => a.returned)?.return_comment || null;
 
     return NextResponse.json({
       success: true,
@@ -105,10 +105,13 @@ export async function GET(
         questions: questionsWithAnswers,
         my_score: gradingTasks.length > 0 ? totalScore : null,
         is_submitted: isSubmitted,
+        returned: isReturned,
+        return_comment: returnComment,
         answers: studentAnswers.map((a) => ({
           question_id: a.question_id,
           student_answer: a.student_answer,
           is_submitted: a.is_submitted,
+          returned: a.returned,
           grading: gradingMap.get(a.question_id) ? {
             total_score: gradingMap.get(a.question_id)!.total_score,
             full_score: gradingMap.get(a.question_id)!.full_score,

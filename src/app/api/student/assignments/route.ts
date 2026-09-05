@@ -9,14 +9,9 @@ export async function GET(request: NextRequest) {
     const user = await requireAuth(request, 'student');
     if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
     const db = getDb();
-    const { searchParams } = new URL(request.url);
-    const studentId = searchParams.get('student_id');
 
-    if (!studentId) {
-      return NextResponse.json({ error: '缺少student_id参数' }, { status: 400 });
-    }
-
-    const sid = parseInt(studentId);
+    // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
+    const sid = user.userId;
 
     // Get all assignments
     const assignments = db.select()
@@ -36,8 +31,8 @@ export async function GET(request: NextRequest) {
     const enrichedData = assignments.map((asgn) => {
       const questionCount = (asgn.question_ids as number[] || []).length;
 
-      // Student submission status
-      const studentAnswers = db.select({ is_submitted: answer.is_submitted })
+      // Student submission status（含退回标记）
+      const studentAnswers = db.select({ is_submitted: answer.is_submitted, returned: answer.returned })
         .from(answer)
         .where(and(
           eq(answer.assignment_id, asgn.id),
@@ -46,10 +41,12 @@ export async function GET(request: NextRequest) {
         .all();
 
       const isSubmitted = studentAnswers.length > 0 && studentAnswers.every((a) => a.is_submitted);
+      const isReturned = studentAnswers.length > 0 && studentAnswers.some((a) => a.returned);
 
       // Grading results
       const gradingTasks = db.select({
         total_score: gradingTask.total_score,
+        teacher_override_score: gradingTask.teacher_override_score,
         status: gradingTask.status,
       })
         .from(gradingTask)
@@ -62,12 +59,15 @@ export async function GET(request: NextRequest) {
       const allGraded = gradingTasks.length > 0 &&
         gradingTasks.every((g) => g.status === 'completed');
 
+      // 最终分：老师改分（override）优先，未改则 AI 分
       const myScore = gradingTasks.reduce(
-        (sum: number, g) => sum + (g.total_score || 0), 0
+        (sum: number, g) => sum + (g.teacher_override_score ?? g.total_score ?? 0), 0
       );
 
       let status: string;
-      if (allGraded) {
+      if (isReturned) {
+        status = 'returned';
+      } else if (allGraded) {
         status = 'graded';
       } else if (isSubmitted) {
         status = 'submitted';
@@ -87,6 +87,7 @@ export async function GET(request: NextRequest) {
         status,
         my_score: allGraded ? myScore : undefined,
         is_submitted: isSubmitted,
+        returned: isReturned,
       };
     });
 

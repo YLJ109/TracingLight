@@ -1,6 +1,9 @@
 "use client";
 
-import { apiFetch } from '@/lib/api-fetch';
+import { toast } from 'sonner';
+
+import { useRouter } from "next/navigation";
+import { apiFetch } from "@/lib/api-fetch";
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as echarts from "echarts";
 import {
@@ -16,8 +19,10 @@ const typeLabels: Record<string, string> = {
   logic_error: "逻辑错误", knowledge_missing: "知识缺失", careless: "粗心大意", empty: "未作答",
 };
 const errorTypeLabels: Record<string, string> = {
-  concept_confusion: "概念混淆", calculation_error: "计算错误",
-  logic_error: "逻辑错误", knowledge_missing: "知识缺失", careless: "粗心大意", empty: "未作答",
+  concept_confusion: "概念混淆", calculation_error: "计算错误", calculation: "计算错误",
+  logic_error: "逻辑错误", logic: "逻辑错误", knowledge_missing: "知识缺失", knowledge: "知识缺失",
+  careless: "粗心大意", empty: "未作答", incomplete: "未答完整", wrong: "答案错误",
+  method_error: "方法错误", expression: "表达问题", step_missing: "步骤缺失", other: "其他",
 };
 
 // ===== 类型定义 =====
@@ -59,6 +64,7 @@ const DAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周�
 const TIME_SLOTS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
 
 export default function RecommendPage() {
+  const router = useRouter();
   const [studentId, setStudentId] = useState<number>(() => {
     if (typeof window === "undefined") return 3;
     const stored = localStorage.getItem("current_user");
@@ -177,14 +183,14 @@ export default function RecommendPage() {
   }, [activeTab, courseComparison]);
 
   const addSchedule = async () => {
-    if (!studentId) { alert("请先登录"); return; }
-    if (!newSchedule.title.trim()) { alert("请输入安排标题"); return; }
+    if (!studentId) { toast.error("请先登录"); return; }
+    if (!newSchedule.title.trim()) { toast.error("请输入安排标题"); return; }
     try {
       const res = await apiFetch("/api/student/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...newSchedule, student_id: studentId }) });
       const result = await res.json();
-      if (result.success) { setSchedules(prev => [...prev, result.data]); setNewSchedule({ day_of_week: "周一", start_time: "14:00", end_time: "15:30", title: "", schedule_type: "personal" }); setShowAddSchedule(false); alert("添加成功"); }
-      else { alert(result.error || "添加失败"); }
-    } catch { alert("网络错误"); }
+      if (result.success) { setSchedules(prev => [...prev, result.data]); setNewSchedule({ day_of_week: "周一", start_time: "14:00", end_time: "15:30", title: "", schedule_type: "personal" }); setShowAddSchedule(false); toast.success("添加成功"); }
+      else { toast.error(result.error || "添加失败"); }
+    } catch { toast.error("网络错误"); }
   };
 
   const deleteSchedule = async (id: number) => {
@@ -220,7 +226,7 @@ export default function RecommendPage() {
       {/* 页面标题 + 操作 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">个性化推荐</h1>
+          <h1 className="page-title">个性化推荐</h1>
           <p className="text-sm text-slate-500 mt-1">基于真实学情数据的 AI 智能分析与学习规划</p>
         </div>
 
@@ -395,7 +401,7 @@ export default function RecommendPage() {
                     <p className="text-xs font-medium text-red-700 mb-2 flex items-center gap-1"><XCircle className="w-3 h-3" />典型错题</p>
                     {wp.recentErrors.map((err, i) => (
                       <div key={i} className="text-xs text-red-800 py-1 border-b border-red-100 last:border-0">
-                        <span className="font-medium">{errorTypeLabels[err.errorType] || err.errorType}</span>
+                        <span className="font-medium">{errorTypeLabels[err.errorType] || '其他错误'}</span>
                         <span className="text-red-600 ml-2">{err.content?.slice(0, 60)}{err.content && err.content.length > 60 ? "..." : ""}</span>
                       </div>
                     ))}
@@ -405,6 +411,21 @@ export default function RecommendPage() {
                 <div className="p-3 rounded-xl bg-teal-50 border border-teal-100">
                   <p className="text-xs font-medium text-teal-700 mb-1 flex items-center gap-1"><Lightbulb className="w-3 h-3" />AI 补习建议</p>
                   <p className="text-sm text-teal-800">{wp.aiSuggestion}</p>
+                </div>
+                {/* 一键行动：推荐不止于清单，给出路径 */}
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => router.push('/student/errors')}
+                    className="text-xs py-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
+                  >去错题本复习</button>
+                  <button
+                    onClick={() => router.push('/student/study-plan')}
+                    className="text-xs py-2 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors"
+                  >加入学习规划</button>
+                  <button
+                    onClick={() => router.push('/student/assistant')}
+                    className="text-xs py-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+                  >问 AI 老师</button>
                 </div>
               </div>
             </div>

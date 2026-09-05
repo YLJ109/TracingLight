@@ -2,6 +2,7 @@
  * AI 客户端 - 智谱 GLM API
  * 基于智谱开放平台 API (https://open.bigmodel.cn)
  */
+import { NextResponse } from 'next/server';
 
 const ZHIPU_BASE_URL = process.env.ZHIPU_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4';
 const ZHIPU_MODEL = process.env.ZHIPU_MODEL || 'glm-4-flash';
@@ -14,9 +15,74 @@ function getApiKey(): string {
   return key;
 }
 
+/**
+ * AI 服务未配置错误：前端据此弹窗引导到管理端配置
+ */
+export class AIConfigError extends Error {
+  code = 'AI_NOT_CONFIGURED';
+  constructor(message?: string) {
+    super(message || 'AI 服务未配置，请管理员前往「管理端 → 系统设置」配置 AI 服务（API 地址 / Key / 模型）');
+    this.name = 'AIConfigError';
+  }
+}
+
+export function isAIConfigError(e: unknown): e is AIConfigError {
+  return typeof e === 'object' && e !== null && (e as { code?: string }).code === 'AI_NOT_CONFIGURED';
+}
+
+/**
+ * 从管理端 system_config 读取 AI 服务配置（DB 优先，env 兜底）
+ * 支持管理后台「系统设置」在线切换 API 地址 / Key / 模型，立即生效无需重启。
+ * key 约定：ai_base_url / ai_api_key / ai_model
+ */
+function getRuntimeConfig(): { apiKey: string; baseUrl: string; model: string } {
+  let baseUrl = ZHIPU_BASE_URL;
+  let model = ZHIPU_MODEL;
+  let apiKey = process.env.ZHIPU_API_KEY || '';
+  try {
+    // 惰性 require（相对路径，避免模块别名在运行时不可解析）；DB 未初始化时静默回退 env
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { getDb } = require('../../storage/database/db');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { systemConfig } = require('../../storage/database/shared/schema');
+    const db = getDb();
+    const rows = db.select().from(systemConfig).all();
+    const map = new Map(rows.map((r: { key: string; value: string | null }) => [r.key, r.value]));
+    if (map.get('ai_base_url')) baseUrl = String(map.get('ai_base_url'));
+    if (map.get('ai_model')) model = String(map.get('ai_model'));
+    if (map.get('ai_api_key')) apiKey = String(map.get('ai_api_key'));
+  } catch { /* DB 未就绪 → 用 env 兜底 */ }
+  if (!apiKey) throw new AIConfigError();
+  return { apiKey, baseUrl, model };
+}
+
+type MessageContent =
+  | string
+  | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>;
+
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: MessageContent;
+}
+
+/** 图片理解（多模态出题等）：视觉模型提取图片中的内容 */
+export async function extractTextFromImage(
+  imageBase64: string,
+  prompt: string,
+  visionModel = 'glm-4v-flash'
+): Promise<string> {
+  const client = createAIClient();
+  const dataUrl = imageBase64.startsWith('data:') ? imageBase64 : `data:image/png;base64,${imageBase64}`;
+  const response = await client.invoke(
+    [
+      { role: 'user', content: [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: dataUrl } },
+      ] },
+    ],
+    { model: visionModel, temperature: 0.1, max_tokens: 2000 }
+  );
+  return response.content;
 }
 
 interface InvokeOptions {
@@ -45,17 +111,20 @@ export const HeaderUtils = {
 class ZhipuClient {
   private apiKey: string;
   private baseUrl: string;
+  private defaultModel: string;
 
   constructor() {
-    this.apiKey = getApiKey();
-    this.baseUrl = ZHIPU_BASE_URL;
+    const cfg = getRuntimeConfig();
+    this.apiKey = cfg.apiKey;
+    this.baseUrl = cfg.baseUrl;
+    this.defaultModel = cfg.model;
   }
 
   /**
    * 调用智谱 Chat Completion API（非流式）
    */
   async invoke(messages: ChatMessage[], options: InvokeOptions = {}): Promise<{ content: string }> {
-    const { model = ZHIPU_MODEL, temperature = 0.3, max_tokens = 4096 } = options;
+    const { model = this.defaultModel, temperature = 0.3, max_tokens = 4096 } = options;
 
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -85,7 +154,7 @@ class ZhipuClient {
    * 流式调用智谱 Chat Completion API
    */
   async *stream(messages: ChatMessage[], options: InvokeOptions = {}): AsyncGenerator<StreamChunk> {
-    const { model = ZHIPU_MODEL, temperature = 0.3, max_tokens = 4096 } = options;
+    const { model = this.defaultModel, temperature = 0.3, max_tokens = 4096 } = options;
 
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -168,7 +237,6 @@ export async function invokeStructured<T>(
   ];
 
   const response = await client.invoke(messages, {
-    model: ZHIPU_MODEL,
     temperature,
   });
 
@@ -206,4 +274,17 @@ export async function invokeStructured<T>(
   }
 
   throw new Error(`Failed to parse structured output: ${content.substring(0, 200)}`);
+}
+
+/**
+ * 统一处理：AI 服务未配置 → 503 + code，供前端弹窗引导到管理端配置；其他错误返回 null 走原逻辑
+ */
+export function aiErrorResponse(e: unknown): NextResponse | null {
+  if (isAIConfigError(e)) {
+    return NextResponse.json(
+      { code: 'AI_NOT_CONFIGURED', error: 'AI 服务未配置：请管理员登录后前往「管理端 → 系统设置 → AI 服务配置」填写 API 地址与 Key' },
+      { status: 503 }
+    );
+  }
+  return null;
 }

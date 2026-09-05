@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
+import { apiFetch } from './api-fetch';
 
 interface Notification {
   id: number;
@@ -49,6 +50,25 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { persist(notifications); }, [notifications]);
 
+  // 从后端拉取真实通知
+  useEffect(() => {
+    apiFetch('/api/notifications')
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success && Array.isArray(json.data)) {
+          const remote = json.data.map((n: any) => ({
+            id: n.id, type: n.type, title: n.title, message: n.message,
+            link: n.link, read: n.read, time: n.time,
+          }));
+          setNotifications((prev) => {
+            const localToasts = prev.filter((n) => n.id > 1000000000);
+            return [...localToasts, ...remote];
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   const addNotification = useCallback((n: Omit<Notification, 'id' | 'time' | 'read'>) => {
     const newN: Notification = {
       ...n, id: ++idCounter,
@@ -60,10 +80,12 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   const markRead = useCallback((id: number) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    apiFetch('/api/notifications', { method: 'POST', body: JSON.stringify({ id }) }).catch(() => {});
   }, []);
 
   const markAllRead = useCallback(() => {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    apiFetch('/api/notifications', { method: 'POST', body: JSON.stringify({ all: true }) }).catch(() => {});
   }, []);
 
   const toast = useCallback((title: string, message: string) => {

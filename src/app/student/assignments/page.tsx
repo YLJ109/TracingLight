@@ -1,4 +1,7 @@
 'use client';
+
+import { toast } from 'sonner';
+
 import { apiFetch } from '@/lib/api-fetch';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -10,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { getCurrentUser } from '@/lib/auth-helper';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { CheckCircle2, Clock, XCircle, Send, Eye, Loader2, BookOpen, Search } from 'lucide-react';
+import { CheckCircle2, Clock, XCircle, Send, Eye, Loader2, BookOpen, Search, AlertCircle } from 'lucide-react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 interface AssignmentItem {
@@ -54,6 +57,7 @@ const statusConfig: Record<string, { label: string; icon: typeof CheckCircle2; c
   graded: { label: '已批改', icon: CheckCircle2, className: 'bg-green-50 text-green-700' },
   submitted: { label: '待批改', icon: Clock, className: 'bg-amber-50 text-amber-700' },
   pending: { label: '待提交', icon: XCircle, className: 'bg-slate-100 text-slate-600' },
+  returned: { label: '已退回·需重做', icon: AlertCircle, className: 'bg-red-50 text-red-700' },
 };
 
 const typeLabels: Record<string, string> = {
@@ -233,7 +237,7 @@ export default function StudentAssignments() {
       });
       const data = await res.json();
       if (data.success) {
-        alert('作业已保存！');
+        toast.success('作业已保存！');
       }
     } catch (e) { console.error(e); }
     finally { setSaving(false); }
@@ -325,9 +329,9 @@ export default function StudentAssignments() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      {asgn.status === 'graded' && (
-                        <Button size="sm" variant="outline" onClick={() => router.push(`/student/assignments/${asgn.id}?tab=redo`)}>
-                          <Send className="w-3 h-3 mr-1" /> 重做
+                      {asgn.status === 'returned' && (
+                        <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white" onClick={() => router.push(`/student/assignments/${asgn.id}?redo=true`)}>
+                          <Send className="w-3 h-3 mr-1" /> 去重做
                         </Button>
                       )}
                       <Button size="sm" onClick={() => router.push(`/student/assignments/${asgn.id}`)}>
@@ -361,7 +365,7 @@ export default function StudentAssignments() {
                 <div key={q.id} className="p-4 border rounded-lg bg-slate-50">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-sm font-bold text-slate-400">#{idx + 1}</span>
-                    <Badge variant="outline" className="text-xs">{typeLabels[q.question_type] || q.question_type}</Badge>
+                    <Badge variant="outline" className="text-xs">{typeLabels[q.question_type] || '其他题型'}</Badge>
                     <span className="text-xs text-slate-400">{q.default_score}分</span>
                   </div>
                   <p className="text-sm text-slate-700 mb-3 whitespace-pre-wrap">{q.content}</p>
@@ -420,7 +424,7 @@ export default function StudentAssignments() {
                   <div key={q.id} className={`p-4 border rounded-lg ${isCorrect ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-sm font-bold text-slate-400">#{idx + 1}</span>
-                      <Badge variant="outline" className="text-xs">{typeLabels[q.question_type] || q.question_type}</Badge>
+                      <Badge variant="outline" className="text-xs">{typeLabels[q.question_type] || '其他题型'}</Badge>
                       {g && (
                         <Badge className={`text-xs ${isCorrect ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                           {fmt(g.total_score)}/{fmt(g.full_score)}分

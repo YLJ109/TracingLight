@@ -15,6 +15,7 @@ import {
   course,
   classInfo,
 } from '@/storage/database/shared/schema';
+import { isStudentInTeacherScope } from '@/lib/teacher-scope';
 
 export async function GET(
   request: NextRequest,
@@ -37,6 +38,11 @@ export async function GET(
 
     if (!student) {
       return NextResponse.json({ error: '学生不存在' }, { status: 404 });
+    }
+
+    // 跨租户隔离：校验该学生属于当前教师授课班级，杜绝越权查看他人学生
+    if (!isStudentInTeacherScope(authUser.userId, studentId)) {
+      return NextResponse.json({ error: '学生不在您的授课范围内' }, { status: 403 });
     }
 
     // Get class name for student

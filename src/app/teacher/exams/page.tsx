@@ -85,11 +85,11 @@ export default function TeacherExamsPage() {
   );
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-6 animate-fade-in-up">
+    <div className="max-w-5xl mx-auto space-y-6 animate-fade-in-up">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <BookOpen className="w-7 h-7 text-teal-600" />
-          <h1 className="text-2xl font-bold text-slate-800">考试管理</h1>
+          <h1 className="page-title">考试管理</h1>
         </div>
         <Button onClick={() => setShowCreate(true)} className="bg-teal-600 hover:bg-teal-700">
           <Plus className="w-4 h-4 mr-2" />

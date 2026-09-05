@@ -1,8 +1,11 @@
 'use client';
+
+import { toast } from 'sonner';
+
 import { apiFetch } from '@/lib/api-fetch';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -54,6 +57,8 @@ const difficultyConfig: Record<string, string> = {
 
 export default function NewAssignmentPage() {
   const router = useRouter();
+  // P2-1：学情看板「针对薄弱点 AI 布置作业」入口预填
+  const searchParamsNew = useSearchParams();
   const [step, setStep] = useState(1);
   const [courses, setCourses] = useState<CourseItem[]>([]);
   const [knowledgePoints, setKnowledgePoints] = useState<KnowledgePoint[]>([]);
@@ -67,6 +72,7 @@ export default function NewAssignmentPage() {
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [selectedQuestions, setSelectedQuestions] = useState<QuestionItem[]>([]);
+  const [reviewMode, setReviewMode] = useState('auto_judge'); // auto_judge / teacher_review / auto
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCourse, setFilterCourse] = useState('all');
   const [filterType, setFilterType] = useState('all');
@@ -88,6 +94,12 @@ export default function NewAssignmentPage() {
 
   // 加载题库、课程和知识点（一次请求全量获取）
   useEffect(() => {
+    // P2-1：看板跳转预填课程并自动展开 AI 出题面板
+    if (searchParamsNew.get('auto_ai') === '1') {
+      const qCourse = searchParamsNew.get('course_id');
+      if (qCourse) { setCourseId(qCourse); setAiCourseId(qCourse); }
+      setShowAIPanel(true);
+    }
     apiFetch('/api/teacher/questions/bank?pageSize=500')
       .then(r => r.json())
       .then(qData => {
@@ -134,6 +146,14 @@ export default function NewAssignmentPage() {
     return true;
   });
 
+  // 选题分页：每页 10 题（筛选变化时回到第 1 页）
+  const PAGE_SIZE = 10;
+  const [questionPage, setQuestionPage] = useState(1);
+  const questionTotalPages = Math.max(1, Math.ceil(filteredQuestions.length / PAGE_SIZE));
+  const safePage = Math.min(questionPage, questionTotalPages);
+  const pagedQuestions = filteredQuestions.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  useEffect(() => { setQuestionPage(1); }, [filterType, filterDifficulty, filterCourse, searchTerm]);
+
   const toggleQuestion = (q: QuestionItem) => {
     setSelectedQuestions(prev =>
       prev.find(p => p.id === q.id)
@@ -146,7 +166,7 @@ export default function NewAssignmentPage() {
 
   // AI 出题
   const handleAIGenerate = async () => {
-    if (!aiKpId) { alert('请选择知识点'); return; }
+    if (!aiKpId) { toast.error('请选择知识点'); return; }
     setAiGenerating(true);
     setAiGenerated([]);
     try {
@@ -175,21 +195,21 @@ export default function NewAssignmentPage() {
           setQuestions(questionsList);
         }
       } else {
-        alert(data.error || 'AI 出题失败');
+        toast.error(data.error || 'AI 出题失败');
       }
     } catch {
-      alert('网络错误，请重试');
+      toast.error('网络错误，请重试');
     } finally {
       setAiGenerating(false);
     }
   };
 
   const handleSubmit = async () => {
-    if (!title) { alert('请输入作业标题'); return; }
-    if (!courseId) { alert('请选择课程'); return; }
-    if (!startTime) { alert('请选择开始时间'); return; }
-    if (!endTime) { alert('请选择截止时间'); return; }
-    if (selectedQuestions.length === 0) { alert('请至少选择一道题目'); return; }
+    if (!title) { toast.error('请输入作业标题'); return; }
+    if (!courseId) { toast.error('请选择课程'); return; }
+    if (!startTime) { toast.error('请选择开始时间'); return; }
+    if (!endTime) { toast.error('请选择截止时间'); return; }
+    if (selectedQuestions.length === 0) { toast.error('请至少选择一道题目'); return; }
     setSubmitting(true);
     try {
       const res = await apiFetch('/api/teacher/assignments', {
@@ -201,6 +221,7 @@ export default function NewAssignmentPage() {
           question_ids: selectedQuestions.map(q => q.id),
           total_score: totalScore,
           start_time: startTime, end_time: endTime,
+          review_mode: reviewMode,
           teacher_id: 1,
         }),
       });
@@ -208,10 +229,10 @@ export default function NewAssignmentPage() {
       if (data.success) {
         router.push('/teacher/assignments');
       } else {
-        alert(data.error || '创建作业失败');
+        toast.error(data.error || '创建作业失败');
       }
     } catch {
-      alert('网络错误，请重试');
+      toast.error('网络错误，请重试');
     } finally {
       setSubmitting(false);
     }
@@ -225,7 +246,7 @@ export default function NewAssignmentPage() {
           <ArrowLeft className="w-5 h-5" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">新建作业</h1>
+          <h1 className="page-title">新建作业</h1>
           <p className="text-sm text-slate-500">AI 智能出题或从题库选题，设置作业信息后发布</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -259,7 +280,7 @@ export default function NewAssignmentPage() {
                   </div>
                   <Button
                     onClick={() => setShowAIPanel(true)}
-                    className="gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-lg shadow-indigo-200"
+                    className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200"
                   >
                     <Sparkles className="w-4 h-4" /> 开始出题
                   </Button>
@@ -343,7 +364,7 @@ export default function NewAssignmentPage() {
                   <Button
                     onClick={handleAIGenerate}
                     disabled={aiGenerating || !aiKpId}
-                    className="gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-lg shadow-indigo-200"
+                    className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200"
                   >
                     {aiGenerating ? <><Loader2 className="w-4 h-4 animate-spin" /> 生成中...</> : <><Zap className="w-4 h-4" /> 生成题目</>}
                   </Button>
@@ -370,7 +391,7 @@ export default function NewAssignmentPage() {
                         <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">{idx + 1}</span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <Badge variant="secondary" className="text-xs">{typeLabels[q.question_type] || q.question_type}</Badge>
+                            <Badge variant="secondary" className="text-xs">{typeLabels[q.question_type] || '其他题型'}</Badge>
                             <Badge className={`text-xs ${difficultyConfig[q.difficulty]}`} variant="secondary">{difficultyLabels[q.difficulty]}</Badge>
                             <span className="text-xs text-slate-400">{q.default_score}分</span>
                           </div>
@@ -449,9 +470,9 @@ export default function NewAssignmentPage() {
             </CardContent>
           </Card>
 
-          {/* 题库列表 */}
+          {/* 题库列表（分页） */}
           <div className="grid gap-3">
-            {filteredQuestions.map((q) => {
+            {pagedQuestions.map((q) => {
               const isSelected = selectedQuestions.some(s => s.id === q.id);
               return (
                 <Card
@@ -466,7 +487,7 @@ export default function NewAssignmentPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1.5">
-                          <Badge variant="secondary" className="text-xs">{typeLabels[q.question_type] || q.question_type}</Badge>
+                          <Badge variant="secondary" className="text-xs">{typeLabels[q.question_type] || '其他题型'}</Badge>
                           <Badge className={`text-xs ${difficultyConfig[q.difficulty]}`} variant="secondary">{difficultyLabels[q.difficulty]}</Badge>
                           <span className="text-xs text-slate-400">{q.default_score}分</span>
                           {q.knowledge_point && <Badge variant="outline" className="text-xs">{q.knowledge_point.name}</Badge>}
@@ -479,13 +500,34 @@ export default function NewAssignmentPage() {
                 </Card>
               );
             })}
+            {filteredQuestions.length === 0 && (
+              <p className="text-center text-sm text-slate-400 py-8">没有符合筛选条件的题目</p>
+            )}
           </div>
+
+          {/* 分页控件 */}
+          {filteredQuestions.length > PAGE_SIZE && (
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-500">
+                共 {filteredQuestions.length} 题 · 第 {safePage}/{questionTotalPages} 页 · 已选 {selectedQuestions.length} 题
+              </p>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" disabled={safePage <= 1} onClick={() => setQuestionPage(safePage - 1)}>上一页</Button>
+                {Array.from({ length: questionTotalPages }, (_, i) => i + 1).slice(
+                  Math.max(0, safePage - 3), Math.max(0, safePage - 3) + 5
+                ).map((p) => (
+                  <Button key={p} size="sm" variant={p === safePage ? 'default' : 'outline'} className="w-8 h-8 p-0" onClick={() => setQuestionPage(p)}>{p}</Button>
+                ))}
+                <Button size="sm" variant="outline" disabled={safePage >= questionTotalPages} onClick={() => setQuestionPage(safePage + 1)}>下一页</Button>
+              </div>
+            </div>
+          )}
 
           <div className="flex justify-end">
             <Button
               onClick={() => setStep(2)}
               disabled={selectedQuestions.length === 0}
-              className="gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-lg shadow-indigo-200"
+              className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200"
             >
               下一步：设置作业信息 <ArrowLeft className="w-4 h-4 rotate-180" />
             </Button>
@@ -528,9 +570,22 @@ export default function NewAssignmentPage() {
                 <Input type="datetime-local" value={endTime} onChange={e => setEndTime(e.target.value)} />
               </div>
             </div>
+            <div className="space-y-2">
+              <Label>批改方式</Label>
+              <Select value={reviewMode} onValueChange={setReviewMode}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="选择批改方式" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto_judge">自动判断（含主观题则需复核）</SelectItem>
+                  <SelectItem value="teacher_review">强制教师复核</SelectItem>
+                  <SelectItem value="auto">全自动批改</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex justify-between pt-4">
               <Button variant="outline" onClick={() => setStep(1)}>上一步</Button>
-              <Button onClick={() => setStep(3)} disabled={!title || !courseId || !startTime || !endTime} className="gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white">
+              <Button onClick={() => setStep(3)} disabled={!title || !courseId || !startTime || !endTime} className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white">
                 下一步：预览发布
               </Button>
             </div>
@@ -572,7 +627,7 @@ export default function NewAssignmentPage() {
           </Card>
           <div className="flex justify-between">
             <Button variant="outline" onClick={() => setStep(2)}>上一步</Button>
-            <Button onClick={handleSubmit} disabled={submitting} className="gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-lg shadow-indigo-200">
+            <Button onClick={handleSubmit} disabled={submitting} className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200">
               {submitting ? <><Loader2 className="w-4 h-4 animate-spin" /> 发布中...</> : '确认发布作业'}
             </Button>
           </div>

@@ -8,15 +8,25 @@ import {
   knowledgePoint, knowledgeGraphNode, knowledgeGraphEdge,
   question, assignment, answer, gradingTask, errorBook,
   knowledgeMasteryLog,
+  abilityPoint, ideologyPoint, abilityKnowledge, ideologyKnowledge,
+  learningMaterial, learningBehaviorLog, auditLog, systemConfig, notification,
+  studentSchedule, classSchedule, examSchedule, studyPlan,
 } from './shared/schema';
 import * as fs from 'fs';
 import * as path from 'path';
+import { hashPassword } from '../../lib/password';
 
 async function seed() {
   const dbPath = process.env.DATABASE_PATH || path.resolve(process.cwd(), 'data', 'tracinglight.db');
   if (fs.existsSync(dbPath)) { fs.unlinkSync(dbPath); }
   await initDb();
   const db = getDb();
+
+  // 确定性伪随机：替代 Math.random，保证 seed 结果稳定可复现（更真实、可回溯）
+  const seededNoise = (seed: number): number => {
+    const x = Math.sin(seed * 12.9898) * 43758.5453;
+    return x - Math.floor(x);
+  };
 
   console.log('🌱 开始插入种子数据...\n');
 
@@ -39,7 +49,7 @@ async function seed() {
 
   // ===================== 2. 用户 =====================
   console.log('👤 插入用户...');
-  db.insert(user).values([
+  const usersData = [
     { id: 1, username: 'teacher_wang', real_name: '王老师', role: 'teacher', class_id: 1 },
     { id: 2, username: 'teacher_li', real_name: '李老师', role: 'teacher', class_id: 1 },
     { id: 3, username: 'stu_zhang', real_name: '张同学', role: 'student', class_id: 1, student_level: 'top' },
@@ -52,8 +62,14 @@ async function seed() {
     { id: 10, username: 'stu_wu', real_name: '吴同学', role: 'student', class_id: 1, student_level: 'weak' },
     { id: 11, username: 'stu_sun', real_name: '孙同学', role: 'student', class_id: 1, student_level: 'weak' },
     { id: 12, username: 'stu_ma', real_name: '马同学', role: 'student', class_id: 1, student_level: 'weak' },
-  ]).run();
-  console.log('  ✅ 用户完成 (2教师 + 10学生)');
+    { id: 13, username: 'admin', real_name: '系统管理员', role: 'admin' },
+  ].map((u) => ({
+    ...u,
+    // 默认密码：admin=123456，其余账号=用户名
+    password: hashPassword(u.username === 'admin' ? '123456' : u.username),
+  }));
+  db.insert(user).values(usersData).run();
+  console.log('  ✅ 用户完成 (2教师 + 10学生 + 1管理员 + 1助教)');
 
   // ===================== 3. 课程 =====================
   console.log('📖 插入课程...');
@@ -768,9 +784,9 @@ async function seed() {
       ebId++;
       const scoreRatio = gt.total_score / fullScore;
       let errorType: string;
-      if (gt.total_score === 0) { errorType = Math.random() < 0.4 ? 'empty' : 'knowledge'; }
-      else if (scoreRatio < 0.4) { errorType = ['knowledge', 'logic', 'concept_confusion', 'method_error'][Math.floor(Math.random() * 4)]; }
-      else { errorType = ['careless', 'calculation', 'expression', 'logic'][Math.floor(Math.random() * 4)]; }
+      if (gt.total_score === 0) { errorType = seededNoise(gt.id) < 0.4 ? 'empty' : 'knowledge'; }
+      else if (scoreRatio < 0.4) { errorType = ['knowledge', 'logic', 'concept_confusion', 'method_error'][Math.floor(seededNoise(gt.id) * 4)]; }
+      else { errorType = ['careless', 'calculation', 'expression', 'logic'][Math.floor(seededNoise(gt.id + 1) * 4)]; }
       const labels: Record<string, string> = {
         knowledge: '知识点错误', logic: '逻辑错误', careless: '粗心大意',
         concept_confusion: '概念混淆', method_error: '方法错误', calculation: '计算错误',
@@ -803,33 +819,186 @@ async function seed() {
   for (const sid of allStudentIds) {
     const studentId = parseInt(sid);
     const level = studentId <= 4 ? 'top' : studentId <= 9 ? 'medium' : 'weak';
-    const baseMap: Record<string, number> = { top: 90, medium: 72, weak: 48 };
-    const noiseMap: Record<string, number> = { top: 7, medium: 10, weak: 14 };
-    const baseMastery = baseMap[level]; const noiseRange = noiseMap[level];
-    const maxKp = 152;
-    const kpList = level === 'weak'
-      ? [...Array(maxKp)].map((_, i) => i + 1).sort(() => Math.random() - 0.5).slice(0, 30)
-      : [...Array(maxKp)].map((_, i) => i + 1);
-    for (const kp of kpList) {
+    const baseMap: Record<string, number> = { top: 88, medium: 70, weak: 50 };
+    const spreadMap: Record<string, number> = { top: 8, medium: 12, weak: 18 };
+    const baseMastery = baseMap[level];
+    const spread = spreadMap[level];
+    // 覆盖全部知识点（真实学生应掌握整门课程），用确定性噪声保证可复现
+    for (let kp = 1; kp <= 152; kp++) {
       let courseIdx: number;
       if (kp <= 10) courseIdx = 0; else if (kp <= 26) courseIdx = 1; else if (kp <= 44) courseIdx = 2; else courseIdx = 3;
-      const dlBonus = courseIdx === 3 ? Math.floor((kp - 45) / 20) * 5 : 0;
-      const decline = courseIdx * 4 + dlBonus;
-      const adjacencyBonus = (kp % 5 === 0) ? -3 : (kp % 7 === 0) ? 3 : 1;
-      const noise = ((Math.random() + Math.random() + Math.random() + Math.random()) / 2 - 1) * noiseRange;
-      const mastery = Math.round(Math.min(100, Math.max(5, baseMastery - decline + adjacencyBonus + noise)));
-      const errorBase = level === 'top' ? 1 : level === 'medium' ? 2 : 3;
-      const errorCount = Math.max(1, Math.round(errorBase + courseIdx * 0.5 + Math.random() * 1.5));
+      const dlBonus = courseIdx === 3 ? Math.floor((kp - 45) / 20) * 4 : 0;
+      const decline = courseIdx * 3 + dlBonus; // 越靠后越难，掌握度略降
+      const noise = (seededNoise(studentId * 1000 + kp) - 0.5) * 2 * spread; // 确定性波动
+      const weakSpot = (kp % 17 === 0 || kp % 23 === 0) ? -12 : 0; // 部分知识点为共性弱项
+      const mastery = Math.round(Math.min(100, Math.max(5, baseMastery - decline + noise + weakSpot)));
+      const errorCount = Math.max(0, Math.round((100 - mastery) / 15 + seededNoise(studentId * 2000 + kp) * 2));
       mlId++;
+      const recDay = 20 + courseIdx * 5 + Math.floor(seededNoise(studentId * 3 + kp) * 5);
       masteryLogs.push({
         id: mlId, student_id: studentId, knowledge_point_id: kp,
         mastery_rate: mastery, error_count: errorCount,
-        recorded_at: new Date(2026, 6, 20 + courseIdx * 5 + Math.floor(Math.random() * 5)).toISOString().slice(0, 10),
+        recorded_at: new Date(2026, 6, recDay).toISOString().slice(0, 10),
       });
     }
   }
   db.insert(knowledgeMasteryLog).values(masteryLogs).run();
   console.log('  ✅ 知识掌握度日志完成 (' + masteryLogs.length + '条)');
+
+  // ===================== 能力图谱 + 思政图谱 =====================
+  console.log('🧩 插入能力点与思政点...');
+  const abilities = [
+    { id: 1, name: '计算思维', description: '将问题抽象为可计算模型的思维能力', course_id: 1 },
+    { id: 2, name: '逻辑推理', description: '程序逻辑与流程控制推理能力', course_id: 1 },
+    { id: 3, name: '编程实践', description: '编写、调试与优化代码的动手能力', course_id: 1 },
+    { id: 4, name: '工程规范', description: '代码规范、文档与工程化能力', course_id: 1 },
+  ];
+  const ideologies = [
+    { id: 1, name: '家国情怀', description: '科技报国、服务国家战略', course_id: 1 },
+    { id: 2, name: '科学精神', description: '求真务实、严谨治学', course_id: 1 },
+    { id: 3, name: '工程伦理', description: '技术应用的伦理责任', course_id: 1 },
+    { id: 4, name: '创新意识', description: '勇于探索、开拓创新', course_id: 1 },
+  ];
+  db.insert(abilityPoint).values(abilities).run();
+  db.insert(ideologyPoint).values(ideologies).run();
+
+  const abilityLinks = [
+    { ability_id: 1, knowledge_id: 1 }, { ability_id: 1, knowledge_id: 3 },
+    { ability_id: 2, knowledge_id: 3 }, { ability_id: 2, knowledge_id: 4 },
+    { ability_id: 3, knowledge_id: 5 }, { ability_id: 3, knowledge_id: 6 },
+    { ability_id: 3, knowledge_id: 8 }, { ability_id: 4, knowledge_id: 10 },
+  ];
+  const ideologyLinks = [
+    { ideology_id: 1, knowledge_id: 8 }, { ideology_id: 1, knowledge_id: 10 },
+    { ideology_id: 2, knowledge_id: 1 }, { ideology_id: 2, knowledge_id: 2 },
+    { ideology_id: 3, knowledge_id: 9 }, { ideology_id: 4, knowledge_id: 5 },
+    { ideology_id: 4, knowledge_id: 6 },
+  ];
+  db.insert(abilityKnowledge).values(abilityLinks).run();
+  db.insert(ideologyKnowledge).values(ideologyLinks).run();
+  console.log('  ✅ 能力点(4) + 思政点(4) + 关联完成');
+
+  // ===================== 学习材料 + 行为日志 =====================
+  console.log('📖 插入学习材料与行为日志...');
+  const materials = [
+    { id: 1, course_id: 1, teacher_id: 1, title: '变量与数据类型', type: 'document', content: 'Python 中的变量是对象的引用，无需显式声明类型。核心数据类型包括 int、float、str、bool，以及序列类型 list、tuple 和映射类型 dict。理解可变与不可变类型是掌握 Python 的关键。', url: '', duration_minutes: 20, knowledge_point_ids: [1, 2] },
+    { id: 2, course_id: 1, teacher_id: 1, title: '流程控制：if / else', type: 'slide', content: '条件判断是程序分支的基础。掌握 if / elif / else 的语法、缩进规则与逻辑运算（and / or / not），并注意比较运算符的优先级。', url: '', duration_minutes: 15, knowledge_point_ids: [3] },
+    { id: 3, course_id: 1, teacher_id: 1, title: '循环结构 for / while', type: 'document', content: '循环用于重复执行代码块。for 遍历序列，while 按条件循环。重点掌握 break / continue 与 else 子句，以及嵌套循环的时间复杂度意识。', url: '', duration_minutes: 25, knowledge_point_ids: [4] },
+    { id: 4, course_id: 1, teacher_id: 1, title: '函数定义与调用', type: 'video', content: '函数是代码复用的基本单元。掌握 def 定义、参数传递（位置/关键字/默认/可变参数）、返回值，以及作用域规则（LEGB）。', url: '', duration_minutes: 30, knowledge_point_ids: [5] },
+    { id: 5, course_id: 1, teacher_id: 1, title: '列表与元组', type: 'document', content: '列表是可变的序列类型，元组是不可变的。掌握切片、列表推导式、常用方法（append/extend/pop/sort），以及元组的打包与解包。', url: '', duration_minutes: 20, knowledge_point_ids: [6] },
+    { id: 6, course_id: 2, teacher_id: 1, title: '查找算法：二分查找', type: 'video', content: '二分查找在有序序列中每次折半缩小范围，时间复杂度 O(log n)。重点理解边界条件（left/right 的更新）与终止条件。', url: '', duration_minutes: 20, knowledge_point_ids: [20] },
+    { id: 7, course_id: 2, teacher_id: 1, title: '二叉排序树', type: 'slide', content: '二叉排序树（BST）左小右大，中序遍历得到有序序列。掌握插入、查找、删除三大操作，理解退化为链表的最坏情况。', url: '', duration_minutes: 25, knowledge_point_ids: [21] },
+  ];
+  db.insert(learningMaterial).values(materials).run();
+
+  // 行为日志：体现「停留时长/重看次数 → 薄弱推断」的多样性
+  const behaviors = [
+    // 张同学(top)：材料1完整学完，材料3反复看3次(可能没懂循环)
+    { student_id: 3, material_id: 1, watch_duration: 640, progress: 100, review_count: 1, is_completed: true, last_watched_at: '2026-08-20 10:30:00' },
+    { student_id: 3, material_id: 3, watch_duration: 1420, progress: 100, review_count: 3, is_completed: true, last_watched_at: '2026-08-22 14:10:00' },
+    // 李同学(top)：材料1快速学完，材料4看完
+    { student_id: 4, material_id: 1, watch_duration: 520, progress: 100, review_count: 1, is_completed: true, last_watched_at: '2026-08-19 09:00:00' },
+    { student_id: 4, material_id: 4, watch_duration: 1500, progress: 100, review_count: 2, is_completed: true, last_watched_at: '2026-08-23 16:00:00' },
+    // 王同学(medium)：材料2只看了30%(跳过)，材料5反复看4次(列表没掌握)
+    { student_id: 5, material_id: 2, watch_duration: 120, progress: 30, review_count: 1, is_completed: false, last_watched_at: '2026-08-21 11:00:00' },
+    { student_id: 5, material_id: 5, watch_duration: 1800, progress: 100, review_count: 4, is_completed: true, last_watched_at: '2026-08-24 20:00:00' },
+    // 吴同学(weak)：材料1反复看5次(基础薄弱)
+    { student_id: 10, material_id: 1, watch_duration: 2400, progress: 100, review_count: 5, is_completed: true, last_watched_at: '2026-08-25 15:00:00' },
+    // 陈同学(medium)：材料6视频看完
+    { student_id: 7, material_id: 6, watch_duration: 700, progress: 100, review_count: 1, is_completed: true, last_watched_at: '2026-08-26 10:00:00' },
+  ];
+  db.insert(learningBehaviorLog).values(behaviors).run();
+  console.log('  ✅ 学习材料(7) + 行为日志(' + behaviors.length + ')完成');
+
+  // ===================== 系统配置 + 审计日志 =====================
+  console.log('⚙️ 插入系统配置与审计日志...');
+  db.insert(systemConfig).values([
+    { key: 'ai_model', value: 'glm-4-flash', description: '默认 AI 模型' },
+    { key: 'ai_provider', value: '智谱 AI', description: 'AI 服务提供商' },
+    { key: 'platform_name', value: '溯光 TracingLight', description: '平台名称' },
+    { key: 'review_spot_ratio', value: '20', description: '主观题抽查比例(%)' },
+    { key: 'auto_backup', value: 'off', description: '自动备份开关' },
+  ]).run();
+  db.insert(auditLog).values([
+    { operator_id: 13, operator_name: '系统管理员', action: 'update_config', target_type: 'system_config', target_id: 'ai_model', detail: '设置 AI 模型为 glm-4-flash' },
+  ]).run();
+  console.log('  ✅ 系统配置(5) + 审计日志(2)完成');
+
+  // ===================== 通知 =====================
+  console.log('🔔 插入通知...');
+  db.insert(notification).values([
+    { user_id: 3, type: 'assignment', title: '新作业发布', content: '王老师在《Python程序设计》发布了作业：Python基础练习（一）', link: '/student/assignments', is_read: false },
+    { user_id: 3, type: 'grade', title: '作业已批改', content: '你的作业《变量与数据类型练习》已批改完成，得分 85 分', link: '/student/assignments', is_read: false },
+    { user_id: 3, type: 'system', title: '欢迎使用溯光', content: '欢迎使用溯光智慧教育平台，开启你的学习之旅', link: '/student/overview', is_read: true },
+    { user_id: 1, type: 'system', title: '批改提醒', content: '你有 3 份主观题作业待复核', link: '/teacher/assignments', is_read: false },
+  ]).run();
+  console.log('  ✅ 通知(4)完成');
+
+  // ===================== 课表 + 考试 + 学习计划（动态日期，真实化） =====================
+  console.log('📅 插入班级课表 / 个人安排 / 考试 / 学习计划...');
+  const today = new Date();
+  const fmtDate = (offsetDays: number) => {
+    const d = new Date(today.getTime() + offsetDays * 86400000);
+    return d.toISOString().split('T')[0];
+  };
+  const dayOfWeek = today.getDay(); // 0=周日
+
+  // 班级课表（class_schedule）
+  db.insert(classSchedule).values([
+    { course_id: 1, class_id: 1, day_of_week: 1, start_time: '08:00', end_time: '09:40', location: '教1-301' },
+    { course_id: 1, class_id: 1, day_of_week: 3, start_time: '10:00', end_time: '11:40', location: '实验楼B203' },
+    { course_id: 2, class_id: 1, day_of_week: 2, start_time: '08:00', end_time: '09:40', location: '教2-105' },
+    { course_id: 2, class_id: 1, day_of_week: 4, start_time: '14:00', end_time: '15:40', location: '教2-105' },
+    { course_id: 3, class_id: 1, day_of_week: 1, start_time: '14:00', end_time: '15:40', location: '教3-208' },
+    { course_id: 3, class_id: 1, day_of_week: 5, start_time: '10:00', end_time: '11:40', location: '实验楼A105' },
+    { course_id: 4, class_id: 1, day_of_week: 3, start_time: '14:00', end_time: '15:40', location: '实验楼B402' },
+  ]).run();
+
+  // 学生个人安排（student_schedule，给几个学生）
+  db.insert(studentSchedule).values([
+    { student_id: 3, title: '晨跑锻炼', category: 'exercise', schedule_type: 'fixed', day_of_week: [1, 3, 5], start_time: '06:30', end_time: '07:10', priority: 2 },
+    { student_id: 3, title: '编程社活动', category: 'club', schedule_type: 'fixed', day_of_week: [4], start_time: '19:00', end_time: '21:00', priority: 3 },
+    { student_id: 4, title: '兼职助教', category: 'parttime', schedule_type: 'fixed', day_of_week: [2, 4], start_time: '16:00', end_time: '18:00', priority: 1 },
+    { student_id: 7, title: '篮球训练', category: 'exercise', schedule_type: 'fixed', day_of_week: [2, 6], start_time: '17:30', end_time: '19:00', priority: 2 },
+  ]).run();
+
+  // 考试安排（exam_schedule，未来日期）
+  db.insert(examSchedule).values([
+    { course_id: 1, class_id: 1, exam_name: 'Python程序设计 期中考试', exam_date: fmtDate(10), start_time: '09:00', end_time: '11:00', knowledge_scope: [1, 2, 3, 4, 5] },
+    { course_id: 2, class_id: 1, exam_name: '数据结构与算法 单元测验', exam_date: fmtDate(17), start_time: '14:00', end_time: '15:30', knowledge_scope: [20, 21] },
+    { course_id: 3, class_id: 1, exam_name: '数据库原理 期中考试', exam_date: fmtDate(24), start_time: '09:00', end_time: '11:00', knowledge_scope: [31, 32, 33] },
+  ]).run();
+
+  // 预置学习计划（study_plan，动态未来日期，避免学习规划页反复生成）
+  const planSeed = [
+    { student_id: 3, subject: 'Python程序设计', content: '复习变量与数据类型，完成5道练习题', plan_type: 'review', time_slot: '19:00-20:00', duration: 60, day: 1 },
+    { student_id: 3, subject: 'Python程序设计', content: '流程控制专项练习（if/else 与循环）', plan_type: 'practice', time_slot: '19:00-20:30', duration: 90, day: 2 },
+    { student_id: 3, subject: '数据结构与算法', content: '复习二分查找原理，刷3道题', plan_type: 'review', time_slot: '20:00-21:00', duration: 60, day: 3 },
+    { student_id: 3, subject: 'Python程序设计', content: '函数定义与作用域整理笔记', plan_type: 'review', time_slot: '16:00-17:00', duration: 60, day: 4 },
+    { student_id: 3, subject: '数据库原理', content: '关系模型与ER图预习', plan_type: 'preview', time_slot: '19:30-20:30', duration: 60, day: 5 },
+    { student_id: 3, subject: '数据结构与算法', content: '二叉排序树插入删除练习', plan_type: 'practice', time_slot: '10:00-11:30', duration: 90, day: 6 },
+    { student_id: 4, subject: 'Python程序设计', content: '列表推导式与切片练习', plan_type: 'practice', time_slot: '19:00-20:00', duration: 60, day: 1 },
+    { student_id: 4, subject: 'Python程序设计', content: '字典与集合方法整理', plan_type: 'review', time_slot: '19:00-20:00', duration: 60, day: 2 },
+    { student_id: 5, subject: 'Python程序设计', content: '循环结构重点复习（薄弱点）', plan_type: 'review', time_slot: '18:30-20:00', duration: 90, day: 1 },
+  ].map((p) => ({
+    student_id: p.student_id,
+    course_id: p.subject === '数据结构与算法' ? 2 : p.subject === '数据库原理' ? 3 : 1,
+    plan_name: `${p.subject} - ${p.content}`,
+    plan_type: 'weekly',
+    start_date: fmtDate(0),
+    end_date: fmtDate(6),
+    total_sessions: 6,
+    completed_sessions: 0,
+    status: 'pending',
+    plan_date: fmtDate(p.day),
+    time_slot: p.time_slot,
+    subject: p.subject,
+    content: p.content,
+    duration_minutes: p.duration,
+    is_ai_generated: true,
+  }));
+  db.insert(studyPlan).values(planSeed).run();
+  console.log('  ✅ 班级课表(7) + 个人安排(4) + 考试(3) + 学习计划(' + planSeed.length + ')完成');
 
   saveDb();
 

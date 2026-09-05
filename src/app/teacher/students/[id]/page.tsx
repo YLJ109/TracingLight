@@ -20,6 +20,9 @@ import {
   BarChart3,
   PieChart,
   LineChart,
+  Sparkles,
+  Loader2,
+  FileDown, Printer,
 } from "lucide-react";
 import {
   Card,
@@ -44,7 +47,16 @@ const typeLabels: Record<string, string> = {
 const errorTypeLabels: Record<string, string> = {
   concept_confusion: "概念混淆",
   calculation_error: "计算错误",
+  calculation: "计算错误",
   logic_error: "逻辑错误",
+  logic: "逻辑错误",
+  expression: "表达问题",
+  knowledge: "知识缺失",
+  method_error: "方法错误",
+  method_unknown: "方法不会",
+  step_missing: "步骤缺失",
+  incomplete: "未答完整",
+  wrong: "答案错误",
   empty: "未作答",
   careless: "粗心大意",
   knowledge_gap: "知识盲区",
@@ -79,6 +91,68 @@ export default function StudentDetailPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("radar");
+  const [report, setReport] = useState<any>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState("");
+
+  const generateReport = async () => {
+    setReportLoading(true);
+    setReportError("");
+    try {
+      const res = await apiFetch("/api/ai/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ student_id: Number(id) }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setReport(json.data);
+      } else {
+        setReportError(json.error || "生成失败");
+      }
+    } catch (e) {
+      setReportError("网络错误，请重试");
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  // ── 学情报告导出（Word / 打印-PDF）──
+  const escapeHtml = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const reportHtml = () => {
+    if (!report) return '';
+    const stu = student || {};
+    const paragraphs = report.report.split('\n').filter(Boolean)
+      .map((line: string) => `<p style="margin:6px 0;">${escapeHtml(line)}</p>`).join('');
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>学情分析报告</title></head>
+<body style="font-family:'Microsoft YaHei',SimSun,sans-serif;max-width:760px;margin:24px auto;color:#222;">
+  <h1 style="text-align:center;font-size:20px;border-bottom:2px solid #7c3aed;padding-bottom:10px;">AI 学情分析报告</h1>
+  <p style="text-align:center;color:#666;font-size:12px;margin:8px 0 16px;">
+    学生：${escapeHtml(stu.real_name || '')} ｜ 平均 ${report.avg} 分 ｜ 掌握度 ${report.avgMastery}% ｜ 错题 ${report.errorCount} 题
+  </p>
+  ${paragraphs}
+  <p style="margin-top:24px;text-align:right;color:#999;font-size:11px;">溯光 TracingLight · 生成于 ${new Date().toLocaleString('zh-CN')}</p>
+</body></html>`;
+  };
+
+  const exportReportWord = () => {
+    const blob = new Blob(['\ufeff', reportHtml()], { type: 'application/msword;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `学情报告_${(student?.real_name || '学生').replace(/[\\/:*?"<>|]/g, '_')}.doc`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const printReport = () => {
+    const w = window.open('', '_blank');
+    if (!w) return;
+    w.document.write(reportHtml());
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 300);
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -293,31 +367,82 @@ export default function StudentDetailPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
-          <ArrowLeft className="w-5 h-5" />
-        </Button>
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center text-lg font-bold text-teal-700">
-            {student.real_name?.slice(-1) || "?"}
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">{student.real_name}</h1>
-            <div className="flex items-center gap-2 mt-1">
-              <Badge className={cn("text-xs", level.bg, level.color)}>
-                {level.label}
-              </Badge>
-              <span className="text-xs text-muted-foreground">
-                {student.username} · 平均 {avgScore} 分
-              </span>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center text-lg font-bold text-teal-700">
+              {student.real_name?.slice(-1) || "?"}
+            </div>
+            <div>
+              <h1 className="page-title">{student.real_name}</h1>
+              <div className="flex items-center gap-2 mt-1">
+                <Badge className={cn("text-xs", level.bg, level.color)}>
+                  {level.label}
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  {student.username} · 平均 {avgScore} 分
+                </span>
+              </div>
             </div>
           </div>
         </div>
+        <Button
+          onClick={generateReport}
+          disabled={reportLoading}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:opacity-90 disabled:opacity-60"
+        >
+          {reportLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+          {reportLoading ? '生成中…' : 'AI 生成学情报告'}
+        </Button>
+        {report && (
+          <>
+            <Button
+              onClick={exportReportWord}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm font-medium text-violet-700 hover:bg-violet-50"
+            >
+              <FileDown className="w-4 h-4" /> 导出 Word
+            </Button>
+            <Button
+              onClick={printReport}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm font-medium text-violet-700 hover:bg-violet-50"
+            >
+              <Printer className="w-4 h-4" /> 打印 / PDF
+            </Button>
+          </>
+        )}
       </div>
+
+      {/* AI 学情报告 */}
+      {reportError && (
+        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{reportError}</p>
+      )}
+      {report && (
+        <Card className="border-violet-200 bg-gradient-to-br from-violet-50/60 to-fuchsia-50/40">
+          <CardHeader className="flex flex-row items-center justify-between pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-violet-600" />
+              AI 学情分析报告
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs">平均 {report.avg} 分</Badge>
+              <Badge variant="outline" className="text-xs">掌握度 {report.avgMastery}%</Badge>
+              <Badge variant="outline" className="text-xs">错题 {report.errorCount} 题</Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+              {report.report}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
+        <Card className="py-0">
           <CardContent className="p-4 flex items-center gap-3">
             <div className="p-2 bg-teal-50 rounded-lg">
               <Award className="w-5 h-5 text-teal-600" />
@@ -328,7 +453,7 @@ export default function StudentDetailPage() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="py-0">
           <CardContent className="p-4 flex items-center gap-3">
             <div className="p-2 bg-blue-50 rounded-lg">
               <BookOpen className="w-5 h-5 text-blue-600" />
@@ -339,7 +464,7 @@ export default function StudentDetailPage() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="py-0">
           <CardContent className="p-4 flex items-center gap-3">
             <div className="p-2 bg-red-50 rounded-lg">
               <AlertTriangle className="w-5 h-5 text-red-600" />
@@ -350,7 +475,7 @@ export default function StudentDetailPage() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="py-0">
           <CardContent className="p-4 flex items-center gap-3">
             <div className="p-2 bg-green-50 rounded-lg">
               <CheckCircle2 className="w-5 h-5 text-green-600" />

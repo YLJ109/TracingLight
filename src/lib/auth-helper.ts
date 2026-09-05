@@ -14,7 +14,7 @@ export interface CurrentUser {
   id: number;
   username: string;
   real_name: string;
-  role: 'teacher' | 'student';
+  role: 'teacher' | 'student' | 'admin' | 'assistant';
   student_level: string | null;
   class_id: number | null;
   token?: string;

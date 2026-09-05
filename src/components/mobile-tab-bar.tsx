@@ -12,12 +12,14 @@ import {
   FileText,
   Library,
   Sparkles,
+  MessageCircle,
 } from 'lucide-react';
 
 const studentTabs = [
   { href: '/student', label: '学情', icon: LayoutDashboard },
   { href: '/student/assignments', label: '作业', icon: BookOpen },
   { href: '/student/errors', label: '错题', icon: AlertCircle },
+  { href: '/student/assistant', label: '答疑', icon: MessageCircle },
   { href: '/student/knowledge-graph', label: '图谱', icon: GitGraph },
   { href: '/student/study-plan', label: '计划', icon: Calendar },
 ];
@@ -40,7 +42,7 @@ export default function MobileTabBar({ role }: { role: 'student' | 'teacher' }) 
   }
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm border-t border-slate-200/60 pb-safe">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm border-t border-border pb-safe">
       <div className="flex items-center justify-around h-14 px-1">
         {tabs.map((tab) => {
           const active = isActive(tab.href);
@@ -51,8 +53,8 @@ export default function MobileTabBar({ role }: { role: 'student' | 'teacher' }) 
               href={tab.href}
               className={`flex flex-col items-center justify-center gap-0.5 min-w-0 flex-1 py-1 rounded-lg transition-colors ${
                 active
-                  ? 'text-teal-600'
-                  : 'text-slate-400 hover:text-slate-600'
+                  ? 'text-violet-600'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <Icon
@@ -60,11 +62,11 @@ export default function MobileTabBar({ role }: { role: 'student' | 'teacher' }) 
                 strokeWidth={active ? 2.5 : 2}
                 className="shrink-0"
               />
-              <span className={`text-[10px] font-medium leading-none ${active ? 'text-teal-600' : ''}`}>
+              <span className={`text-[10px] font-medium leading-none ${active ? 'text-violet-600' : ''}`}>
                 {tab.label}
               </span>
               {active && (
-                <span className="absolute bottom-0 w-5 h-0.5 bg-teal-500 rounded-full" />
+                <span className="absolute bottom-0 w-5 h-0.5 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full" />
               )}
             </Link>
           );

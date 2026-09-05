@@ -242,7 +242,7 @@ export default function TeacherAssignments() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">作业管理</h1>
+          <h1 className="page-title">作业管理</h1>
           <p className="text-sm text-slate-500">按课程/学生维度管理作业与批改</p>
         </div>
         <div className="flex gap-2">
@@ -254,7 +254,7 @@ export default function TeacherAssignments() {
 
       {/* AI Grading Banner */}
       {aiGrading && (
-        <Card className="border-teal-200 bg-teal-50/50">
+        <Card className="border-teal-200 bg-teal-50/50 py-0">
           <CardContent className="p-4 flex items-center gap-3">
             <Loader2 className="w-5 h-5 text-teal-600 animate-spin" />
             <div>
@@ -267,7 +267,7 @@ export default function TeacherAssignments() {
       )}
 
       {/* Filters & Stats */}
-      <Card className="border-slate-200/60 shadow-sm">
+      <Card className="border-slate-200/60 shadow-sm py-0">
         <CardContent className="p-4">
           <div className="flex items-center gap-2 flex-wrap mb-3">
             <button
@@ -315,7 +315,7 @@ export default function TeacherAssignments() {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
         </div>
       ) : assignments.length === 0 ? (
-        <Card>
+        <Card className="py-0">
           <CardContent className="p-12 text-center">
             <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-3" />
             <p className="text-slate-500">暂无作业</p>
@@ -337,7 +337,7 @@ export default function TeacherAssignments() {
                   const config = statusConfig[asgn.status] || statusConfig.published;
                   const StatusIcon = config.icon;
                   return (
-                    <Card key={asgn.id} className="hover:shadow-md transition-shadow">
+                    <Card key={asgn.id} className="hover:shadow-md transition-shadow py-0">
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
@@ -465,7 +465,7 @@ export default function TeacherAssignments() {
             const studentList = Array.from(studentMap.values());
 
             return studentList.map((sm) => (
-              <Card key={sm.studentId} className="hover:shadow-md transition-shadow cursor-pointer"
+              <Card key={sm.studentId} className="hover:shadow-md transition-shadow cursor-pointer py-0"
                 onClick={() => router.push(`/teacher/students/${sm.studentId}`)}>
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">

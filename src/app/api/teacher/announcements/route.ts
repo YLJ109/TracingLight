@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/storage/database/db';
+import { getDb, saveDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
-import { eq, and } from 'drizzle-orm';
-import { announcement } from '@/storage/database/shared/schema';
+import { eq, and, inArray } from 'drizzle-orm';
+import { announcement , notification, course, user} from '@/storage/database/shared/schema';
 
 // GET /api/teacher/announcements - 获取公告列表
 export async function GET(request: NextRequest) {
@@ -55,6 +55,35 @@ export async function POST(request: NextRequest) {
       target_type: 'all',
     }).returning().all();
 
+    // 通知扇出：公告面向的课程班级学生收到通知（学生在通知中心查看）
+    try {
+      let targets: Array<{ id: number }>;
+      if (course_id) {
+        const cls = db.select({ class_id: course.class_id }).from(course)
+          .where(eq(course.id, Number(course_id))).limit(1).all()[0];
+        targets = cls?.class_id
+          ? db.select({ id: user.id }).from(user)
+              .where(and(eq(user.role, 'student'), eq(user.class_id, cls.class_id)))
+              .all()
+          : [];
+      } else {
+        targets = db.select({ id: user.id }).from(user).where(eq(user.role, 'student')).all();
+      }
+      const sid = result[0]?.id;
+      if (targets.length > 0) {
+        db.insert(notification).values(targets.map((t) => ({
+          user_id: t.id,
+          type: 'system',
+          title: '新公告',
+          content: `${authUser.username.includes('teacher') ? '老师' : '管理员'}发布了公告「${String(title).slice(0, 30)}」`,
+          link: sid ? `/student/announcements?aid=${sid}` : '/student/announcements',
+        }))).run();
+        try { saveDb(); } catch { /* 定时持久化兜底 */ }
+      }
+    } catch (notifyErr) {
+      console.error('Announcement notify error:', notifyErr);
+    }
+
     return NextResponse.json({ data: result[0] || null });
   } catch (e: any) {
     console.error('Create announcement error:', e);
@@ -71,6 +100,16 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const { id, title, content, is_pinned } = body;
     if (!id) return NextResponse.json({ error: '缺少ID' }, { status: 400 });
+
+    // 校验归属，防止越权修改他人公告（IDOR）
+    const target = db.select({ id: announcement.id, teacher_id: announcement.teacher_id })
+      .from(announcement)
+      .where(eq(announcement.id, Number(id)))
+      .limit(1)
+      .all();
+    if (!target[0] || target[0].teacher_id !== authUser.userId) {
+      return NextResponse.json({ error: '无权操作该公告' }, { status: 403 });
+    }
 
     const updates: Record<string, any> = {};
     if (title !== undefined) updates.title = title;
@@ -99,6 +138,16 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     if (!id) return NextResponse.json({ error: '缺少ID' }, { status: 400 });
+
+    // 校验归属，防止越权删除他人公告（IDOR）
+    const target = db.select({ id: announcement.id, teacher_id: announcement.teacher_id })
+      .from(announcement)
+      .where(eq(announcement.id, Number(id)))
+      .limit(1)
+      .all();
+    if (!target[0] || target[0].teacher_id !== authUser.userId) {
+      return NextResponse.json({ error: '无权操作该公告' }, { status: 403 });
+    }
 
     db.delete(announcement).where(eq(announcement.id, Number(id))).run();
 

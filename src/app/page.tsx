@@ -20,16 +20,16 @@ interface DemoUser {
 const DEMO_USERS: DemoUser[] = [
   { username: "teacher_wang", real_name: "王老师", role: "teacher" },
   { username: "teacher_li", real_name: "李老师", role: "teacher" },
-  { username: "stu_zhang", real_name: "张同学", role: "student", level: "全优层" },
-  { username: "stu_liu", real_name: "刘同学", role: "student", level: "全优层" },
+  { username: "stu_zhang", real_name: "张同学", role: "student", level: "学霸层" },
+  { username: "stu_li", real_name: "李同学", role: "student", level: "学霸层" },
+  { username: "stu_wang", real_name: "王同学", role: "student", level: "学霸层" },
+  { username: "stu_zhao", real_name: "赵同学", role: "student", level: "学霸层" },
   { username: "stu_chen", real_name: "陈同学", role: "student", level: "勤奋中等层" },
-  { username: "stu_yang", real_name: "杨同学", role: "student", level: "学霸层" },
-  { username: "stu_zhao", real_name: "赵同学", role: "student", level: "全优层" },
-  { username: "stu_huang", real_name: "黄同学", role: "student", level: "勤奋中等层" },
-  { username: "stu_zhou", real_name: "周同学", role: "student", level: "学霸层" },
+  { username: "stu_liu", real_name: "刘同学", role: "student", level: "勤奋中等层" },
+  { username: "stu_zhou", real_name: "周同学", role: "student", level: "勤奋中等层" },
   { username: "stu_wu", real_name: "吴同学", role: "student", level: "提升层" },
-  { username: "stu_xu", real_name: "徐同学", role: "student", level: "全优层" },
   { username: "stu_sun", real_name: "孙同学", role: "student", level: "提升层" },
+  { username: "stu_ma", real_name: "马同学", role: "student", level: "提升层" },
 ];
 
 const levelColors: Record<string, string> = {
@@ -49,7 +49,7 @@ function generateCaptcha(): string {
 }
 
 export default function LoginPage() {
-  const [activeTab, setActiveTab] = useState<"student" | "teacher">("student");
+  const [activeTab, setActiveTab] = useState<"student" | "teacher" | "admin">("student");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [captchaInput, setCaptchaInput] = useState("");
@@ -86,7 +86,7 @@ export default function LoginPage() {
     try {
       const loginResp = await apiFetch("/api/auth/login", {
         method: "POST",
-        body: JSON.stringify({ username: username.trim() }),
+        body: JSON.stringify({ username: username.trim(), password: password.trim() }),
       });
       const loginData = await loginResp.json();
 
@@ -121,7 +121,8 @@ export default function LoginPage() {
 
       // cookie 给 proxy
       document.cookie = `sb-auth=${token}; path=/; max-age=86400; SameSite=Lax`;
-      window.location.href = role === "teacher" ? "/teacher" : "/student";
+      const rolePath: Record<string, string> = { teacher: "/teacher", student: "/student", admin: "/admin" };
+      window.location.href = rolePath[role] || "/student";
     } catch {
       setError("登录失败，请检查网络连接");
       setLoading(false);
@@ -138,14 +139,16 @@ export default function LoginPage() {
 
   const filterUsers = activeTab === "teacher"
     ? DEMO_USERS.filter((u) => u.role === "teacher")
-    : DEMO_USERS.filter((u) => u.role === "student");
+    : activeTab === "student"
+      ? DEMO_USERS.filter((u) => u.role === "student")
+      : [];
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-teal-50/30">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-violet-50/40 to-fuchsia-50/30">
       {/* Background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 bg-indigo-200/20 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-teal-200/20 rounded-full blur-3xl" />
+        <div className="absolute -top-40 -right-40 w-96 h-96 bg-violet-200/25 rounded-full blur-3xl" />
+        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-fuchsia-200/20 rounded-full blur-3xl" />
       </div>
 
       <div className="relative w-full max-w-md mx-auto px-4">
@@ -161,7 +164,7 @@ export default function LoginPage() {
           <CardContent className="p-8">
             <div className="text-center mb-6">
               <h2 className="text-xl font-bold text-slate-800">欢迎回来</h2>
-              <p className="text-sm text-slate-500 mt-1">已为您自动填入演示账号</p>
+              <p className="text-sm text-slate-500 mt-1">演示账号已自动填入，直接登录即可</p>
             </div>
 
             {/* Role tabs */}
@@ -195,6 +198,21 @@ export default function LoginPage() {
                 }`}
               >
                 教师端
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab("admin");
+                  setSelectedUser(null);
+                  setUsername("admin");
+                  setPassword("123456");
+                }}
+                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${
+                  activeTab === "admin"
+                    ? "bg-white text-indigo-600 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                管理端
               </button>
             </div>
 
@@ -285,7 +303,7 @@ export default function LoginPage() {
               <Button
                 onClick={handleLogin}
                 disabled={loading}
-                className="w-full h-11 bg-gradient-to-r from-indigo-600 to-teal-600 hover:from-indigo-700 hover:to-teal-700 text-white font-medium shadow-lg shadow-indigo-200 transition-all duration-200 disabled:opacity-50"
+                className="w-full h-11 bg-violet-600 hover:bg-violet-700 text-white font-medium shadow-lg shadow-violet-200 transition-all duration-200 disabled:opacity-50"
               >
                 {loading ? (
                   <>
@@ -307,7 +325,7 @@ export default function LoginPage() {
       </div>
 
       {/* Floating user switch button */}
-      <div className="fixed left-6 bottom-6 z-50">
+      <div className={activeTab === "admin" ? "hidden" : "fixed left-6 bottom-6 z-50"}>
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetTrigger asChild>
             <button className="flex items-center gap-2 px-4 py-3 bg-white/90 backdrop-blur-sm border border-slate-200 rounded-xl shadow-lg hover:shadow-xl hover:bg-white transition-all text-slate-600 hover:text-slate-800">
@@ -333,7 +351,7 @@ export default function LoginPage() {
                       : "hover:bg-slate-50 border border-transparent"
                   }`}
                 >
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-400 to-teal-400 flex items-center justify-center text-white text-sm font-medium shrink-0">
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center text-white text-sm font-medium shrink-0">
                     {user.real_name.charAt(0)}
                   </div>
                   <div className="flex-1 min-w-0">

@@ -45,50 +45,97 @@
   --font-sans: 'Inter', 'Noto Sans SC', ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  /* App-level design tokens */
-  --color-brand: #1e293b;
-  --color-brand-light: #334155;
-  --color-accent-teal: #0d9488;
-  --color-accent-amber: #f59e0b;
+  /* App-level brand tokens —— 粉紫科技教育体系 */
+  --color-brand: #7c3aed;
+  --color-brand-light: #a78bfa;
+  --color-brand-deep: #4c1d95;
+  --color-accent-pink: #ec4899;
+  --color-accent-fuchsia: #d946ef;
+  --color-accent-teal: #14b8a6;
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
   --color-info: #3b82f6;
 }
 
+@theme {
+  /* 品牌统一：将散落的 indigo（蓝紫）色阶重映射为 violet（紫），
+     使页面里既有 bg-indigo-* / text-indigo-* 自动对齐品牌主色 */
+  --color-indigo-50: oklch(0.969 0.016 293.756);
+  --color-indigo-100: oklch(0.943 0.029 294.588);
+  --color-indigo-200: oklch(0.894 0.057 293.283);
+  --color-indigo-300: oklch(0.811 0.111 293.571);
+  --color-indigo-400: oklch(0.702 0.183 293.541);
+  --color-indigo-500: oklch(0.606 0.25 292.717);
+  --color-indigo-600: oklch(0.541 0.281 293.009);
+  --color-indigo-700: oklch(0.491 0.27 292.581);
+  --color-indigo-800: oklch(0.432 0.232 292.759);
+  --color-indigo-900: oklch(0.38 0.189 293.745);
+  --color-indigo-950: oklch(0.283 0.141 291.089);
+}
+
 :root {
   --radius: 0.75rem;
-  --background: oklch(0.98 0.005 240);
-  --foreground: oklch(0.15 0.01 240);
+  --background: oklch(0.985 0.004 300);
+  --foreground: oklch(0.25 0.03 295);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.15 0.01 240);
+  --card-foreground: oklch(0.25 0.03 295);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0.01 240);
-  --primary: oklch(0.35 0.08 240);
-  --primary-foreground: oklch(0.98 0.005 240);
-  --secondary: oklch(0.95 0.01 240);
-  --secondary-foreground: oklch(0.25 0.02 240);
-  --muted: oklch(0.96 0.005 240);
-  --muted-foreground: oklch(0.5 0.02 240);
-  --accent: oklch(0.95 0.02 160);
-  --accent-foreground: oklch(0.25 0.05 160);
-  --destructive: oklch(0.55 0.2 25);
-  --border: oklch(0.92 0.01 240);
-  --input: oklch(0.92 0.01 240);
-  --ring: oklch(0.35 0.08 240);
-  --chart-1: oklch(0.35 0.08 240);
-  --chart-2: oklch(0.55 0.15 160);
-  --chart-3: oklch(0.7 0.15 80);
-  --chart-4: oklch(0.55 0.2 25);
-  --chart-5: oklch(0.6 0.15 300);
-  --sidebar: oklch(0.2 0.03 240);
-  --sidebar-foreground: oklch(0.9 0.01 240);
-  --sidebar-primary: oklch(0.55 0.15 160);
-  --sidebar-primary-foreground: oklch(0.98 0.005 240);
-  --sidebar-accent: oklch(0.25 0.03 240);
-  --sidebar-accent-foreground: oklch(0.9 0.01 240);
-  --sidebar-border: oklch(0.3 0.03 240);
-  --sidebar-ring: oklch(0.55 0.15 160);
+  --popover-foreground: oklch(0.25 0.03 295);
+  --primary: oklch(0.541 0.281 293.009);
+  --primary-foreground: oklch(0.985 0.005 300);
+  --secondary: oklch(0.945 0.02 295);
+  --secondary-foreground: oklch(0.38 0.06 295);
+  --muted: oklch(0.955 0.008 300);
+  --muted-foreground: oklch(0.52 0.02 295);
+  --accent: oklch(0.945 0.028 315);
+  --accent-foreground: oklch(0.42 0.1 315);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.92 0.01 300);
+  --input: oklch(0.92 0.01 300);
+  --ring: oklch(0.541 0.281 293.009);
+  --chart-1: oklch(0.541 0.281 293.009);
+  --chart-2: oklch(0.702 0.183 293.541);
+  --chart-3: oklch(0.627 0.17 162);
+  --chart-4: oklch(0.75 0.14 80);
+  --chart-5: oklch(0.637 0.237 25.331);
+  --sidebar: oklch(0.26 0.07 291);
+  --sidebar-foreground: oklch(0.94 0.012 300);
+  --sidebar-primary: oklch(0.606 0.25 292.717);
+  --sidebar-primary-foreground: oklch(0.985 0.005 300);
+  --sidebar-accent: oklch(0.31 0.07 291);
+  --sidebar-accent-foreground: oklch(0.96 0.012 300);
+  --sidebar-border: oklch(0.34 0.07 291);
+  --sidebar-ring: oklch(0.606 0.25 292.717);
+}
+
+.dark {
+  --background: oklch(0.18 0.03 292);
+  --foreground: oklch(0.95 0.01 300);
+  --card: oklch(0.22 0.04 292);
+  --card-foreground: oklch(0.95 0.01 300);
+  --popover: oklch(0.22 0.04 292);
+  --popover-foreground: oklch(0.95 0.01 300);
+  --primary: oklch(0.606 0.25 292.717);
+  --primary-foreground: oklch(0.98 0.005 300);
+  --secondary: oklch(0.28 0.05 292);
+  --secondary-foreground: oklch(0.9 0.01 300);
+  --muted: oklch(0.26 0.04 292);
+  --muted-foreground: oklch(0.65 0.02 295);
+  --accent: oklch(0.3 0.06 315);
+  --accent-foreground: oklch(0.92 0.01 315);
+  --destructive: oklch(0.63 0.22 27);
+  --border: oklch(0.3 0.04 292);
+  --input: oklch(0.3 0.04 292);
+  --ring: oklch(0.606 0.25 292.717);
+  --sidebar: oklch(0.21 0.05 292);
+  --sidebar-foreground: oklch(0.94 0.01 300);
+  --sidebar-primary: oklch(0.606 0.25 292.717);
+  --sidebar-primary-foreground: oklch(0.98 0.005 300);
+  --sidebar-accent: oklch(0.28 0.06 292);
+  --sidebar-accent-foreground: oklch(0.96 0.01 300);
+  --sidebar-border: oklch(0.3 0.05 292);
+  --sidebar-ring: oklch(0.606 0.25 292.717);
 }
 
 @layer base {
@@ -98,18 +145,21 @@
   body {
     @apply bg-background text-foreground font-sans antialiased;
   }
+  ::selection {
+    background: oklch(0.541 0.281 293.009 / 0.18);
+  }
 }
 
 /* ─── Scrollbar ─── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: oklch(0.84 0.01 240); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: oklch(0.72 0.01 240); }
+::-webkit-scrollbar-thumb { background: oklch(0.86 0.015 295); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: oklch(0.76 0.03 295); }
 
-/* ─── Level Badges ─── */
-.level-top { background: oklch(0.88 0.14 90); color: oklch(0.35 0.1 90); }
-.level-medium { background: oklch(0.92 0.08 70); color: oklch(0.42 0.1 70); }
-.level-weak { background: oklch(0.94 0.04 25); color: oklch(0.45 0.14 25); }
+/* ─── Level Badges（学生分层语义色） ─── */
+.level-top { background: oklch(0.94 0.05 160); color: oklch(0.45 0.09 160); }
+.level-medium { background: oklch(0.95 0.05 85); color: oklch(0.5 0.09 85); }
+.level-weak { background: oklch(0.95 0.03 25); color: oklch(0.5 0.14 25); }
 
 /* ─── Animations ─── */
 @keyframes fadeInUp {
@@ -145,18 +195,19 @@
 
 /* ─── Skeleton shimmer ─── */
 .skeleton-shimmer {
-  background: linear-gradient(90deg, oklch(0.95 0.005 240) 25%, oklch(0.98 0.003 240) 50%, oklch(0.95 0.005 240) 75%);
+  background: linear-gradient(90deg, oklch(0.95 0.008 300) 25%, oklch(0.98 0.004 300) 50%, oklch(0.95 0.008 300) 75%);
   background-size: 400px 100%;
   animation: shimmer 1.5s infinite ease-in-out;
 }
 
-/* ─── Card hover ─── */
+/* ─── Card hover（统一卡片微交互） ─── */
 .card-hover {
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease;
 }
 .card-hover:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px -8px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 10px 30px -12px oklch(0.4 0.1 292 / 0.18), 0 2px 6px oklch(0.4 0.05 292 / 0.06);
+  border-color: oklch(0.82 0.04 292);
 }
 
 /* ─── View transitions ─── */
@@ -164,25 +215,180 @@
   navigation: auto;
 }
 
-/* ─── 护眼模式 ─── */
+/* ════════════════ 护眼模式 v2（变量换肤） ════════════════
+   原则：暖米绿低蓝光色板 + WCAG 对比达标；不用全局 filter
+   （filter 会创建 containing block 破坏 fixed 定位、颜色整体失真）
+   --eye-warm (0-100) 由滑条驱动，控制冷暖混合比例 */
+
+:root.eye-care {
+  --background: color-mix(in oklch, oklch(0.975 0.015 125), oklch(0.93 0.055 115) calc(var(--eye-warm, 50) * 0.6%));
+  --card: color-mix(in oklch, oklch(0.985 0.012 125), oklch(0.955 0.04 118) calc(var(--eye-warm, 50) * 0.55%));
+  --popover: var(--card);
+  --foreground: oklch(0.33 0.035 145);
+  --muted-foreground: oklch(0.46 0.035 145);
+  --muted: color-mix(in oklch, oklch(0.94 0.03 125), oklch(0.9 0.05 118) calc(var(--eye-warm, 50) * 0.55%));
+  --secondary: var(--muted);
+  --border: color-mix(in oklch, oklch(0.88 0.035 125), oklch(0.84 0.05 118) calc(var(--eye-warm, 50) * 0.6%));
+  --input: var(--border);
+}
+
 :root.eye-care body {
-  filter: var(--eye-filter);
-  transition: filter 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  background-color: var(--background);
+  color: var(--foreground);
 }
 
-:root.eye-care * {
-  transition: background-color 0.5s cubic-bezier(0.4, 0, 0.2, 1),
-              color 0.5s cubic-bezier(0.4, 0, 0.2, 1),
-              border-color 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-}
+/* 品牌色在护眼下降一点饱和，减少刺激 */
+:root.eye-care { --primary: oklch(0.52 0.2 293); --ring: oklch(0.52 0.2 293); }
 
-/* 护眼模式下白色背景转暖米色 */
-:root.eye-care .bg-white  { background-color: #fefcf5 !important; }
-:root.eye-care .bg-slate-50  { background-color: #f8f5ed !important; }
-:root.eye-care .bg-slate-100 { background-color: #f3efe3 !important; }
-:root.eye-care .bg-blue-50   { background-color: #eff6f0 !important; }
-:root.eye-care .text-blue-600 { color: #3b7050 !important; }
-:root.eye-care .text-blue-500 { color: #4a7a5e !important; }
+/* 常用硬编码表面 → 暖色对应（存量页面过渡兼容） */
+:root.eye-care .bg-white          { background-color: var(--card) !important; }
+:root.eye-care .bg-slate-50       { background-color: color-mix(in oklch, oklch(0.965 0.02 125), oklch(0.93 0.045 118) calc(var(--eye-warm, 50) * 0.55%)) !important; }
+:root.eye-care .bg-slate-100      { background-color: var(--muted) !important; }
+:root.eye-care .bg-slate-200      { background-color: var(--border) !important; }
+:root.eye-care .page-surface {
+  background:
+    radial-gradient(1200px 400px at 85% -50px, color-mix(in oklch, oklch(0.94 0.04 130) 60%, transparent), transparent 70%),
+    var(--background);
+}
+:root.eye-care .surface-card { border-color: var(--border); }
+
+/* 文字色 → 暖绿灰系，保持对比 */
+:root.eye-care .text-slate-800, :root.eye-care .text-slate-900 { color: oklch(0.32 0.035 145) !important; }
+:root.eye-care .text-slate-700 { color: oklch(0.38 0.035 145) !important; }
+:root.eye-care .text-slate-600 { color: oklch(0.44 0.035 145) !important; }
+:root.eye-care .text-slate-500 { color: oklch(0.50 0.03 145) !important; }
+:root.eye-care .text-slate-400 { color: oklch(0.56 0.025 145) !important; }
+
+/* 品牌色文字/边框轻微转暖 */
+:root.eye-care .text-violet-600, :root.eye-care .text-violet-700 { color: oklch(0.5 0.17 300) !important; }
+:root.eye-care .bg-violet-600 { background-color: oklch(0.52 0.19 293) !important; }
+:root.eye-care .bg-violet-100 { background-color: oklch(0.93 0.05 300) !important; }
+
+/* 深色侧栏 → 暖深墨绿（降低亮度刺激） */
+:root.eye-care .bg-violet-950 { background-color: oklch(0.24 0.03 155) !important; }
+
+/* 状态色轻微柔化 */
+:root.eye-care .bg-green-50  { background-color: oklch(0.95 0.045 150) !important; }
+:root.eye-care .bg-red-50    { background-color: oklch(0.95 0.03 30) !important; }
+:root.eye-care .bg-amber-50  { background-color: oklch(0.96 0.05 85) !important; }
+:root.eye-care .bg-blue-50   { background-color: oklch(0.95 0.03 230) !important; }
 
 /* ─── Mobile Safe Area ─── */
 .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* ══════════════════════════════════════════════
+   UI/UX 重构 · 统一设计规范（v3 视觉体系）
+   原则：大面积冷白中性表面 + 粉紫只给品牌时刻
+   ══════════════════════════════════════════════ */
+
+/* ─── 统一页面背景（消除 29 处硬编码底色漂移） ─── */
+.page-surface {
+  background:
+    radial-gradient(1200px 400px at 85% -50px, oklch(0.96 0.03 300 / 0.5), transparent 70%),
+    oklch(0.978 0.006 300);
+}
+
+/* ─── 统一卡片表面：一层语义，替代 33 种漂移组合 ─── */
+.surface-card {
+  background: var(--card);
+  border: 1px solid oklch(0.93 0.012 300);
+  border-radius: 1rem;
+  box-shadow: 0 1px 2px oklch(0.3 0.05 292 / 0.04), 0 4px 16px -8px oklch(0.3 0.05 292 / 0.06);
+}
+.surface-card-hover {
+  transition: transform 0.18s cubic-bezier(0.25, 1, 0.4, 1), box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.surface-card-hover:hover {
+  transform: translateY(-2px);
+  border-color: oklch(0.85 0.05 295);
+  box-shadow: 0 2px 4px oklch(0.3 0.05 292 / 0.05), 0 12px 28px -10px oklch(0.4 0.1 292 / 0.16);
+}
+
+/* ─── 排版层次：页标题体系（修复全站 text-sm 无对比） ─── */
+.page-title {
+  font-size: clamp(1.15rem, 0.9rem + 0.8vw, 1.5rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: oklch(0.24 0.03 295);
+  text-wrap: balance;
+}
+.page-subtitle {
+  font-size: 0.8125rem;
+  color: oklch(0.52 0.02 295);
+  margin-top: 0.25rem;
+}
+.section-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: oklch(0.3 0.03 295);
+}
+
+/* ─── 统一 focus（键盘可达性 + 一致品牌色描边） ─── */
+:focus-visible {
+  outline: 2px solid oklch(0.6 0.2 293 / 0.55);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ─── 全局滚动条（桌面端细化，工具感） ─── */
+@media (min-width: 640px) {
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: oklch(0.85 0.02 295);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: oklch(0.75 0.04 295); background-clip: content-box; }
+}
+
+/* ─── 统一微交互：按钮按压反馈 ─── */
+button:not(:disabled):active { transform: scale(0.98); }
+button { transition: transform 0.1s ease, box-shadow 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
+a { transition: color 0.15s ease, background-color 0.15s ease; }
+
+/* ─── 统一空态 ─── */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 3rem 1.5rem; text-align: center;
+  color: oklch(0.55 0.02 295);
+}
+.empty-state svg { opacity: 0.4; }
+
+/* ─── 减少动效偏好 ─── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* ─── 富内容渲染：公式块/代码块/表格（错题本/批改对比等） ─── */
+.rich-view pre {
+  background: rgb(248, 250, 252);
+  border: 1px solid rgb(226, 232, 240);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.rich-view code {
+  background: rgb(241, 245, 249);
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.92em;
+}
+.rich-view pre code { background: transparent; padding: 0; }
+.rich-view img { max-width: 60%; height: auto; border-radius: 6px; margin: 4px 0; }
+.rich-view table { border-collapse: collapse; margin: 6px 0; }
+.rich-view th, .rich-view td { border: 1px solid rgb(203, 213, 225); padding: 4px 8px; }
+.rich-view th { background: rgb(248, 250, 252); }
+.rich-katex-block {
+  margin: 8px 0;
+  overflow-x: auto;
+  padding: 4px 0;
+}
+.rich-view .katex { font-size: 1.05em; }
+.rich-view .hljs { background: transparent; padding: 0; }

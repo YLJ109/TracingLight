@@ -16,22 +16,20 @@ const Ctx = createContext<EyeCareContextType>({
   setWarmth: () => {},
 });
 
+/**
+ * 护眼模式（v2）：CSS 变量换肤，替代旧的全局 filter 方案。
+ * filter 会创建 containing block 导致 fixed 弹层/侧栏错位、增加合成层开销、颜色整体失真；
+ * 变量换肤只改变颜色值，布局与定位不受影响。
+ * warmth 0-100 映射背景冷暖混合比例（--eye-warm），由 globals.css 的 .eye-care 令牌消费。
+ */
 function applyWarmth(enabled: boolean, w: number) {
   const root = document.documentElement;
   if (!enabled) {
     root.classList.remove("eye-care");
-    root.style.removeProperty("--eye-filter");
+    root.style.removeProperty("--eye-warm");
     return;
   }
-  // w: 0=cool(no filter) → 100=warm(max filter)
-  const sepia = (w / 100) * 0.30;        // 0 → 0.30
-  const saturate = 1 - (w / 100) * 0.20; // 1 → 0.80
-  const brightness = 1 - (w / 100) * 0.12; // 1 → 0.88
-  const contrast = 1 - (w / 100) * 0.16;   // 1 → 0.84
-  root.style.setProperty(
-    "--eye-filter",
-    `sepia(${sepia.toFixed(3)}) saturate(${saturate.toFixed(3)}) brightness(${brightness.toFixed(3)}) contrast(${contrast.toFixed(3)})`
-  );
+  root.style.setProperty("--eye-warm", String(Math.min(100, Math.max(0, w))));
   root.classList.add("eye-care");
 }
 

@@ -2,7 +2,7 @@
 
 import { apiFetch } from '@/lib/api-fetch';
 import { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   BarChart3,
   Users,
@@ -22,6 +22,7 @@ import {
   LineChart,
   BarChart,
   Layers,
+  Filter,
 } from "lucide-react";
 import {
   Card,
@@ -32,6 +33,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -51,9 +53,17 @@ const levelConfig: Record<string, { label: string; color: string; bg: string }> 
 
 export default function AnalyticsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
+
+  // 筛选维度：all / course / class
+  const [dimension, setDimension] = useState<'all' | 'course' | 'class'>(
+    searchParams.get('course_id') ? 'course' : 'all'
+  );
+  const [courseId, setCourseId] = useState<string>(searchParams.get('course_id') || '');
+  const [classId, setClassId] = useState<string>('');
 
   const radarChartRef = useRef<echarts.ECharts | null>(null);
   const heatmapChartRef = useRef<echarts.ECharts | null>(null);
@@ -63,7 +73,14 @@ export default function AnalyticsPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const res = await apiFetch("/api/teacher/analytics");
+        setLoading(true);
+        let url = "/api/teacher/analytics";
+        const params = new URLSearchParams();
+        if (dimension === 'course' && courseId) params.set('course_id', courseId);
+        if (dimension === 'class' && classId) params.set('class_id', classId);
+        const qs = params.toString();
+        if (qs) url += '?' + qs;
+        const res = await apiFetch(url);
         const json = await res.json();
         if (json.success) setData(json.data);
       } catch (e) {
@@ -73,7 +90,7 @@ export default function AnalyticsPage() {
       }
     };
     fetchData();
-  }, []);
+  }, [dimension, courseId, classId]);
 
   // Radar chart - only when tab is active
   useEffect(() => {
@@ -301,14 +318,68 @@ export default function AnalyticsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">学情看板</h1>
+          <h1 className="page-title">学情看板</h1>
           <p className="text-sm text-muted-foreground mt-1">班级整体学情数据可视化分析</p>
         </div>
+        {/* P2-1：从"发现薄弱"到"采取行动"的一键出口 */}
+        <Button
+          className="bg-violet-600 hover:bg-violet-700 gap-1.5"
+          onClick={() => router.push(`/teacher/assignments/new?auto_ai=1${courseId ? `&course_id=${courseId}` : ''}`)}
+        >
+          <Zap className="w-4 h-4" /> 针对薄弱点 AI 布置作业
+        </Button>
+      </div>
+
+      {/* 筛选栏：全部 / 按课程 / 按班级 */}
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-3">
+        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+          <Filter className="w-4 h-4" />筛选维度
+        </span>
+        <div className="inline-flex rounded-lg bg-muted p-1">
+          {(['all', 'course', 'class'] as const).map((d) => (
+            <button
+              key={d}
+              onClick={() => setDimension(d)}
+              className={cn(
+                "px-3 py-1.5 text-sm rounded-md transition-colors",
+                dimension === d
+                  ? "bg-white shadow-sm text-violet-600 font-medium"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {d === 'all' ? '全部' : d === 'course' ? '按课程' : '按班级'}
+            </button>
+          ))}
+        </div>
+        {dimension === 'course' && (
+          <Select value={courseId} onValueChange={setCourseId}>
+            <SelectTrigger className="w-56">
+              <SelectValue placeholder="选择课程" />
+            </SelectTrigger>
+            <SelectContent>
+              {data?.courses?.map((c: any) => (
+                <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {dimension === 'class' && (
+          <Select value={classId} onValueChange={setClassId}>
+            <SelectTrigger className="w-56">
+              <SelectValue placeholder="选择班级" />
+            </SelectTrigger>
+            <SelectContent>
+              {data?.classes?.map((c: any) => (
+                <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
+        <Card className="py-0">
           <CardContent className="p-4 flex items-center gap-3">
             <div className="p-2 bg-teal-50 rounded-lg">
               <Users className="w-5 h-5 text-teal-600" />
@@ -319,7 +390,7 @@ export default function AnalyticsPage() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="py-0">
           <CardContent className="p-4 flex items-center gap-3">
             <div className="p-2 bg-blue-50 rounded-lg">
               <TrendingUp className="w-5 h-5 text-blue-600" />
@@ -330,7 +401,7 @@ export default function AnalyticsPage() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="py-0">
           <CardContent className="p-4 flex items-center gap-3">
             <div className="p-2 bg-yellow-50 rounded-lg">
               <Award className="w-5 h-5 text-yellow-600" />
@@ -341,7 +412,7 @@ export default function AnalyticsPage() {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="py-0">
           <CardContent className="p-4 flex items-center gap-3">
             <div className="p-2 bg-red-50 rounded-lg">
               <AlertCircle className="w-5 h-5 text-red-600" />

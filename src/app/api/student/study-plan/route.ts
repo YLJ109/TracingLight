@@ -10,23 +10,20 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const user = await requireAuth(request, 'student');
     if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
-    const studentId = parseInt(searchParams.get("student_id") || "0");
-
-    if (!studentId || isNaN(studentId)) {
-      return NextResponse.json({ success: false, error: "缺少student_id" }, { status: 400 });
-    }
+    // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
+    const studentId = user.userId;
 
     const db = getDb();
     const mockData = generateStudentData(studentId);
 
-    // Get DB study plans
-    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
+    // Get DB study plans（查今天及未来的未完成计划，避免过期计划干扰）
+    const today = new Date().toISOString().split("T")[0];
     const plans = db.select()
       .from(studyPlan)
       .where(and(
         eq(studyPlan.student_id, studentId),
         eq(studyPlan.status, "pending"),
-        gte(studyPlan.plan_date, sevenDaysAgo)
+        gte(studyPlan.plan_date, today)
       ))
       .orderBy(asc(studyPlan.plan_date), asc(studyPlan.time_slot))
       .all();
@@ -92,7 +89,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: unknown) {
     if (error && typeof (error as { status?: number }).status === "number") return error as NextResponse;
-    const errMsg = error instanceof Error ? error.message : "未知错误";
+    const errMsg = "操作失败，请稍后重试";
     return NextResponse.json({ success: false, error: errMsg }, { status: 500 });
   }
 }

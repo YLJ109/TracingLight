@@ -1,159 +1,93 @@
 @echo off
+setlocal EnableExtensions EnableDelayedExpansion
+title TracingLight Setup
 cd /d "%~dp0"
-setlocal enabledelayedexpansion
 
 echo.
-echo    ========================================
-echo      TracingLight V3.0 - One Click Setup
-echo    ========================================
+echo  ============================================
+echo    TracingLight - One Click Setup
+echo  ============================================
 echo.
 
-REM =============================================
-REM  1. Check runtime environment
-REM =============================================
-echo [1/5] Checking runtime...
-
-where node >nul 2>nul || (
-    echo   Node.js not found. Attempting auto-install...
-
-    REM Try winget (built into Windows 10/11)
-    where winget >nul 2>nul && (
-        echo   Installing Node.js LTS via winget...
-        winget install OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements >nul 2>nul
-        if !errorlevel! equ 0 (
-            REM Refresh PATH for current session
-            for /f "tokens=*" %%p in ('where /R "C:\Program Files\nodejs" node.exe 2^>nul') do set "NODE_PATH=%%p"
-            if defined NODE_PATH (
-                set "PATH=!NODE_PATH!\..;%PATH%"
-                echo   Node.js installed successfully!
-            ) else (
-                echo   Installed. Please re-run setup.bat to continue.
-                pause & exit /b 1
-            )
-        ) else (
-            echo   winget install failed. Install manually: https://nodejs.org/
-            pause & exit /b 1
-        )
-    ) || (
-        echo   winget not found. Please install Node.js from https://nodejs.org/
-        pause & exit /b 1
-    )
-)
-echo   Node.js ready
-for /f "tokens=*" %%i in ('node -v') do echo     version: %%i
-
-where pnpm >nul 2>nul || (
-    echo   Installing pnpm...
-    call npm install -g pnpm || (
-        echo [ERROR] Failed to install pnpm
-        pause & exit /b 1
-    )
-)
-echo   pnpm ready
-
-REM =============================================
-REM  2. Configure environment variables
-REM =============================================
-echo.
-echo [2/5] Configuring environment...
-
-set "NEED_KEY=0"
-
-REM Check if .env already has a valid API key
-if exist ".env" (
-    findstr /R /C:"ZHIPU_API_KEY=." .env >nul 2>nul
-    if !errorlevel! equ 0 (
-        findstr /C:"your_zhipu_api_key_here" .env >nul 2>nul
-        if !errorlevel! equ 0 set "NEED_KEY=1"
-    ) else (
-        set "NEED_KEY=1"
-    )
-) else (
-    set "NEED_KEY=1"
-)
-
-if "!NEED_KEY!"=="1" (
+REM ---------- 1. Check Node.js ----------
+where node >nul 2>nul
+if errorlevel 1 (
+    echo  [ERROR] Node.js is not installed.
+    echo          Please download and install the LTS version from:
+    echo          https://nodejs.org
     echo.
-    echo   ========================================
-    echo     Zhipu API Key Required
-    echo     Get your free key at: https://open.bigmodel.cn
-    echo   ========================================
-    echo.
-    set /p ZHIPU_KEY="   Paste your ZHIPU_API_KEY: "
-    if "!ZHIPU_KEY!"=="" (
-        echo   [WARNING] No API key entered. AI features will not work.
+    pause
+    exit /b 1
+)
+for /f "delims=" %%v in ('node -v') do set "NODE_VER=%%v"
+echo  [1/4] Node.js found: !NODE_VER!
+echo.
+
+REM ---------- 2. Install dependencies ----------
+if not exist "node_modules" (
+    echo  [2/4] Installing dependencies, please wait a few minutes...
+    call npm install --no-audit --no-fund
+    if errorlevel 1 (
+        echo.
+        echo  [ERROR] npm install failed.
+        echo          Check your network connection and run setup.bat again.
+        echo.
+        pause
+        exit /b 1
     )
-
-    REM Generate JWT secret
-    for /f "tokens=1-4 delims=/:." %%a in ("%time%") do set "TS=%%a%%b%%c%%d"
-    set "JWT_SECRET=tracinglight_%RANDOM%%RANDOM%%TS%"
-
-    REM Write .env
-    (
-    echo # TracingLight Environment
-    echo ZHIPU_API_KEY=!ZHIPU_KEY!
-    echo ZHIPU_MODEL=glm-4-flash
-    echo JWT_SECRET=!JWT_SECRET!
-    echo DATABASE_PATH=./data/tracinglight.db
-    echo NODE_ENV=development
-    echo PORT=5000
-    ) > .env
-    echo   .env configured
+    echo  [2/4] Dependencies installed.
 ) else (
-    echo   .env already configured - skipping
+    echo  [2/4] Dependencies already installed - skipping.
 )
-
-REM =============================================
-REM  3. Install dependencies
-REM =============================================
 echo.
-echo [3/5] Installing dependencies...
-call pnpm install || (
-    echo [ERROR] Failed to install dependencies
-    pause & exit /b 1
-)
-echo   Dependencies installed
 
-REM =============================================
-REM  4. Initialize database
-REM =============================================
-echo.
-echo [4/5] Initializing database...
-
+REM ---------- 3. Prepare .env (no API key needed here) ----------
 if not exist "data" mkdir data
-
-REM Drop old database if exists
-if exist "data\tracinglight.db" (
-    echo   Removing old database...
-    del /q "data\tracinglight.db"
+if not exist ".env" (
+    echo  [3/4] Creating .env ...
+    set "SECRET="
+    for /f "delims=" %%i in ('node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"') do set "SECRET=%%i"
+    >  ".env" echo # TracingLight environment
+    >> ".env" echo JWT_SECRET=!SECRET!
+    >> ".env" echo DATABASE_PATH=./data/tracinglight.db
+    >> ".env" echo NODE_ENV=development
+    >> ".env" echo PORT=5000
+    echo  [3/4] .env created.
+    echo.
+    echo  --------------------------------------------------
+    echo   NOTE: AI features need an API key.
+    echo   After the server starts, login as admin (pwd: 123456)
+    echo   then go to: Admin - System Settings - AI Service Config
+    echo   and fill in your API URL and Key there.
+    echo  --------------------------------------------------
+) else (
+    echo  [3/4] .env already exists - skipping.
 )
+echo.
 
-echo   Importing seed data (tables auto-created)...
-call npx tsx src/storage/database/seed.ts || (
-    echo [ERROR] Seed data import failed
-    pause & exit /b 1
+REM ---------- 4. Seed database (first run only) ----------
+if not exist "data\tracinglight.db" (
+    echo  [4/4] Seeding database, please wait...
+    call npx tsx src/storage/database/seed.ts
+    if errorlevel 1 (
+        echo.
+        echo  [ERROR] Database seed failed.
+        echo.
+        pause
+        exit /b 1
+    )
+    echo  [4/4] Database ready.
+) else (
+    echo  [4/4] Database already exists - skipping. (Run init-db.bat to reset)
 )
-echo   Database ready
-
-REM =============================================
-REM  5. Start server (dev mode — no build needed)
-REM =============================================
 echo.
-echo [5/5] Starting server...
+echo  ============================================
+echo    Setup complete!
+echo    Next: run start.bat to start the server.
+echo    http://localhost:5000
+echo    Accounts: teacher_wang / stu_zhang / admin
+echo    AI config: Admin - System Settings
+echo  ============================================
 echo.
-echo    ========================================
-echo      Setup complete! Server starting...
-echo      Frontend:  http://localhost:5000
-echo      Press Ctrl+C to stop
-echo    ========================================
-echo.
-echo    Test accounts:
-echo      Teacher: teacher_wang / teacher_li
-echo      Student: stu_zhang ~ stu_ma
-echo    ========================================
-echo.
-
-set PORT=5000
-npx tsx src/server.ts
-
 pause
+endlocal

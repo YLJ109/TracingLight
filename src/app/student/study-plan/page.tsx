@@ -1,5 +1,7 @@
 'use client';
 import { apiFetch } from '@/lib/api-fetch';
+import { toast } from 'sonner';
+import { createPortal } from 'react-dom';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -11,6 +13,7 @@ import { Progress } from '@/components/ui/progress';
 import {
   Calendar, CheckCircle2, Clock, BookOpen, Sparkles, ArrowRight, RotateCcw, Loader2,
   Brain, Target, AlertTriangle, GraduationCap, Zap, Play, ExternalLink,
+  Plus, Pencil, Trash2,
 } from 'lucide-react';
 
 type SessionStatus = 'pending' | 'in_progress' | 'completed';
@@ -24,7 +27,13 @@ interface DayPlan { day: string; date: string; sessions: StudySession[]; }
 
 interface WeakPoint { name: string; mastery: number; }
 
-interface ScheduleItem { day_of_week: number; start_time: string; end_time: string; title: string; }
+interface ScheduleItem { id?: number; day_of_week: number; start_time: string; end_time: string; title: string; category?: string; }
+interface ScheduleForm { id?: number; title: string; day_of_week: number; start_time: string; end_time: string; }
+
+/** day_of_week 库中为 JSON 数组（如 [1,3,5]），归一为数字数组 */
+const schedDays = (d: unknown): number[] => Array.isArray(d) ? d.map(Number).filter((n) => !isNaN(n)) : [Number(d ?? 1)].filter((n) => !isNaN(n));
+/** 多天显示：[1,3,5] → 周一/三/五 */
+const schedDaysLabel = (d: unknown): string => schedDays(d).map((n) => DAY_NAMES[n % 7] || `周${n}`).join('、');
 
 interface ExamItem { subject: string; exam_date: string; exam_time: string; }
 
@@ -34,6 +43,7 @@ interface PlanData {
   generatedAt: string | null; totalSessions: number; completedSessions: number;
 }
 
+const DAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 const STORAGE_KEY = 'tracinglight_study_plan_progress';
 
 function loadProgress(): Record<string, SessionStatus> {
@@ -117,7 +127,7 @@ export default function StudyPlanPage() {
         const rawPlan: PlanData = {
           plans: Array.from(dayMap.values()),
           weakKnowledgePoints: basisData.success ? basisData.data.weakKnowledgePoints : [],
-          schedules: basisData.success ? basisData.data.schedules : [],
+          schedules: basisData.success ? (basisData.data.schedules || []).map((x: ScheduleItem) => ({ ...x, day_of_week: schedDays(x.day_of_week)[0] ?? 1 })) : [],
           exams: basisData.success ? basisData.data.exams : [],
           generatedAt: new Date().toISOString(),
           totalSessions: data.data.weeklyPlan.length, completedSessions: 0,
@@ -130,6 +140,71 @@ export default function StudyPlanPage() {
   };
 
   const handleRegenerate = () => { getCurrentUser().then((user) => { generateAIPlan(user?.id || 3); }); };
+
+  // ── 课表安排 CRUD ──
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [scheduleForm, setScheduleForm] = useState<ScheduleForm>({ title: '', day_of_week: 1, start_time: '19:00', end_time: '21:00' });
+  const dayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+  const refreshSchedules = async () => {
+    const user = await getCurrentUser();
+    const res = await apiFetch(`/api/student/study-plan?student_id=${user?.id || 3}`);
+    const d = await res.json();
+    if (d.success) {
+      setPlanData((prev) => prev ? { ...prev, schedules: (d.data.schedules || []).map((x: ScheduleItem) => ({ ...x, day_of_week: schedDays(x.day_of_week)[0] ?? 1 })) } : prev);
+    }
+  };
+
+  const openScheduleForm = (s?: ScheduleItem) => {
+    setScheduleForm(s
+      ? { id: s.id, title: s.title, day_of_week: schedDays(s.day_of_week)[0] ?? 1, start_time: s.start_time, end_time: s.end_time }
+      : { title: '', day_of_week: 1, start_time: '19:00', end_time: '21:00' });
+    setScheduleOpen(true);
+  };
+
+  const saveSchedule = async () => {
+    if (!scheduleForm.title.trim()) return;
+    setScheduleSaving(true);
+    try {
+      const editing = !!scheduleForm.id;
+      const res = await apiFetch('/api/student/schedule', {
+        method: editing ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: scheduleForm.id,
+          title: scheduleForm.title.trim(),
+          day_of_week: scheduleForm.day_of_week,
+          start_time: scheduleForm.start_time,
+          end_time: scheduleForm.end_time,
+          schedule_type: 'fixed',
+          category: '个人',
+        }),
+      });
+      const d = await res.json();
+      if (d.success) {
+        setScheduleOpen(false);
+        await refreshSchedules();
+      } else {
+        toast.error(d.error || '保存失败');
+      }
+    } catch {
+      toast.error('网络错误，请稍后重试');
+    } finally {
+      setScheduleSaving(false);
+    }
+  };
+
+  const deleteSchedule = async (id?: number) => {
+    if (!id) return;
+    try {
+      await apiFetch(`/api/student/schedule?id=${id}`, { method: 'DELETE' });
+      setPlanData((prev) => prev ? { ...prev, schedules: prev.schedules.filter((s) => s.id !== id) } : prev);
+      toast.success('已删除该安排');
+    } catch {
+      toast.error('删除失败');
+    }
+  };
 
   const updateSessionStatus = (dayIdx: number, sessionIdx: number, status: SessionStatus) => {
     setPlanData(prev => {
@@ -160,8 +235,10 @@ export default function StudyPlanPage() {
   };
 
   const handleNavigate = (session: StudySession) => {
-    if (session.type === 'review') router.push('/student/knowledge-graph');
+    // P2-4：review→学习材料（复习内容），practice→错题本（重做错题），diagnose→知识图谱
+    if (session.type === 'review') router.push('/student/materials');
     else if (session.type === 'practice') router.push('/student/errors');
+    else if (session.type === 'diagnose') router.push('/student/knowledge-graph');
   };
 
   useEffect(() => { return () => { Object.values(timerRefs.current).forEach(clearInterval); }; }, []);
@@ -200,7 +277,7 @@ export default function StudyPlanPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">学习规划</h1>
+          <h1 className="page-title">学习规划</h1>
           <p className="text-slate-500 mt-1">基于学情数据的个性化学习方案</p>
         </div>
         <div className="flex items-center gap-3">
@@ -230,11 +307,26 @@ export default function StudyPlanPage() {
                   ))}</div>) : <p className="text-xs text-slate-400">暂无薄弱知识点数据</p>}
               </div>
               <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm font-medium text-slate-700"><Calendar className="h-4 w-4 text-blue-500" />课表安排<Badge variant="outline" className="text-xs">{planData.schedules.length}节课</Badge></div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-medium text-slate-700"><Calendar className="h-4 w-4 text-blue-500" />课表安排<Badge variant="outline" className="text-xs">{planData.schedules.length}节课</Badge></div>
+                  <button
+                    onClick={() => openScheduleForm()}
+                    className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                  ><Plus className="w-3 h-3" /> 添加安排</button>
+                </div>
                 {planData.schedules.length > 0 ? (
-                  <div className="space-y-1">{planData.schedules.slice(0, 4).map((s, i) => (
-                    <div key={i} className="text-xs text-slate-600 flex items-center gap-1.5"><Clock className="h-3 w-3 text-slate-400" /><span>周{s.day_of_week} {s.start_time}-{s.end_time}</span><span className="text-slate-400 truncate">{s.title}</span></div>
-                  ))}</div>) : <p className="text-xs text-slate-400">暂无课表数据</p>}
+                  <div className="space-y-1.5">{planData.schedules.map((s) => (
+                    <div key={s.id ?? `${s.day_of_week}-${s.start_time}`} className="group flex items-center gap-2 text-xs bg-slate-50 rounded-lg px-2.5 py-2">
+                      <Clock className="h-3 w-3 text-slate-400 shrink-0" />
+                      <span className="text-slate-700 font-medium shrink-0">{schedDaysLabel(s.day_of_week)}</span>
+                      <span className="text-slate-500 shrink-0">{s.start_time}-{s.end_time}</span>
+                      <span className="text-slate-600 truncate flex-1">{s.title}</span>
+                      <span className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        <button onClick={() => openScheduleForm(s)} title="编辑" className="p-1 rounded hover:bg-slate-200 text-slate-500"><Pencil className="w-3 h-3" /></button>
+                        <button onClick={() => deleteSchedule(s.id)} title="删除" className="p-1 rounded hover:bg-red-100 text-slate-500 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
+                      </span>
+                    </div>
+                  ))}</div>) : <p className="text-xs text-slate-400">暂无课表，点击「添加安排」创建你的固定时间安排</p>}
               </div>
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm font-medium text-slate-700"><GraduationCap className="h-4 w-4 text-amber-500" />近期考试<Badge variant="outline" className="text-xs">{planData.exams.length}场</Badge></div>
@@ -335,6 +427,70 @@ export default function StudyPlanPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* 课表安排 表单弹层 */}
+      {scheduleOpen && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setScheduleOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-800">{scheduleForm.id ? '编辑安排' : '添加安排'}</h3>
+              <button onClick={() => setScheduleOpen(false)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">×</button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">安排名称</label>
+                <input
+                  autoFocus
+                  value={scheduleForm.title}
+                  onChange={(e) => setScheduleForm((p) => ({ ...p, title: e.target.value }))}
+                  placeholder="如：兼职、社团活动、健身"
+                  className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-teal-200"
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-slate-500 mb-1 block">星期</label>
+                  <select
+                    value={scheduleForm.day_of_week}
+                    onChange={(e) => setScheduleForm((p) => ({ ...p, day_of_week: Number(e.target.value) }))}
+                    className="w-full text-sm border border-slate-300 rounded-lg px-2 py-2 outline-none focus:ring-2 focus:ring-teal-200 bg-white"
+                  >
+                    {['周一','周二','周三','周四','周五','周六','周日'].map((d, i) => (
+                      <option key={i} value={(i + 1) % 7}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 mb-1 block">开始</label>
+                  <input
+                    type="time"
+                    value={scheduleForm.start_time}
+                    onChange={(e) => setScheduleForm((p) => ({ ...p, start_time: e.target.value }))}
+                    className="w-full text-sm border border-slate-300 rounded-lg px-2 py-2 outline-none focus:ring-2 focus:ring-teal-200"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-500 mb-1 block">结束</label>
+                  <input
+                    type="time"
+                    value={scheduleForm.end_time}
+                    onChange={(e) => setScheduleForm((p) => ({ ...p, end_time: e.target.value }))}
+                    className="w-full text-sm border border-slate-300 rounded-lg px-2 py-2 outline-none focus:ring-2 focus:ring-teal-200"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-slate-400">AI 生成学习计划时会自动避开这些固定时段</p>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setScheduleOpen(false)}>取消</Button>
+              <Button className="bg-teal-600 hover:bg-teal-700 text-white" disabled={scheduleSaving || !scheduleForm.title.trim()} onClick={saveSchedule}>
+                {scheduleSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : '保存'}
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

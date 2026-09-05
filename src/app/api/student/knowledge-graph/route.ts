@@ -194,8 +194,8 @@ export async function GET(req: NextRequest) {
   const user = await requireAuth(req, 'student');
   if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const courseId = parseInt(searchParams.get('course_id') || '1', 10);
-  const studentIdRaw = searchParams.get('student_id');
-  const studentId = studentIdRaw ? parseInt(studentIdRaw, 10) : null;
+  // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
+  const studentId = user.userId;
 
   // ─── Check cache ───
   const cacheKey = `kg:${courseId}:${studentId ?? 'anon'}`;

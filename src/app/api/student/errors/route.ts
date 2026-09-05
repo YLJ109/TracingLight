@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/storage/database/db';
+import { getDb, saveDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
 import { errorBook, question, knowledgePoint, course } from '@/storage/database/shared/schema';
 import { eq, desc, inArray, and } from 'drizzle-orm';
@@ -10,28 +10,17 @@ export async function GET(request: NextRequest) {
     if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
     const db = getDb();
     const { searchParams } = new URL(request.url);
-    const studentId = searchParams.get('student_id');
     const reviewStatus = searchParams.get('review_status');
 
-    // Build conditions
-    const conditions = [];
-    if (studentId) conditions.push(eq(errorBook.student_id, parseInt(studentId)));
+    // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
+    const conditions = [eq(errorBook.student_id, user.userId)];
     if (reviewStatus) conditions.push(eq(errorBook.review_status, reviewStatus));
 
-    // Get error books
-    let errors;
-    if (conditions.length > 0) {
-      errors = db.select()
-        .from(errorBook)
-        .where(and(...conditions))
-        .orderBy(desc(errorBook.created_at))
-        .all();
-    } else {
-      errors = db.select()
-        .from(errorBook)
-        .orderBy(desc(errorBook.created_at))
-        .all();
-    }
+    const errors = db.select()
+      .from(errorBook)
+      .where(and(...conditions))
+      .orderBy(desc(errorBook.created_at))
+      .all();
 
     if (!errors || errors.length === 0) {
       return NextResponse.json({ success: true, data: [] });
@@ -126,16 +115,62 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const user = await requireAuth(request, 'student');
+    if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
     const db = getDb();
     const body = await request.json();
     const { error_id, review_status } = body;
 
+    // review_status 白名单校验
+    const VALID_STATUS = ['pending', 'reviewing', 'mastered'];
+    if (!error_id || !VALID_STATUS.includes(review_status)) {
+      return NextResponse.json({ error: '无效参数' }, { status: 400 });
+    }
+
+    // 校验错题归属当前用户，防止越权修改他人错题
+    const target = db.select({ id: errorBook.id, student_id: errorBook.student_id })
+      .from(errorBook)
+      .where(eq(errorBook.id, Number(error_id)))
+      .limit(1)
+      .all();
+    if (!target[0] || target[0].student_id !== user.userId) {
+      return NextResponse.json({ error: '无权操作该错题' }, { status: 403 });
+    }
+
+    // 间隔复习：reviewing = 完成本次复习 → 按 1/3/7 天推进间隔，三次后自动掌握
+    const now = new Date();
+    const fmt = (d: Date) => d.toISOString().slice(0, 19).replace('T', ' ');
+    let finalStatus = review_status;
+    const updateSet: Record<string, unknown> = { review_status, reviewed_at: fmt(now) };
+
+    if (review_status === 'reviewing') {
+      const cur = db.select({ review_count: errorBook.review_count })
+        .from(errorBook).where(eq(errorBook.id, Number(error_id))).limit(1).all()[0];
+      const count = cur?.review_count ?? 0;
+      if (count >= 2) {
+        // 第三次复习完成 → 掌握
+        finalStatus = 'mastered';
+        updateSet.review_status = 'mastered';
+        updateSet.next_review_at = null;
+        updateSet.review_count = count + 1;
+      } else {
+        const gapDays = count === 0 ? 3 : 7;
+        updateSet.next_review_at = fmt(new Date(now.getTime() + gapDays * 24 * 60 * 60 * 1000));
+        updateSet.review_count = count + 1;
+      }
+    } else if (review_status === 'mastered') {
+      updateSet.next_review_at = null;
+    }
+
     db.update(errorBook)
-      .set({ review_status })
-      .where(eq(errorBook.id, error_id))
+      .set(updateSet)
+      .where(eq(errorBook.id, Number(error_id)))
       .run();
 
-    return NextResponse.json({ success: true });
+    // 关键写路径即时落盘（T-2）
+    try { saveDb(); } catch { /* 定时持久化兜底 */ }
+
+    return NextResponse.json({ success: true, data: { status: finalStatus } });
   } catch (e) {
     if (e && typeof (e as { status?: number }).status === "number") return e as NextResponse;
     console.error('Update error book error:', e);

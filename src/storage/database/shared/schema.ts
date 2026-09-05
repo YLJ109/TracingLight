@@ -40,6 +40,7 @@ export const user = sqliteTable("user", {
   username: text("username").notNull().unique(),
   real_name: text("real_name").notNull(),
   role: text("role").notNull(), // teacher / student
+  password: text("password"), // sha256 哈希（本地演示）
   class_id: integer("class_id").references(() => classInfo.id),
   student_level: text("student_level"), // top / medium / weak
   avatar_url: text("avatar_url"),
@@ -146,6 +147,8 @@ export const assignment = sqliteTable("assignment", {
   end_time: text("end_time").notNull(),
   status: text("status").default("published"), // draft / published / closed
   allow_resubmit: integer("allow_resubmit", { mode: 'boolean' }).default(false),
+  review_mode: text("review_mode").default("auto"), // auto / teacher_review
+  has_subjective: integer("has_subjective", { mode: 'boolean' }).default(false),
   created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("asgn_course_id_idx").on(table.course_id),
@@ -160,6 +163,9 @@ export const answer = sqliteTable("answer", {
   student_answer: text("student_answer"),
   is_submitted: integer("is_submitted", { mode: 'boolean' }).default(false),
   submitted_at: text("submitted_at"),
+  returned: integer("returned", { mode: 'boolean' }).default(false), // 教师退回重做标记
+  returned_at: text("returned_at"),
+  return_comment: text("return_comment"),
   created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("ans_assignment_id_idx").on(table.assignment_id),
@@ -215,6 +221,8 @@ export const errorBook = sqliteTable("error_book", {
   learning_suggestion: text("learning_suggestion"),
   review_status: text("review_status").default("pending"), // pending / reviewing / mastered
   reviewed_at: text("reviewed_at"),
+  next_review_at: text("next_review_at"), // 间隔复习到期时间（1/3/7 天）
+  review_count: integer("review_count").default(0), // 已复习次数（推进间隔用）
   created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("eb_student_id_idx").on(table.student_id),
@@ -376,4 +384,162 @@ export const studySession = sqliteTable("study_session", {
 }, (table) => [
   index("ss_plan_id_idx").on(table.plan_id),
   index("ss_session_date_idx").on(table.session_date),
+]);
+
+export const abilityPoint = sqliteTable("ability_point", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  description: text("description"),
+  course_id: integer("course_id").notNull().references(() => course.id),
+});
+
+export const ideologyPoint = sqliteTable("ideology_point", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  description: text("description"),
+  course_id: integer("course_id").notNull().references(() => course.id),
+});
+
+export const abilityKnowledge = sqliteTable("ability_knowledge", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  ability_id: integer("ability_id").notNull().references(() => abilityPoint.id),
+  knowledge_id: integer("knowledge_id").notNull().references(() => knowledgePoint.id),
+  weight: real("weight").default(1),
+}, (table) => [
+  uniqueIndex("ak_unique_idx").on(table.ability_id, table.knowledge_id),
+]);
+
+export const ideologyKnowledge = sqliteTable("ideology_knowledge", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  ideology_id: integer("ideology_id").notNull().references(() => ideologyPoint.id),
+  knowledge_id: integer("knowledge_id").notNull().references(() => knowledgePoint.id),
+}, (table) => [
+  uniqueIndex("ik_unique_idx").on(table.ideology_id, table.knowledge_id),
+]);
+
+// ===================== 学习材料与行为分析 =====================
+
+export const learningMaterial = sqliteTable("learning_material", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  course_id: integer("course_id").notNull().references(() => course.id),
+  teacher_id: integer("teacher_id").notNull().references(() => user.id),
+  title: text("title").notNull(),
+  type: text("type").notNull(), // video / document / slide
+  content: text("content"), // 课件正文/摘要
+  url: text("url"),
+  duration_minutes: integer("duration_minutes"),
+  knowledge_point_ids: text("knowledge_point_ids", { mode: 'json' }),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+}, (table) => [
+  index("lm_course_id_idx").on(table.course_id),
+]);
+
+export const learningBehaviorLog = sqliteTable("learning_behavior_log", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  student_id: integer("student_id").notNull().references(() => user.id),
+  material_id: integer("material_id").notNull().references(() => learningMaterial.id),
+  watch_duration: integer("watch_duration").default(0), // 累计停留秒数
+  progress: integer("progress").default(0), // 0-100
+  review_count: integer("review_count").default(0), // 重看次数
+  is_completed: integer("is_completed", { mode: 'boolean' }).default(false),
+  last_watched_at: text("last_watched_at").default(sql`(CURRENT_TIMESTAMP)`),
+}, (table) => [
+  uniqueIndex("lbl_unique_idx").on(table.student_id, table.material_id),
+  index("lbl_student_id_idx").on(table.student_id),
+]);
+
+// ===================== 教师批改规则配置 =====================
+
+export const gradingConfig = sqliteTable("grading_config", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  teacher_id: integer("teacher_id").notNull().references(() => user.id),
+  name: text("name").notNull(),
+  course_id: integer("course_id"), // 可选：限定课程（null = 全部课程）
+  question_type: text("question_type"), // 可选：限定题型（null = 全部题型）
+  scoring_criteria: text("scoring_criteria"), // 评分标准
+  deduction_rules: text("deduction_rules"), // 扣分规则
+  comment_style: text("comment_style"), // 评语风格
+  grade_levels: text("grade_levels", { mode: 'json' }), // [{min:90,label:'优秀'}]
+  is_active: integer("is_active", { mode: 'boolean' }).default(true),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+  updated_at: text("updated_at"),
+}, (table) => [index("gc_teacher_id_idx").on(table.teacher_id)]);
+
+// ===================== 管理后台：审计日志 + 系统配置 =====================
+
+export const auditLog = sqliteTable("audit_log", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  operator_id: integer("operator_id").references(() => user.id),
+  operator_name: text("operator_name"),
+  action: text("action").notNull(), // create_user / disable_user / reset_password / change_role / update_config
+  target_type: text("target_type"),
+  target_id: text("target_id"),
+  detail: text("detail"),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+}, (table) => [
+  index("al_operator_idx").on(table.operator_id),
+  index("al_created_at_idx").on(table.created_at),
+]);
+
+export const systemConfig = sqliteTable("system_config", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  key: text("key").notNull().unique(),
+  value: text("value"),
+  description: text("description"),
+  updated_at: text("updated_at"),
+}, (table) => [
+  uniqueIndex("sc_key_idx").on(table.key),
+]);
+
+// ===================== 通知 =====================
+
+export const notification = sqliteTable("notification", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  user_id: integer("user_id").notNull().references(() => user.id),
+  type: text("type").notNull(), // assignment / grade / system
+  title: text("title"),
+  content: text("content"),
+  link: text("link"),
+  is_read: integer("is_read", { mode: 'boolean' }).default(false),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+}, (table) => [
+  index("notif_user_id_idx").on(table.user_id),
+]);
+
+// ===================== AI 答疑会话 =====================
+
+export const qaSession = sqliteTable("qa_session", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  user_id: integer("user_id").notNull().references(() => user.id),
+  title: text("title"),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+  updated_at: text("updated_at"),
+}, (table) => [
+  index("qs_user_id_idx").on(table.user_id),
+]);
+
+export const qaMessage = sqliteTable("qa_message", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  session_id: integer("session_id").notNull().references(() => qaSession.id),
+  role: text("role").notNull(), // user / assistant
+  content: text("content").notNull(),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+}, (table) => [
+  index("qm_session_id_idx").on(table.session_id),
+]);
+
+// ===================== 主观题复核留痕 =====================
+
+export const reviewRecord = sqliteTable("review_record", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  grading_task_id: integer("grading_task_id").notNull().references(() => gradingTask.id),
+  reviewer_id: integer("reviewer_id").notNull().references(() => user.id),
+  reviewer_role: text("reviewer_role"), // teacher / assistant
+  action: text("action").notNull(), // adopt / modify / reject / appeal
+  ai_score: real("ai_score"),
+  final_score: real("final_score"),
+  comment: text("comment"),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+}, (table) => [
+  index("rr_task_id_idx").on(table.grading_task_id),
 ]);
