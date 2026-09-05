@@ -43,7 +43,7 @@ export default function AdminOrganization() {
           {org.schools.map((s) => (
             <Card key={s.id} className="border-0 shadow-sm py-0">
               <CardContent className="p-4">
-                <p className="font-semibold text-foreground">🏫 {s.name}</p>
+                <p className="font-semibold text-foreground flex items-center gap-2"><Building2 className="w-4 h-4 text-violet-600" />{s.name}</p>
                 <div className="mt-3 space-y-2 pl-4 border-l-2 border-violet-200">
                   {org.colleges.filter((c) => c.school_id === s.id).map((c) => (
                     <div key={c.id}>

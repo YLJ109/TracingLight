@@ -4,20 +4,55 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-fetch';
 import {
   Send, Sparkles, User, Bot, Plus, MessageCircle,
-  Trash2, Pencil, Check, X, Eraser, Loader2,
+  Trash2, Pencil, Check, X, Eraser, Loader2, Paperclip, FileText,
 } from 'lucide-react';
 import AIMarkdown from '@/components/ai-markdown';
 import { toast } from 'sonner';
 
+interface Attach {
+  type: 'image' | 'file';
+  name: string;
+  size?: number;
+  dataUrl?: string; // 图片
+  text?: string; // 文本文件内容（仅发送时传）
+}
 interface Msg {
   role: 'user' | 'assistant';
   content: string;
+  attachments?: Attach[];
 }
 interface SessionItem {
   id: number;
   title: string;
   updated_at?: string | null;
   message_count?: number;
+}
+
+// 附件类型/大小白名单（前端主校验，后端仍有防护）
+const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
+const TEXT_EXT = ['txt', 'md', 'markdown', 'json', 'csv', 'log', 'yml', 'yaml', 'xml', 'sql', 'py', 'js', 'ts', 'jsx', 'tsx', 'java', 'c', 'cpp', 'h', 'hpp', 'css', 'html', 'htm', 'sh', 'bash', 'go', 'rs', 'php', 'rb', 'toml', 'ini'];
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+const MAX_FILE_BYTES = 512 * 1024;
+const MAX_PENDING = 2;
+
+function extOf(name: string): string {
+  const s = name.split('.');
+  return s.length > 1 ? (s.pop() || '').toLowerCase() : '';
+}
+function readAsDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+function parseAttach(json: string): Attach | null {
+  try {
+    const a = JSON.parse(json);
+    if (a && (a.type === 'image' || a.type === 'file')) return a as Attach;
+    return null;
+  } catch { return null; }
 }
 
 export default function AssistantPage() {
@@ -30,18 +65,29 @@ export default function AssistantPage() {
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [pending, setPending] = useState<Attach[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  // 消息区自动滚动：发送/流式回显时滚到底部；用户上翻历史时暂停跟随
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const nearBottomRef = useRef(true);
 
   const activeSession = sessions.find((s) => s.id === activeId) || null;
 
   // 切换会话：按需加载消息
   const switchSession = useCallback(async (id: number) => {
     setActiveId(id);
+    setPending([]);
     setLoadingMsgs(true);
     try {
       const res = await apiFetch(`/api/ai/assistant/session?id=${id}`);
       const d = await res.json();
-      setMessages(d.success ? d.data.messages : []);
+      const raw: Array<{ role: string; content: string; attachment?: string | null }> = d.success ? d.data.messages : [];
+      setMessages(raw.map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        attachments: m.attachment ? [parseAttach(m.attachment)].filter(Boolean) as Attach[] : undefined,
+      })));
     } catch {
       setMessages([]);
     } finally {
@@ -72,6 +118,13 @@ export default function AssistantPage() {
   }, [switchSession]);
 
   useEffect(() => { loadSessions(); }, [loadSessions]);
+
+  // 新消息 / 流式增量回显时自动下滑到底部；仅当用户停留在底部附近时跟随，避免打断上翻阅读
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !nearBottomRef.current) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [messages, loadingMsgs]);
 
   // 新建对话
   const createSession = async () => {
@@ -115,6 +168,7 @@ export default function AssistantPage() {
         body: JSON.stringify({ id: activeId, action: 'clear' }),
       });
       setMessages([]);
+      setPending([]);
       setSessions((prev) => prev.map((s) => s.id === activeId ? { ...s, message_count: 0 } : s));
     } catch { /* 静默 */ }
   };
@@ -137,7 +191,9 @@ export default function AssistantPage() {
 
   // 发送（流式 + 自动降级）
   const send = async (text: string) => {
-    if (!text.trim() || loading) return;
+    const attachments = pending.slice();
+    if (loading) return;
+    if (!text.trim() && attachments.length === 0) return;
     // 若无激活会话，先新建一个
     let sid = activeId;
     if (sid == null) {
@@ -154,8 +210,9 @@ export default function AssistantPage() {
       } catch { /* 降级由后端自动建 */ }
     }
 
-    setMessages((prev) => [...prev, { role: 'user', content: text.trim() }]);
+    setMessages((prev) => [...prev, { role: 'user', content: text.trim(), attachments }]);
     setInput('');
+    setPending([]);
     setLoading(true);
 
     setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
@@ -178,7 +235,11 @@ export default function AssistantPage() {
       const res = await apiFetch('/api/ai/assistant/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text.trim(), session_id: sid }),
+        body: JSON.stringify({
+          message: text.trim(),
+          session_id: sid,
+          attachments: attachments.map((a) => ({ type: a.type, name: a.name, size: a.size, dataUrl: a.dataUrl, text: a.text })),
+        }),
       });
       const ctype = res.headers.get('content-type') || '';
       if (!res.ok || !ctype.includes('text/event-stream')) {
@@ -186,7 +247,11 @@ export default function AssistantPage() {
         const fallback = await apiFetch('/api/ai/assistant', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text.trim(), session_id: sid }),
+          body: JSON.stringify({
+            message: text.trim(),
+            session_id: sid,
+            attachments: attachments.map((a) => ({ type: a.type, name: a.name, size: a.size, dataUrl: a.dataUrl, text: a.text })),
+          }),
         });
         const data = await fallback.json();
         if (data.success) {
@@ -238,7 +303,7 @@ export default function AssistantPage() {
           ));
         }
         if (streamError && !gotDelta) setLast('抱歉，出了点问题：' + streamError);
-        else if (streamError) updateLast('\n\n> ⚠️ 回复中断，以上为已生成部分');
+        else if (streamError) updateLast('\n\n> 回复中断，以上为已生成部分');
       }
     } catch {
       setLast('网络错误，请稍后重试');
@@ -246,6 +311,40 @@ export default function AssistantPage() {
       setLoading(false);
       inputRef.current?.focus();
     }
+  };
+
+  // ===== 附件上传 =====
+  const handleAttach = async (files: FileList | null) => {
+    if (!files) return;
+    if (loading) return;
+    const picked = Array.from(files);
+    for (const f of picked) {
+      if (pending.length >= MAX_PENDING) { toast.error(`每轮最多上传 ${MAX_PENDING} 个附件`); break; }
+      const ext = extOf(f.name);
+      try {
+        if (IMAGE_EXT.includes(ext)) {
+          if (f.size > MAX_IMAGE_BYTES) { toast.error(`${f.name} 超过 3MB，请压缩后重试`); continue; }
+          const dataUrl = await readAsDataURL(f);
+          setPending((prev) => [...prev, { type: 'image', name: f.name, size: f.size, dataUrl }]);
+        } else if (TEXT_EXT.includes(ext) || f.type.startsWith('text/')) {
+          if (f.size > MAX_FILE_BYTES) { toast.error(`${f.name} 超过 500KB，仅支持文本类文件`); continue; }
+          const text = await f.text();
+          setPending((prev) => [...prev, { type: 'file', name: f.name, size: f.size, text }]);
+        } else {
+          toast.error(`不支持 ${ext || '该'} 格式，可上传图片或文本类文件`);
+        }
+      } catch {
+        toast.error(`读取 ${f.name} 失败，请重试`);
+      }
+    }
+    if (fileRef.current) fileRef.current.value = '';
+  };
+  const removePending = (idx: number) => setPending((prev) => prev.filter((_, i) => i !== idx));
+  const formatSize = (n?: number): string => {
+    if (n == null) return '';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / 1024 / 1024).toFixed(1)} MB`;
   };
 
   // ===== 会话侧栏（桌面侧栏 / 移动端横向滚动条） =====
@@ -311,7 +410,7 @@ export default function AssistantPage() {
           </div>
         ))}
       </div>
-      <p className="hidden lg:block text-[10px] text-slate-400 px-3 pt-2">带记忆：同一对话内上下文连续</p>
+      <p className="hidden lg:block text-[10px] text-slate-400 px-3 pt-2">带记忆：同一对话上下文连续 · 支持上传图片 / 文件</p>
     </>
   );
 
@@ -353,7 +452,14 @@ export default function AssistantPage() {
         </div>
 
         {/* 消息区 */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div
+          ref={scrollRef}
+          onScroll={() => {
+            const el = scrollRef.current;
+            if (el) nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+          }}
+          className="flex-1 overflow-y-auto p-4 space-y-4"
+        >
           {loadingMsgs && (
             <div className="text-center py-8"><Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" /></div>
           )}
@@ -364,7 +470,7 @@ export default function AssistantPage() {
               </div>
               <h3 className="text-lg font-semibold text-slate-700">AI 学习助手</h3>
               <p className="text-sm text-slate-400 mt-2 max-w-sm mx-auto">
-                支持多轮记忆对话。可以问知识点、要代码示例、要公式推导——回答支持数学公式、代码高亮与流程图。
+                支持多轮记忆对话。可以问知识点、要代码示例、要公式推导；还可以上传图片或文本文件（代码/文档）一起理解——回答支持数学公式、代码高亮与流程图。
               </p>
             </div>
           )}
@@ -382,7 +488,26 @@ export default function AssistantPage() {
                     : 'bg-slate-50 border border-border text-foreground rounded-tl-sm min-w-0'
                 }`}
               >
-                {m.role === 'user' ? m.content : <AIMarkdown content={m.content} />}
+                {m.role === 'user' ? (
+                  <div className="space-y-2">
+                    {m.attachments && m.attachments.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {m.attachments.map((a, ai) => a.type === 'image' && a.dataUrl ? (
+                          <img key={ai} src={a.dataUrl} alt={a.name} className="max-h-40 max-w-[55vw] rounded-lg object-contain bg-white/10" />
+                        ) : (
+                          <div key={ai} className="flex items-center gap-1.5 text-xs bg-white/20 rounded-lg px-2 py-1 max-w-full">
+                            <FileText className="w-3.5 h-3.5 shrink-0" />
+                            <span className="truncate">{a.name}</span>
+                            {formatSize(a.size) && <span className="opacity-70 shrink-0">{formatSize(a.size)}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {m.content && <div className="whitespace-pre-wrap break-words">{m.content}</div>}
+                  </div>
+                ) : (
+                  <AIMarkdown content={m.content} />
+                )}
               </div>
               {m.role === 'user' && (
                 <div className="w-8 h-8 rounded-full bg-violet-100 flex items-center justify-center shrink-0">
@@ -395,19 +520,51 @@ export default function AssistantPage() {
 
         {/* 输入区 */}
         <div className="p-3 border-t border-border">
+          {/* 待发送附件 chips */}
+          {pending.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {pending.map((a, i) => (
+                <span key={i} className="flex items-center gap-2 rounded-lg bg-slate-100 border border-border pl-1.5 pr-1 py-1 text-xs text-slate-700 max-w-[200px]">
+                  {a.type === 'image' && a.dataUrl ? (
+                    <img src={a.dataUrl} alt={a.name} className="w-7 h-7 rounded object-cover bg-slate-200 shrink-0" />
+                  ) : (
+                    <span className="w-7 h-7 rounded flex items-center justify-center bg-slate-200 text-slate-500 shrink-0"><FileText className="w-3.5 h-3.5" /></span>
+                  )}
+                  <span className="truncate shrink">{a.name}</span>
+                  <button onClick={() => removePending(i)} className="shrink-0 p-0.5 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-600" aria-label="移除附件"><X className="w-3 h-3" /></button>
+                </span>
+              ))}
+            </div>
+          )}
           <div className="flex gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/webp,image/gif,.txt,.md,.json,.csv,.log,.yml,.yaml,.xml,.sql,.py,.js,.ts,.jsx,.tsx,.java,.c,.cpp,.h,.hpp,.css,.html,.htm,.sh,.bash,.go,.rs,.php,.rb,.toml,.ini"
+              className="hidden"
+              onChange={(e) => handleAttach(e.target.files)}
+            />
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={loading || pending.length >= MAX_PENDING}
+              className="shrink-0 w-10 rounded-xl border border-border text-slate-400 hover:text-violet-600 hover:border-violet-300 disabled:opacity-40 flex items-center justify-center transition-colors"
+              title="上传图片或文本文件"
+            >
+              <Paperclip className="w-4 h-4" />
+            </button>
             <input
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) send(input); }}
-              placeholder="输入你的问题，Enter 发送..."
+              placeholder="输入你的问题，Enter 发送（可同时发送图片/文件）..."
               className="flex-1 px-4 py-2.5 rounded-xl border border-border text-sm outline-none focus:ring-2 focus:ring-violet-300 bg-white"
               disabled={loading}
             />
             <button
               onClick={() => send(input)}
-              disabled={loading || !input.trim()}
+              disabled={loading || (!input.trim() && pending.length === 0)}
               className="px-4 rounded-xl bg-violet-600 text-white disabled:opacity-40 flex items-center"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}

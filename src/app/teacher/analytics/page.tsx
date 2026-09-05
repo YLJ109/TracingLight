@@ -23,6 +23,7 @@ import {
   BarChart,
   Layers,
   Filter,
+  MessagesSquare,
 } from "lucide-react";
 import {
   Card,
@@ -50,6 +51,22 @@ const levelConfig: Record<string, { label: string; color: string; bg: string }> 
   medium: { label: "中等层", color: "text-yellow-700", bg: "bg-yellow-50 border-yellow-200" },
   weak: { label: "提升层", color: "text-red-700", bg: "bg-red-50 border-red-200" },
 };
+
+/** 秒 → 可读时长（不足 1 小时显示分钟，否则显示 x小时y分钟） */
+function fmtDuration(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.round((s % 3600) / 60);
+  if (h > 0) return `${h} 小时 ${m} 分钟`;
+  return `${m} 分钟`;
+}
+
+/** 人均阅读分钟数 */
+function perStudentMinutes(stats: any): number {
+  const total = stats?.totalReadonlySeconds || 0;
+  const count = stats?.anytimeCount || 0;
+  return count > 0 ? Math.round((total / 60) / count) : 0;
+}
 
 export default function AnalyticsPage() {
   const router = useRouter();
@@ -322,12 +339,21 @@ export default function AnalyticsPage() {
           <p className="text-sm text-muted-foreground mt-1">班级整体学情数据可视化分析</p>
         </div>
         {/* P2-1：从"发现薄弱"到"采取行动"的一键出口 */}
-        <Button
-          className="bg-violet-600 hover:bg-violet-700 gap-1.5"
-          onClick={() => router.push(`/teacher/assignments/new?auto_ai=1${courseId ? `&course_id=${courseId}` : ''}`)}
-        >
-          <Zap className="w-4 h-4" /> 针对薄弱点 AI 布置作业
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => router.push(`/teacher/discussion${courseId ? `?course_id=${courseId}` : ''}`)}
+          >
+            <MessagesSquare className="w-4 h-4" /> 讨论区
+          </Button>
+          <Button
+            className="bg-violet-600 hover:bg-violet-700 gap-1.5"
+            onClick={() => router.push(`/teacher/assignments/new?auto_ai=1${courseId ? `&course_id=${courseId}` : ''}`)}
+          >
+            <Zap className="w-4 h-4" /> 针对薄弱点 AI 布置作业
+          </Button>
+        </div>
       </div>
 
       {/* 筛选栏：全部 / 按课程 / 按班级 */}
@@ -424,6 +450,49 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* 学习投入 · 阅读时长概览（D6） */}
+      <Card className="border-violet-200/70 shadow-sm py-0">
+        <CardContent className="p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-violet-600" />
+              <span className="text-sm font-semibold">学习投入 · 材料阅读时长</span>
+            </div>
+            <Badge variant="outline" className="text-xs font-normal text-muted-foreground">
+              {data.readingStats?.anytimeCount || 0} 人开始学习
+            </Badge>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="rounded-lg bg-violet-50/60 p-3 flex items-center gap-3">
+              <div className="p-2 bg-violet-100 rounded-lg shrink-0"><Clock className="w-5 h-5 text-violet-600" /></div>
+              <div>
+                <p className="text-xs text-muted-foreground">班级累计阅读时长</p>
+                <p className="text-xl font-bold text-violet-700">
+                  {fmtDuration(data.readingStats?.totalReadonlySeconds || 0)}
+                </p>
+              </div>
+            </div>
+            <div className="rounded-lg bg-emerald-50/60 p-3 flex items-center gap-3">
+              <div className="p-2 bg-emerald-100 rounded-lg shrink-0"><BookOpen className="w-5 h-5 text-emerald-600" /></div>
+              <div>
+                <p className="text-xs text-muted-foreground">已完成学习材料</p>
+                <p className="text-xl font-bold text-emerald-700">
+                  {data.readingStats?.completedMaterials || 0}
+                  <span className="text-sm font-normal text-emerald-500"> / {data.readingStats?.totalMaterials || 0}</span>
+                </p>
+              </div>
+            </div>
+            <div className="rounded-lg bg-orange-50/60 p-3 flex items-center gap-3">
+              <div className="p-2 bg-orange-100 rounded-lg shrink-0"><Activity className="w-5 h-5 text-orange-600" /></div>
+              <div>
+                <p className="text-xs text-muted-foreground">人均阅读</p>
+                <p className="text-xl font-bold text-orange-700">{perStudentMinutes(data.readingStats)} 分钟</p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">

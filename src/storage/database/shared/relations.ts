@@ -5,6 +5,7 @@ import {
   question, assignment, answer, gradingTask, errorBook,
   knowledgeMasteryLog, questionRecord, announcement, announcementRead,
   studentSchedule, classSchedule, examSchedule, studyPlan, studySession,
+  discussionPost, discussionReply,
 } from "./schema";
 
 // ===================== 基础数据层关系 =====================
@@ -157,4 +158,17 @@ export const studyPlanRelations = relations(studyPlan, ({ one, many }) => ({
 export const studySessionRelations = relations(studySession, ({ one }) => ({
   plan: one(studyPlan, { fields: [studySession.plan_id], references: [studyPlan.id] }),
   knowledgePoint: one(knowledgePoint, { fields: [studySession.knowledge_point_id], references: [knowledgePoint.id] }),
+}));
+
+// ===================== 讨论区关系 =====================
+
+export const discussionPostRelations = relations(discussionPost, ({ one, many }) => ({
+  course: one(course, { fields: [discussionPost.course_id], references: [course.id] }),
+  author: one(user, { fields: [discussionPost.author_id], references: [user.id] }),
+  replies: many(discussionReply),
+}));
+
+export const discussionReplyRelations = relations(discussionReply, ({ one }) => ({
+  post: one(discussionPost, { fields: [discussionReply.post_id], references: [discussionPost.id] }),
+  author: one(user, { fields: [discussionReply.author_id], references: [user.id] }),
 }));

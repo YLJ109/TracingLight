@@ -96,9 +96,10 @@ export default function LoginPage() {
         return;
       }
 
-      const { user, token } = loginData;
+      const { user } = loginData;
 
-      // 存用户信息到 localStorage（auth-helper 读取）
+      // 会话安全：JWT 已由服务端写入 httpOnly cookie，不再存入 localStorage。
+      // 这里仅缓存低敏用户元数据供前端同步展示（侧边栏/守卫等）。
       localStorage.setItem(
         "tracinglight_user",
         JSON.stringify({
@@ -108,7 +109,6 @@ export default function LoginPage() {
           role: user.role || "student",
           student_level: user.student_level || null,
           class_id: user.class_id || null,
-          token,
         })
       );
 
@@ -119,8 +119,6 @@ export default function LoginPage() {
         return;
       }
 
-      // cookie 给 proxy
-      document.cookie = `sb-auth=${token}; path=/; max-age=86400; SameSite=Lax`;
       const rolePath: Record<string, string> = { teacher: "/teacher", student: "/student", admin: "/admin" };
       window.location.href = rolePath[role] || "/student";
     } catch {
@@ -144,23 +142,26 @@ export default function LoginPage() {
       : [];
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-violet-50/40 to-fuchsia-50/30">
+    <div className="app-shell min-h-screen relative flex items-center justify-center overflow-hidden px-4">
       {/* Background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-96 h-96 bg-violet-200/25 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-fuchsia-200/20 rounded-full blur-3xl" />
+        <div className="absolute -top-40 -right-32 w-[28rem] h-[28rem] bg-violet-300/30 rounded-full blur-3xl" />
+        <div className="absolute -bottom-44 -left-32 w-[28rem] h-[28rem] bg-fuchsia-300/25 rounded-full blur-3xl" />
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[36rem] h-[24rem] bg-indigo-200/20 rounded-full blur-3xl" />
       </div>
 
-      <div className="relative w-full max-w-md mx-auto px-4">
+      <div className="relative w-full max-w-md mx-auto">
         {/* Logo */}
         <div className="text-center mb-8">
-          <img src="/logo.png" alt="溯光" className="w-16 h-16 mx-auto rounded-2xl shadow-lg shadow-indigo-200 mb-4 object-contain" />
-          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">溯光 TracingLight</h1>
+          <img src="/logo.png" alt="溯光" className="w-20 h-20 mx-auto object-contain mb-4" />
+          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">
+            溯光 <span className="text-brand-gradient font-extrabold">TracingLight</span>
+          </h1>
           <p className="text-sm text-slate-500 mt-1">高校智慧教育 AI 平台</p>
         </div>
 
         {/* Login Card */}
-        <Card className="border-0 shadow-xl shadow-slate-200/50 bg-white/90 backdrop-blur-sm">
+        <Card className="border-0 glass-strong shadow-glass rounded-2xl">
           <CardContent className="p-8">
             <div className="text-center mb-6">
               <h2 className="text-xl font-bold text-slate-800">欢迎回来</h2>
@@ -168,52 +169,43 @@ export default function LoginPage() {
             </div>
 
             {/* Role tabs */}
-            <div className="flex bg-slate-100 rounded-lg p-1 mb-5">
-              <button
-                onClick={() => {
-                  setActiveTab("student");
-                  setSelectedUser(DEMO_USERS[2]);
-                  setUsername(DEMO_USERS[2].username);
-                  setPassword(DEMO_USERS[2].username);
-                }}
-                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${
-                  activeTab === "student"
-                    ? "bg-white text-indigo-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                学生端
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab("teacher");
-                  setSelectedUser(DEMO_USERS[0]);
-                  setUsername(DEMO_USERS[0].username);
-                  setPassword(DEMO_USERS[0].username);
-                }}
-                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${
-                  activeTab === "teacher"
-                    ? "bg-white text-indigo-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                教师端
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab("admin");
-                  setSelectedUser(null);
-                  setUsername("admin");
-                  setPassword("123456");
-                }}
-                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${
-                  activeTab === "admin"
-                    ? "bg-white text-indigo-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                管理端
-              </button>
+            <div className="flex bg-white/70 backdrop-blur-sm rounded-xl p-1 mb-5 shadow-sm border border-white/60">
+              {(
+                [
+                  ['student', '学生端'],
+                  ['teacher', '教师端'],
+                  ['admin', '管理端'],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => {
+                    if (key === 'student') {
+                      setActiveTab('student');
+                      setSelectedUser(DEMO_USERS[2]);
+                      setUsername(DEMO_USERS[2].username);
+                      setPassword(DEMO_USERS[2].username);
+                    } else if (key === 'teacher') {
+                      setActiveTab('teacher');
+                      setSelectedUser(DEMO_USERS[0]);
+                      setUsername(DEMO_USERS[0].username);
+                      setPassword(DEMO_USERS[0].username);
+                    } else {
+                      setActiveTab('admin');
+                      setSelectedUser(null);
+                      setUsername('admin');
+                      setPassword('123456');
+                    }
+                  }}
+                  className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
+                    activeTab === key
+                      ? 'bg-white text-violet-700 shadow-soft'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
             {/* Form fields */}
@@ -229,7 +221,7 @@ export default function LoginPage() {
                     setUsername(e.target.value);
                     setSelectedUser(null);
                   }}
-                  className="mt-1.5 h-11 bg-slate-50 border-slate-200 focus:border-indigo-400 focus:ring-indigo-400"
+                  className="mt-1.5 h-11 bg-white/75 border-slate-200/80 focus:border-teal-400 focus:ring-teal-400"
                   placeholder="输入账号"
                 />
               </div>
@@ -247,7 +239,7 @@ export default function LoginPage() {
                       setPassword(e.target.value);
                       setSelectedUser(null);
                     }}
-                    className="h-11 bg-slate-50 border-slate-200 focus:border-indigo-400 focus:ring-indigo-400 pr-10"
+                    className="h-11 bg-white/75 border-slate-200/80 focus:border-teal-400 focus:ring-teal-400 pr-10"
                     placeholder="输入密码"
                   />
                   <button
@@ -270,7 +262,7 @@ export default function LoginPage() {
                     id="captcha"
                     value={captchaInput}
                     onChange={(e) => setCaptchaInput(e.target.value.toUpperCase())}
-                    className="h-11 bg-slate-50 border-slate-200 focus:border-indigo-400 focus:ring-indigo-400 flex-1"
+                    className="h-11 bg-white/75 border-slate-200/80 focus:border-teal-400 focus:ring-teal-400 flex-1"
                     placeholder="输入验证码"
                     maxLength={4}
                     onKeyDown={(e) => e.key === "Enter" && handleLogin()}
@@ -282,9 +274,8 @@ export default function LoginPage() {
                       setCaptchaCode(c);
                       setCaptchaInput(c);
                     }}
-                    className="h-11 px-4 bg-gradient-to-r from-slate-700 to-slate-800 rounded-lg text-white font-mono text-lg font-bold tracking-widest select-none hover:from-slate-600 hover:to-slate-700 transition-colors min-w-[80px]"
+                    className="h-11 px-4 brand-gradient rounded-lg text-white font-mono text-lg font-bold tracking-widest select-none hover:opacity-95 transition-opacity min-w-[80px]"
                     style={{
-                      backgroundImage: "linear-gradient(135deg, #1e293b 0%, #334155 100%)",
                       letterSpacing: "0.3em",
                     }}
                   >
@@ -303,7 +294,7 @@ export default function LoginPage() {
               <Button
                 onClick={handleLogin}
                 disabled={loading}
-                className="w-full h-11 bg-violet-600 hover:bg-violet-700 text-white font-medium shadow-lg shadow-violet-200 transition-all duration-200 disabled:opacity-50"
+                className="w-full h-11 brand-gradient hover:opacity-95 text-white font-semibold shadow-soft transition-all duration-200 disabled:opacity-50"
               >
                 {loading ? (
                   <>
@@ -328,7 +319,7 @@ export default function LoginPage() {
       <div className={activeTab === "admin" ? "hidden" : "fixed left-6 bottom-6 z-50"}>
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetTrigger asChild>
-            <button className="flex items-center gap-2 px-4 py-3 bg-white/90 backdrop-blur-sm border border-slate-200 rounded-xl shadow-lg hover:shadow-xl hover:bg-white transition-all text-slate-600 hover:text-slate-800">
+            <button className="flex items-center gap-2 px-4 py-3 glass-strong rounded-xl shadow-soft hover:shadow-glass transition-all text-slate-600 hover:text-slate-800">
               <Users className="w-4 h-4" />
               <span className="text-sm font-medium">切换用户</span>
               <span className="text-xs text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md">
@@ -347,7 +338,7 @@ export default function LoginPage() {
                   onClick={() => handleSelectUser(user)}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left ${
                     selectedUser?.username === user.username
-                      ? "bg-indigo-50 border border-indigo-200"
+                      ? "bg-violet-50 border border-violet-200"
                       : "hover:bg-slate-50 border border-transparent"
                   }`}
                 >
@@ -368,7 +359,7 @@ export default function LoginPage() {
                     </span>
                   )}
                   {selectedUser?.username === user.username && (
-                    <CheckCircle2 className="w-4 h-4 text-indigo-500 shrink-0" />
+                    <CheckCircle2 className="w-4 h-4 text-violet-500 shrink-0" />
                   )}
                 </button>
               ))}

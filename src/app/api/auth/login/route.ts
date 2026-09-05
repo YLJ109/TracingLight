@@ -26,8 +26,9 @@ function clearLimit(key: string): void {
 }
 
 function clientKey(request: NextRequest, username: string): string {
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    || request.headers.get('x-real-ip')
+  // 优先使用代理/反向代理可信来源，避免使用可被客户端伪造/绕过限流的 x-forwarded-for
+  const ip = request.headers.get('x-real-ip')
+    || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
     || 'unknown';
   return `${ip}:${username}`;
 }
@@ -56,17 +57,18 @@ export async function POST(request: NextRequest) {
       .all();
 
     if (rows.length === 0) {
-      return NextResponse.json({ error: '用户不存在' }, { status: 401 });
+      return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
     }
 
     const userData = rows[0];
     if (!userData.is_active) {
-      return NextResponse.json({ error: '用户已被禁用' }, { status: 403 });
+      // 与"账号或密码错误"保持表面一致，避免暴露账号存在性
+      return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
     }
 
     // 校验密码
     if (!verifyPassword(password, userData.password || '')) {
-      return NextResponse.json({ error: '密码错误' }, { status: 401 });
+      return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
     }
 
     // 登录成功，清除限流计数
@@ -85,12 +87,13 @@ export async function POST(request: NextRequest) {
         role: userData.role,
         studentLevel: userData.student_level,
         classId: userData.class_id,
+        token_version: (userData as unknown as { token_version?: number }).token_version ?? 0,
       },
       secret,
       { expiresIn: '7d' }
     );
 
-    return NextResponse.json({
+    const resp = NextResponse.json({
       success: true,
       user: {
         id: userData.id,
@@ -102,6 +105,15 @@ export async function POST(request: NextRequest) {
       },
       token,
     });
+    // 会话安全：JWT 放入 httpOnly cookie（JS 无法读取，防 XSS 窃取），
+    // 后端鉴权优先读 cookie，同时保留 Authorization 透传能力。
+    resp.cookies.set('tracinglight_token', token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60, // 7 天
+    });
+    return resp;
   } catch (e: unknown) {
     if (e && typeof (e as { status?: number }).status === 'number') return e as NextResponse;
     console.error('Login error:', e);

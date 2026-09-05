@@ -1,38 +1,20 @@
 /**
- * Unified API fetch wrapper — auto-injects JWT for server auth.
- * Reads token from localStorage tracinglight_user (REST API login).
+ * Unified API fetch wrapper.
+ *
+ * 会话安全：JWT 仅存于 httpOnly `tracinglight_token` cookie（登录时服务端种入），
+ * 浏览器同源请求自动携带，这里不再从 localStorage 读取/注入 token，杜绝 XSS 窃取。
  */
-function getAuthHeadersSync(): HeadersInit {
-  try {
-    const stored = localStorage.getItem('tracinglight_user');
-    if (stored) {
-      const user = JSON.parse(stored);
-      if (user.token) {
-        return { Authorization: `Bearer ${user.token}` };
-      }
-    }
-  } catch {
-    // SSR or localStorage not available
-  }
-  return {};
-}
-
 export async function apiFetch(
   url: string,
   options?: RequestInit
 ): Promise<Response> {
-  const authHeaders = getAuthHeadersSync();
-
   const headers = new Headers(options?.headers);
-  if (authHeaders && 'Authorization' in authHeaders) {
-    headers.set('Authorization', (authHeaders as Record<string, string>).Authorization);
-  }
   // Default to JSON if no Content-Type set
   if (!headers.has('Content-Type') && options?.method !== 'GET') {
     headers.set('Content-Type', 'application/json');
   }
 
-  return fetch(url, { ...options, headers });
+  return fetch(url, { ...options, headers, credentials: 'same-origin' });
 }
 
 /** Convenience wrappers */

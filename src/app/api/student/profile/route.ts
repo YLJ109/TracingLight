@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
 import { generateStudentData } from '@/lib/mock-data-generator';
-import { user, gradingTask, assignment, course, knowledgeMasteryLog, knowledgePoint, errorBook } from '@/storage/database/shared/schema';
+import { user, gradingTask, assignment, course, knowledgeMasteryLog, knowledgePoint, errorBook, answer } from '@/storage/database/shared/schema';
 import { eq, and, sql, inArray } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     const weakEntries = [...kpMasteryMap.entries()]
       .filter(([, rate]) => rate < 70)
       .sort((a, b) => a[1] - b[1])
-      .slice(0, 10);
+      .slice(0, 5);
     // 批量查询知识点名，消除 N+1
     const weakKpIds = weakEntries.map(([kpId]) => kpId);
     const kpNameMap = new Map<number, string>();
@@ -64,29 +64,60 @@ export async function GET(request: NextRequest) {
       masteryRate: rate,
     }));
 
-    // 用真实数据覆盖 indicators 的 avgScore / totalErrors，weakTop10
-    const indicators = mockData.indicators.map((ind: any) => {
-      if (ind.key === 'avgScore') return { ...ind, value: realAvgScore };
-      return ind;
-    });
+    // 用真实数据覆盖 indicators / weakTop10（杜绝 mock 死数据与「100%」假数）
     const weakTop10 = realWeakKps.length > 0
       ? realWeakKps.map((w) => ({ name: w.name, priority: '重点', masteryRate: w.masteryRate, lossWeight: 0 }))
       : mockData.weakTop10;
 
-    // Get grading stats from DB (for actual assignment count)
+    // ============ 真实核心指标（全部来自数据库） ============
+    // 学生班级 → 所修课程 → 应提交作业数
+    const stuClassId = student?.class_id ?? null;
+    const enrolledCourseIds = stuClassId
+      ? db.select({ id: course.id }).from(course).where(eq(course.class_id, stuClassId)).all().map((c) => c.id)
+      : [];
     const completedAssignmentsResult = db.select({ count: sql<number>`count(*)` })
       .from(gradingTask)
-      .where(and(
-        eq(gradingTask.student_id, studentId),
-        eq(gradingTask.status, 'completed')
-      ))
+      .where(and(eq(gradingTask.student_id, studentId), eq(gradingTask.status, 'completed')))
       .all();
     const completedAssignments = completedAssignmentsResult[0]?.count || 0;
+    const totalAssignments = enrolledCourseIds.length > 0
+      ? (db.select({ count: sql<number>`count(*)` }).from(assignment)
+          .where(inArray(assignment.course_id, enrolledCourseIds)).all()[0]?.count || 0)
+      : 0;
+    const completionRate = totalAssignments > 0
+      ? Math.min(100, Math.round((completedAssignments / totalAssignments) * 100))
+      : 0;
 
-    const totalAssignmentsResult = db.select({ count: sql<number>`count(*)` })
-      .from(assignment)
-      .all();
-    const totalAssignments = totalAssignmentsResult[0]?.count || 0;
+    // 累计做题量（已提交作答数）
+    const answerCount = db.select({ count: sql<number>`count(*)` }).from(answer)
+      .where(and(eq(answer.student_id, studentId), eq(answer.is_submitted, true)))
+      .all()[0]?.count || 0;
+
+    // 错题总数 + 错题订正率（errorBook.review_status='mastered'）
+    const errRows = db.select({ review_status: errorBook.review_status }).from(errorBook)
+      .where(eq(errorBook.student_id, studentId)).all();
+    const totalErrors = errRows.length;
+    const masteredErrors = errRows.filter((r) => r.review_status === 'mastered').length;
+    const correctionRate = totalErrors > 0 ? Math.round((masteredErrors / totalErrors) * 100) : 0;
+
+    // 按时提交率：已提交作答中 submitted_at <= 作业截止时间的占比
+    const submittedAnswers = db.select({
+      submitted_at: answer.submitted_at,
+      end_time: assignment.end_time,
+    }).from(answer).innerJoin(assignment, eq(answer.assignment_id, assignment.id))
+      .where(eq(answer.student_id, studentId)).all();
+    const onTimeRate = submittedAnswers.length > 0
+      ? Math.round(submittedAnswers.filter((r) => r.submitted_at && r.submitted_at <= (r.end_time || '9999')).length / submittedAnswers.length * 100)
+      : 0;
+
+    const indicators = [
+      { key: 'completionRate', icon: 'completionRate', label: '作业完成率', value: completionRate, unit: '%', color: 'teal' },
+      { key: 'onTimeRate', icon: 'onTimeRate', label: '按时提交率', value: onTimeRate, unit: '%', color: 'blue' },
+      { key: 'avgScore', icon: 'avgScore', label: '平均得分', value: realAvgScore, unit: '分', color: 'amber' },
+      { key: 'totalQuestions', icon: 'totalQuestions', label: '累计做题量', value: answerCount, unit: '题', color: 'purple' },
+      { key: 'totalErrors', icon: 'weakPoints', label: '错题总数', value: totalErrors, unit: '题', color: 'red' },
+      { key: 'correctionRate', icon: 'correctionRate', label: '错题订正率', value: correctionRate, unit: '%', color: 'green' },
+    ];
 
     // ============ 课程维度真实学情（按课程筛选） ============
     let courseData = null;

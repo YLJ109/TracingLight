@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/storage/database/db';
+import { getDb, saveDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
 import { eq, desc, and, sql, inArray } from 'drizzle-orm';
-import { question, course, knowledgePoint } from '@/storage/database/shared/schema';
+import { question, course, knowledgePoint, gradingTask } from '@/storage/database/shared/schema';
 import { getTeacherCourseIds } from '@/lib/teacher-scope';
 
 // 解析某题归属课程
@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
     const knowledge_point_id = searchParams.get('knowledge_point_id');
     const question_type = searchParams.get('question_type');
     const difficulty = searchParams.get('difficulty');
+    const excludeLocked = searchParams.get('exclude_locked') === '1';
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
     const offset = (page - 1) * pageSize;
@@ -60,6 +61,8 @@ export async function GET(req: NextRequest) {
     if (knowledge_point_id) filters.push(eq(question.knowledge_point_id, parseInt(knowledge_point_id)));
     if (question_type) filters.push(eq(question.question_type, question_type));
     if (difficulty) filters.push(eq(question.difficulty, difficulty));
+    // 选题/组卷场景：排除已锁定题目
+    if (excludeLocked) filters.push(eq(question.locked, false));
 
     // Get total count
     const countResult = db.select({ count: sql<number>`count(*)` })
@@ -98,12 +101,36 @@ export async function GET(req: NextRequest) {
       kps.forEach((kp) => kpMap.set(kp.id, kp));
     }
 
+    // 正确率统计：仅统计已批改完成(completed)的作答（退回/重批的旧行 status=superseded 不计入）。
+    // 答对 = 满分（规则引擎对客观题仅精确正确给满分，主观题 AI 满分代表完整作答）。
+    const accuracyByQuestion = new Map<number, { attempts: number; correct: number }>();
+    if (questions.length > 0) {
+      const gradings = db.select({
+        question_id: gradingTask.question_id,
+        total_score: gradingTask.total_score,
+        full_score: gradingTask.full_score,
+      }).from(gradingTask)
+        .where(and(inArray(gradingTask.question_id, questions.map(q => q.id)), eq(gradingTask.status, 'completed')))
+        .all();
+      for (const g of gradings) {
+        const cur = accuracyByQuestion.get(g.question_id) || { attempts: 0, correct: 0 };
+        cur.attempts += 1;
+        if ((g.total_score ?? 0) >= (g.full_score ?? 0)) cur.correct += 1;
+        accuracyByQuestion.set(g.question_id, cur);
+      }
+    }
+
     // Enrich questions
-    const enrichedQuestions = questions.map((q) => ({
-      ...q,
-      course: coursesMap.get(q.course_id) || null,
-      knowledge_point: kpMap.get(q.knowledge_point_id) || null,
-    }));
+    const enrichedQuestions = questions.map((q) => {
+      const acc = accuracyByQuestion.get(q.id);
+      return {
+        ...q,
+        course: coursesMap.get(q.course_id) || null,
+        knowledge_point: kpMap.get(q.knowledge_point_id) || null,
+        accuracy_attempts: acc?.attempts ?? 0,
+        accuracy: acc && acc.attempts > 0 ? Math.round((acc.correct / acc.attempts) * 1000) / 10 : null,
+      };
+    });
 
     // 下拉课程：仅本人课程
     const courses = myCourseIds.length > 0
@@ -161,11 +188,15 @@ export async function POST(req: NextRequest) {
       analysis,
       default_score,
       source,
+      min_chars,
+      max_chars,
+      min_select,
+      max_select,
     } = body;
 
     const myCourseIds = getTeacherCourseIds(authUser.userId);
     // 归属：题目课程必须为本人课程；若未给课程则从知识点反查，仍须归属本人
-    let targetCourseId: number | null = course_id ? Number(course_id) : kpCourseId(knowledge_point_id);
+    const targetCourseId: number | null = course_id ? Number(course_id) : kpCourseId(knowledge_point_id);
     if (targetCourseId != null && !myCourseIds.includes(targetCourseId)) {
       return NextResponse.json({ success: false, error: '无权在该课程创建题目' }, { status: 403 });
     }
@@ -183,9 +214,15 @@ export async function POST(req: NextRequest) {
       source: source || 'manual',
       version: 1,
       is_active: true,
+      min_chars: min_chars == null || min_chars === '' ? null : Number(min_chars) || null,
+      max_chars: max_chars == null || max_chars === '' ? null : Number(max_chars) || null,
+      min_select: min_select == null || min_select === '' ? null : Number(min_select) || null,
+      max_select: max_select == null || max_select === '' ? null : Number(max_select) || null,
     }).returning().all();
 
     const data = result[0];
+
+    saveDb();
 
     return NextResponse.json({ success: true, data });
   } catch (error) {
@@ -227,6 +264,11 @@ export async function PUT(req: NextRequest) {
     const setObj: Record<string, unknown> = { ...updates };
     if (course_id != null) setObj.course_id = Number(course_id);
     if (knowledge_point_id != null) setObj.knowledge_point_id = Number(knowledge_point_id);
+    // 规范化可选限制字段：空串/非数值 → null（不限制）
+    for (const f of ['min_chars', 'max_chars', 'min_select', 'max_select'] as const) {
+      const v = setObj[f];
+      setObj[f] = (v === null || v === undefined || v === '') ? null : Number(v) || null;
+    }
 
     const result = db.update(question)
       .set(setObj)
@@ -235,6 +277,8 @@ export async function PUT(req: NextRequest) {
       .all();
 
     const data = result[0];
+
+    saveDb();
 
     return NextResponse.json({ success: true, data });
   } catch (error) {
@@ -266,6 +310,7 @@ export async function DELETE(req: NextRequest) {
       .set({ is_active: false })
       .where(eq(question.id, parseInt(id)))
       .run();
+    saveDb();
 
     return NextResponse.json({ success: true });
   } catch (error) {

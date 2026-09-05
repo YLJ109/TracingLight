@@ -231,49 +231,47 @@ export async function invokeStructured<T>(
   userPrompt: string,
   temperature = 0.3
 ): Promise<T> {
-  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-    { role: 'system' as const, content: systemPrompt },
-    { role: 'user' as const, content: userPrompt },
-  ];
+  // 免费模型偶发输出带杂讯/截断的 JSON，导致一次解析失败。用「首轮 + 严格化低温度重试」压制偶发失败：
+  // 首轮用传入温度；失败后的重试降为 0.1（更稳定）并追加"只输出单个 JSON"约束（智谱 API 无状态，重新携带全量消息即可）。
+  const maxAttempts = 3;
+  let lastError: Error | null = null;
 
-  const response = await client.invoke(messages, {
-    temperature,
-  });
-
-  // Extract JSON from response
-  const content = response.content;
-
-  // Try to find JSON in code block first
-  const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  if (codeBlockMatch) {
-    try {
-      return JSON.parse(codeBlockMatch[1].trim()) as T;
-    } catch {
-      // Continue to other methods
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const messages: Array<{ role: 'system' | 'user'; content: string }> = [
+      { role: 'system' as const, content: systemPrompt },
+      { role: 'user' as const, content: userPrompt },
+    ];
+    // 非首轮：强制只回单个 JSON 对象，禁止任何解释/代码块标记；并用低温度提升一致性
+    if (attempt > 1) {
+      messages.push({
+        role: 'user' as const,
+        content: '\n（注意：刚才的输出解析失败。请只输出一个完整、合法的 JSON 对象，不要包含任何解释、Markdown 代码块标记或多余文字，所有字符串需正确转义。）',
+      });
     }
+    const retryTemp = attempt === 1 ? temperature : 0.1;
+
+    const response = await client.invoke(messages, { temperature: retryTemp });
+    const content = response.content;
+
+    // 依次尝试从代码块 / 数组 / 对象提取 JSON
+    const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+    if (codeBlockMatch) {
+      try { return JSON.parse(codeBlockMatch[1].trim()) as T; } catch { /* 继续 */ }
+    }
+    const arrayMatch = content.match(/\[[\s\S]*\]/);
+    if (arrayMatch) {
+      try { return JSON.parse(arrayMatch[0]) as T; } catch { /* 继续 */ }
+    }
+    const objMatch = content.match(/\{[\s\S]*\}/);
+    if (objMatch) {
+      try { return JSON.parse(objMatch[0]) as T; } catch { /* 继续 */ }
+    }
+
+    lastError = new Error(`Failed to parse structured output: ${content.substring(0, 200)}`);
+    console.error('invokeStructured parse failed (attempt ' + attempt + '). length=' + content.length + ' tail=' + JSON.stringify(content.slice(-100)));
   }
 
-  // Try to find JSON array
-  const arrayMatch = content.match(/\[[\s\S]*\]/);
-  if (arrayMatch) {
-    try {
-      return JSON.parse(arrayMatch[0]) as T;
-    } catch {
-      // Continue to other methods
-    }
-  }
-
-  // Try to find JSON object
-  const objMatch = content.match(/\{[\s\S]*\}/);
-  if (objMatch) {
-    try {
-      return JSON.parse(objMatch[0]) as T;
-    } catch {
-      // Continue to other methods
-    }
-  }
-
-  throw new Error(`Failed to parse structured output: ${content.substring(0, 200)}`);
+  throw lastError || new Error('结构化输出解析失败');
 }
 
 /**

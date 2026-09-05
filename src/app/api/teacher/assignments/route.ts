@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/storage/database/db';
+import { getDb, saveDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
 import { eq, desc, and, inArray } from 'drizzle-orm';
 import { assignment, user, gradingTask, answer, course, classInfo, question, notification } from '@/storage/database/shared/schema';
 import { getTeacherCourseIds, getTeacherAssignmentIds, getTeacherClassIds } from '@/lib/teacher-scope';
+import { isObjectiveType } from '@/lib/objective-grading';
 
 export async function GET(request: NextRequest) {
   try {
@@ -41,15 +42,31 @@ export async function GET(request: NextRequest) {
       class_id: user.class_id,
     }).from(user).where(and(...studentFilters)).all();
 
-    // Get all grading records
+    // Get all grading records（仅 completed；退回/重批旧行 status=superseded 不计入）
     const allGradings = db.select({
       id: gradingTask.id,
       assignment_id: gradingTask.assignment_id,
       student_id: gradingTask.student_id,
+      question_id: gradingTask.question_id,
       total_score: gradingTask.total_score,
       full_score: gradingTask.full_score,
+      teacher_override_score: gradingTask.teacher_override_score,
+      completed_at: gradingTask.completed_at,
       status: gradingTask.status,
-    }).from(gradingTask).all();
+    }).from(gradingTask)
+      .where(eq(gradingTask.status, 'completed'))
+      .all();
+
+    // 按 (student, question) 去重取最新一条 completed
+    function dedupByStudentQuestion(rows: typeof allGradings): typeof allGradings {
+      const map = new Map<string, typeof allGradings[number]>();
+      for (const r of rows) {
+        const key = `${r.student_id}:${r.question_id}`;
+        const prev = map.get(key);
+        if (!prev || (r.completed_at || '') >= (prev.completed_at || '')) map.set(key, r);
+      }
+      return [...map.values()];
+    }
 
     // Get all answer records
     const allAnswers = db.select({
@@ -79,28 +96,31 @@ export async function GET(request: NextRequest) {
 
     // Build enriched statistics for each assignment
     const enrichedData = assignments.map((asgn) => {
-      const asgnGradings = allGradings.filter((g) => g.assignment_id === asgn.id);
+      const asgnGradings = dedupByStudentQuestion(
+        allGradings.filter((g) => g.assignment_id === asgn.id)
+      );
       const asgnAnswers = allAnswers.filter((a) => a.assignment_id === asgn.id);
+      const totalQuestions = ((asgn.question_ids as number[]) || []).length;
 
       // Per-student aggregation
       const studentStats = allStudents.map((stu) => {
         const stuGradings = asgnGradings.filter((g) => g.student_id === stu.id);
         const stuAnswers = asgnAnswers.filter((a) => a.student_id === stu.id);
-        const completedCount = stuGradings.filter((g) => g.status === 'completed').length;
-        const totalScore = stuGradings.reduce((s, g) => s + (g.total_score || 0), 0);
+        const completedCount = stuGradings.length;
+        const totalScore = stuGradings.reduce((s, g) => s + (g.teacher_override_score ?? (g.total_score || 0)), 0);
         const totalFull = stuGradings.reduce((s, g) => s + (g.full_score || 0), 0);
 
         return {
           studentId: stu.id,
           studentName: stu.real_name,
           studentLevel: stu.student_level,
-          totalQuestions: stuGradings.length,
+          totalQuestions,
           completedCount,
           submittedCount: stuAnswers.filter((a) => a.is_submitted).length,
           totalScore,
           totalFull,
           avgScore: totalFull > 0 ? Math.round((totalScore / totalFull) * 1000) / 10 : 0,
-          status: completedCount === stuGradings.length && stuGradings.length > 0
+          status: completedCount === totalQuestions && totalQuestions > 0
             ? 'completed'
             : stuAnswers.some((a) => a.is_submitted) ? 'submitted' : 'pending',
         };
@@ -112,18 +132,17 @@ export async function GET(request: NextRequest) {
         : studentStats;
 
       // Overall stats
-      const completedGradings = asgnGradings.filter((g) => g.status === 'completed');
       const submittedAnswers = asgnAnswers.filter((a) => a.is_submitted);
 
       return {
         ...asgn,
-        question_count: ((asgn.question_ids as number[]) || []).length,
+        question_count: totalQuestions,
         submitted_count: submittedAnswers.length,
-        graded_count: completedGradings.length,
+        graded_count: asgnGradings.length,
         total_students: allStudents.length,
-        avg_score: completedGradings.length > 0
-          ? Math.round((completedGradings.reduce((s, g) => s + (g.total_score || 0), 0) /
-              completedGradings.reduce((s, g) => s + (g.full_score || 0), 0)) * 1000) / 10
+        avg_score: asgnGradings.length > 0
+          ? Math.round((asgnGradings.reduce((s, g) => s + (g.teacher_override_score ?? (g.total_score || 0)), 0) /
+              asgnGradings.reduce((s, g) => s + (g.full_score || 0), 0)) * 1000) / 10
           : 0,
         student_stats: filteredStudentStats,
       };
@@ -158,7 +177,7 @@ export async function POST(request: NextRequest) {
         .from(question)
         .where(inArray(question.id, questionIds))
         .all();
-      hasSubjective = questions.some(q => q.question_type === 'short' || q.question_type === 'code');
+      hasSubjective = questions.some(q => !isObjectiveType(q.question_type));
     }
     // 批改方式：教师显式指定 auto/teacher_review，否则按是否含主观题默认
     const reviewMode = (body.review_mode && body.review_mode !== 'auto_judge')
@@ -208,6 +227,8 @@ export async function POST(request: NextRequest) {
         }
       }
     }
+
+    saveDb();
 
     return NextResponse.json({ success: true, data });
   } catch (e) {

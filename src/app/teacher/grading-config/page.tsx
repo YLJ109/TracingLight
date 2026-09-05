@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-fetch';
 import { Card, CardContent } from '@/components/ui/card';
@@ -9,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { QUESTION_TYPE_LABELS } from '@/lib/labels';
-import { SlidersHorizontal, Plus, Pencil, Trash2, Copy, Loader2, Info, Power } from 'lucide-react';
+import { SlidersHorizontal, Plus, Pencil, Trash2, Copy, Loader2, Info, Power, ArrowLeft } from 'lucide-react';
 
 interface GradeLevel { min: number; label: string }
 interface RuleItem {
@@ -48,6 +49,7 @@ const EMPTY_FORM: FormState = {
 };
 
 export default function GradingConfigPage() {
+  const router = useRouter();
   const [rules, setRules] = useState<RuleItem[]>([]);
   const [courses, setCourses] = useState<CourseItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -176,9 +178,14 @@ export default function GradingConfigPage() {
             <p className="page-subtitle">自定义 AI 批改的评分标准、扣分规则、评语风格与成绩等级，修改后立即生效</p>
           </div>
         </div>
-        <Button onClick={() => openForm()} className="gap-1.5 bg-violet-600 hover:bg-violet-700">
-          <Plus className="w-4 h-4" /> 新建规则
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => router.push('/teacher/assignments')} className="text-slate-500 hover:text-slate-700">
+            <ArrowLeft className="w-4 h-4 mr-1" /> 返回作业管理
+          </Button>
+          <Button onClick={() => openForm()} className="gap-1.5 bg-violet-600 hover:bg-violet-700">
+            <Plus className="w-4 h-4" /> 新建规则
+          </Button>
+        </div>
       </div>
 
       <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 border border-blue-100">

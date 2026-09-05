@@ -89,6 +89,12 @@ export default function NewAssignmentPage() {
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiGenerated, setAiGenerated] = useState<QuestionItem[]>([]);
 
+  // 随机组卷 state
+  const [randCourseId, setRandCourseId] = useState('');
+  const [randDifficulty, setRandDifficulty] = useState('all');
+  const [randCount, setRandCount] = useState(5);
+  const [randomizing, setRandomizing] = useState(false);
+
   // 存储全部知识点缓存
   const [allKnowledgePoints, setAllKnowledgePoints] = useState<KnowledgePoint[]>([]);
 
@@ -100,7 +106,7 @@ export default function NewAssignmentPage() {
       if (qCourse) { setCourseId(qCourse); setAiCourseId(qCourse); }
       setShowAIPanel(true);
     }
-    apiFetch('/api/teacher/questions/bank?pageSize=500')
+    apiFetch('/api/teacher/questions/bank?pageSize=500&exclude_locked=1')
       .then(r => r.json())
       .then(qData => {
         if (qData.success) {
@@ -188,7 +194,7 @@ export default function NewAssignmentPage() {
           : Array.isArray(data.data) ? data.data : [data.data].filter(Boolean);
         setAiGenerated(generated);
         // 刷新题库
-        const qRes = await apiFetch('/api/teacher/questions/bank?pageSize=500');
+        const qRes = await apiFetch('/api/teacher/questions/bank?pageSize=500&exclude_locked=1');
         const qData = await qRes.json();
         if (qData.success) {
           const questionsList = Array.isArray(qData.data) ? qData.data : (qData.data.questions || []);
@@ -201,6 +207,44 @@ export default function NewAssignmentPage() {
       toast.error('网络错误，请重试');
     } finally {
       setAiGenerating(false);
+    }
+  };
+
+  // 随机组卷：按课程+难度+数量从题库随机抽取加入选中（服务端校验课程归属并跳过锁定题）
+  const handleRandomPaper = async () => {
+    if (!randCourseId) { toast.error('请选择课程'); return; }
+    setRandomizing(true);
+    try {
+      const res = await apiFetch('/api/teacher/questions/random', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          course_id: parseInt(randCourseId),
+          difficulty: randDifficulty === 'all' ? undefined : randDifficulty,
+          count: randCount,
+          excludeIds: selectedQuestions.map(q => q.id),
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const picked: QuestionItem[] = Array.isArray(data.data) ? data.data : [];
+        if (picked.length === 0) {
+          toast.error('没有更多符合条件的题目（可能已全部选中或题库为空）');
+        } else {
+          setSelectedQuestions(prev => {
+            const existing = new Set(prev.map(q => q.id));
+            const added = picked.filter(q => !existing.has(q.id));
+            return [...prev, ...added];
+          });
+          toast.success(`已随机抽取 ${picked.length} 道题`);
+        }
+      } else {
+        toast.error(data.error || '随机组卷失败');
+      }
+    } catch {
+      toast.error('网络错误，请重试');
+    } finally {
+      setRandomizing(false);
     }
   };
 
@@ -222,7 +266,6 @@ export default function NewAssignmentPage() {
           total_score: totalScore,
           start_time: startTime, end_time: endTime,
           review_mode: reviewMode,
-          teacher_id: 1,
         }),
       });
       const data = await res.json();
@@ -426,6 +469,53 @@ export default function NewAssignmentPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* 随机组卷 */}
+          <Card className="border-0 shadow-sm bg-gradient-to-r from-amber-50/60 to-orange-50/40">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
+                    <RefreshCw className="w-4 h-4 text-white" />
+                  </div>
+                  <span className="font-semibold text-slate-700">随机组卷</span>
+                </div>
+                <Select value={randCourseId} onValueChange={setRandCourseId}>
+                  <SelectTrigger className="w-[160px] h-9"><SelectValue placeholder="选择课程" /></SelectTrigger>
+                  <SelectContent>
+                    {courses.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={randDifficulty} onValueChange={setRandDifficulty}>
+                  <SelectTrigger className="w-[120px] h-9"><SelectValue placeholder="难度" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部难度</SelectItem>
+                    {Object.entries(difficultyLabels).map(([k, v]) => (
+                      <SelectItem key={k} value={k}>{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500">抽</span>
+                  <Input
+                    type="number" min={1} max={100}
+                    value={randCount}
+                    onChange={e => setRandCount(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
+                    className="w-16 h-9 text-center"
+                  />
+                  <span className="text-xs text-slate-500">题</span>
+                </div>
+                <Button
+                  onClick={handleRandomPaper}
+                  disabled={randomizing || !randCourseId}
+                  className="gap-1 h-9 bg-amber-600 hover:bg-amber-700 text-white"
+                >
+                  {randomizing ? <><Loader2 className="w-4 h-4 animate-spin" /> 抽取中...</> : <><RefreshCw className="w-4 h-4" /> 随机抽取</>}
+                </Button>
+              </div>
+              <p className="text-xs text-slate-500 mt-2">按“课程 + 难度 + 数量”从题库随机抽取并加入右侧已选列表（自动跳过已锁定与已选题目，仅限本人课程）</p>
+            </CardContent>
+          </Card>
 
           {/* 题库筛选 */}
           <Card className="border-0 shadow-sm">

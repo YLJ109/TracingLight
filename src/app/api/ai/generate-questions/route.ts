@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAIClient, HeaderUtils, invokeStructured, aiErrorResponse } from "@/lib/ai/client";
 import { QUESTION_GEN_SYSTEM_PROMPT, buildQuestionGenPrompt } from "@/lib/ai/prompts/question-gen";
-import { requireAuth } from "@/lib/server-auth";
-import { getDb } from "@/storage/database/db";
+import { requireAuthWithStatus } from "@/lib/server-auth";
+import { getDb, saveDb } from "@/storage/database/db";
 import { knowledgePoint, course, question } from "@/storage/database/shared/schema";
 import { eq } from "drizzle-orm";
 import { isCourseInTeacherScope } from "@/lib/teacher-scope";
@@ -19,8 +19,8 @@ interface GeneratedQuestion {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireAuth(request, 'teacher');
-    if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+    const { user, status } = await requireAuthWithStatus(request, 'teacher');
+    if (!user) return NextResponse.json({ error: status === 403 ? '权限不足' : '未登录' }, { status });
     const body = await request.json();
     const {
       course_id,
@@ -56,6 +56,11 @@ export async function POST(request: NextRequest) {
     const outCourseId = course_id ?? kpCourseId;
     if (outCourseId == null || !isCourseInTeacherScope(user.userId, Number(outCourseId))) {
       return NextResponse.json({ error: "无权在该课程生成题目" }, { status: 403 });
+    }
+
+    // 校验知识点归属：知识点必须属于本次出题课程，防为他人课程的知识点出题
+    if (Number(kp.course_id) !== Number(outCourseId)) {
+      return NextResponse.json({ error: "知识点不属于该课程" }, { status: 400 });
     }
 
     // 2. 调用 AI 出题
@@ -130,6 +135,7 @@ export async function POST(request: NextRequest) {
       } catch (insErr) {
         console.error("Insert questions error:", insErr);
       }
+      saveDb();
     }
 
     return NextResponse.json({

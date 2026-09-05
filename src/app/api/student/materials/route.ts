@@ -38,6 +38,8 @@ export async function GET(request: NextRequest) {
         url: m.url,
         duration_minutes: m.duration_minutes,
         knowledge_point_ids: m.knowledge_point_ids,
+        chapter: m.chapter,
+        is_required: m.is_required,
         behavior: behavior
           ? {
               watch_duration: behavior.watch_duration,

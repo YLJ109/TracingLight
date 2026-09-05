@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/storage/database/db';
+import { getDb, saveDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
 import { eq } from 'drizzle-orm';
 import { systemConfig, auditLog } from '@/storage/database/shared/schema';
@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
       target_id: key,
       detail: `更新配置 ${key}`,
     }).run();
+    saveDb();
 
     return NextResponse.json({ success: true });
   } catch (e) {

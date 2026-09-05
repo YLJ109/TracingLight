@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
-import { eq } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import {
   abilityPoint, ideologyPoint, abilityKnowledge, ideologyKnowledge, knowledgePoint,
+  gradingTask, knowledgeMasteryLog,
 } from '@/storage/database/shared/schema';
 
 // 内存缓存（能力/思政图谱数据相对静态，缓存 5 分钟）
@@ -36,28 +37,120 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') || 'ability'; // ability | ideology
     const courseId = parseInt(searchParams.get('course_id') || '1');
+    // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
+    const studentId = authUser.userId;
     const db = getDb();
 
-    const cacheKey = `tg:${type}:${courseId}`;
+    const cacheKey = `tg:${type}:${courseId}:${studentId ?? 'anon'}`;
     const cached = getCached(cacheKey);
     if (cached) return NextResponse.json({ success: true, data: cached, cached: true });
 
-    const kps = db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
+    const courseKps = db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
+      .from(knowledgePoint)
+      .where(eq(knowledgePoint.course_id, courseId))
+      .all();
+    const allKps = db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
       .from(knowledgePoint).all();
+    const kpIdToCourse = new Map(allKps.map((k) => [k.id, k]));
+
+    // ── 与知识图谱同一套掌握度口径：knowledgeMasteryLog > grading_task > 模拟 ──
+    const realMasteries: Record<number, number> = {};
+    const logMasteries: Record<number, number> = {};
+    if (studentId && courseKps.length > 0) {
+      const courseKpIds = courseKps.map((k) => k.id);
+      const logs = db.select({
+        knowledge_point_id: knowledgeMasteryLog.knowledge_point_id,
+        mastery_rate: knowledgeMasteryLog.mastery_rate,
+        recorded_at: knowledgeMasteryLog.recorded_at,
+      })
+        .from(knowledgeMasteryLog)
+        .where(and(
+          eq(knowledgeMasteryLog.student_id, studentId),
+          inArray(knowledgeMasteryLog.knowledge_point_id, courseKpIds)
+        ))
+        .all();
+      if (logs && logs.length > 0) {
+        const best: Record<number, { rate: number; date: string }> = {};
+        for (const log of logs) {
+          const k = log.knowledge_point_id;
+          const d = log.recorded_at || '';
+          const cur = best[k];
+          if (!cur || d >= cur.date) best[k] = { rate: Number(log.mastery_rate), date: d };
+        }
+        for (const [k, v] of Object.entries(best)) logMasteries[Number(k)] = v.rate;
+      }
+      const grades = db.select({
+        knowledge_point_id: gradingTask.knowledge_point_id,
+        total_score: gradingTask.total_score,
+      })
+        .from(gradingTask)
+        .where(and(
+          eq(gradingTask.student_id, studentId),
+          inArray(gradingTask.knowledge_point_id, courseKpIds)
+        ))
+        .all();
+      if (grades && grades.length > 0) {
+        const sums: Record<number, { total: number; count: number }> = {};
+        for (const g of grades) {
+          if (!sums[g.knowledge_point_id]) sums[g.knowledge_point_id] = { total: 0, count: 0 };
+          sums[g.knowledge_point_id].total += Number(g.total_score);
+          sums[g.knowledge_point_id].count += 1;
+        }
+        for (const [kpIdStr, s] of Object.entries(sums)) {
+          realMasteries[Number(kpIdStr)] = Math.round(Math.min(100, s.total / s.count * 10));
+        }
+      }
+    }
+
+    const getMastery = (kpId: number): number | null => {
+      if (!studentId) return null;
+      if (logMasteries[kpId] !== undefined) return logMasteries[kpId];
+      if (realMasteries[kpId] !== undefined) return realMasteries[kpId];
+      // 与知识图谱保持一致的无真实记录兜底
+      return Math.max(15, Math.min(95, ((studentId * 7 + kpId * 13) % 100) + 10));
+    };
+
+    const abilityLevel = (s: number) =>
+      s >= 80 ? { label: '熟练', color: '#10b981' }
+        : s >= 60 ? { label: '基本具备', color: '#22c55e' }
+        : s >= 40 ? { label: '薄弱', color: '#f59e0b' }
+        : { label: '待加强', color: '#ef4444' };
 
     if (type === 'ability') {
       const abilities = db.select().from(abilityPoint)
         .where(eq(abilityPoint.course_id, courseId)).all();
       const links = db.select().from(abilityKnowledge).all();
-      const data = abilities.map((a) => ({
-        id: a.id,
-        name: a.name,
-        description: a.description,
-        knowledge: links
+      const data = abilities.map((a) => {
+        const linked = links
           .filter((l) => l.ability_id === a.id)
-          .map((l) => kps.find((k) => k.id === l.knowledge_id)?.name)
-          .filter(Boolean),
-      }));
+          .map((l) => ({ id: l.knowledge_id, weight: Number(l.weight || 1) }))
+          .filter((lk) => kpIdToCourse.has(lk.id));
+        let totalW = 0, weighted = 0;
+        const kps = linked.map((lk) => {
+          const m = getMastery(lk.id);
+          totalW += lk.weight;
+          weighted += (m ?? 0) * lk.weight;
+          return {
+            id: lk.id,
+            name: kpIdToCourse.get(lk.id)?.name || '',
+            mastery: m,
+            mastery_color: m == null ? '#94a3b8' : (m >= 80 ? '#10b981' : m >= 60 ? '#22c55e' : m >= 40 ? '#f59e0b' : '#ef4444'),
+            weak: m != null && m < 60,
+          };
+        });
+        const score = totalW > 0 ? Math.round(weighted / totalW) : 0;
+        const lvl = abilityLevel(score);
+        return {
+          id: a.id,
+          name: a.name,
+          description: a.description,
+          score,
+          level: lvl.label,
+          color: lvl.color,
+          kps,
+          weak_kps: kps.filter((k) => k.weak).map((k) => k.name),
+        };
+      }).sort((x, y) => x.score - y.score); // 薄弱在前，便于优先补强
       setCache(cacheKey, data);
       return NextResponse.json({ success: true, data });
     }
@@ -71,7 +164,7 @@ export async function GET(request: NextRequest) {
       description: i.description,
       knowledge: links
         .filter((l) => l.ideology_id === i.id)
-        .map((l) => kps.find((k) => k.id === l.knowledge_id)?.name)
+        .map((l) => kpIdToCourse.get(l.knowledge_id)?.name)
         .filter(Boolean),
     }));
     setCache(cacheKey, data);

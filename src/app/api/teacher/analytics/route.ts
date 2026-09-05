@@ -12,6 +12,7 @@ import {
   assignment,
   course,
   classInfo,
+  learningBehaviorLog,
 } from '@/storage/database/shared/schema';
 
 export async function GET(request: NextRequest) {
@@ -168,6 +169,25 @@ export async function GET(request: NextRequest) {
       .where(and(...errorConds))
       .all();
 
+    // 4.1 学习行为（阅读时长）：按学生聚合累计观看秒数 / 完成材料数 / 学习材料数
+    const behaviorRows = db.select({
+      student_id: learningBehaviorLog.student_id,
+      watch_seconds: learningBehaviorLog.watch_duration,
+      is_completed: learningBehaviorLog.is_completed,
+    }).from(learningBehaviorLog)
+      .where(myStudentIds.length > 0
+        ? inArray(learningBehaviorLog.student_id, myStudentIds)
+        : eq(learningBehaviorLog.id, -1))
+      .all();
+    const behaviorMap = new Map<number, { readonlySeconds: number; completedMaterials: number; totalMaterials: number }>();
+    behaviorRows.forEach((b) => {
+      const cur = behaviorMap.get(b.student_id) || { readonlySeconds: 0, completedMaterials: 0, totalMaterials: 0 };
+      cur.readonlySeconds += b.watch_seconds || 0;
+      if (b.is_completed) cur.completedMaterials += 1;
+      cur.totalMaterials += 1;
+      behaviorMap.set(b.student_id, cur);
+    });
+
     // 5. Get all knowledge points（限定本人课程，仅作名称字典）
     const allKps = myCourseIds.length > 0
       ? db.select({
@@ -230,6 +250,8 @@ export async function GET(request: NextRequest) {
       const resolvedErrors = studentErrors.filter((e) => e.review_status === 'mastered').length;
       const errorResolutionRate = studentErrors.length > 0 ? Math.round((resolvedErrors / studentErrors.length) * 100) : 0;
 
+      const behavior = behaviorMap.get(student.id) || { readonlySeconds: 0, completedMaterials: 0, totalMaterials: 0 };
+
       return {
         id: student.id,
         name: student.real_name,
@@ -239,6 +261,10 @@ export async function GET(request: NextRequest) {
         totalGradings: studentGradings.length,
         totalErrors: studentErrors.length,
         resolvedErrors,
+        readonlySeconds: behavior.readonlySeconds,
+        readonlyMinutes: Math.round(behavior.readonlySeconds / 60),
+        completedMaterials: behavior.completedMaterials,
+        totalMaterials: behavior.totalMaterials,
         radarData: {
           knowledgeAccuracy,
           logicCompleteness,
@@ -335,6 +361,13 @@ export async function GET(request: NextRequest) {
         trendData,
         errorSummary,
         assignmentCompletion,
+        // 阅读时长概览（按学生维度聚合，班级级统计在前端汇总）
+        readingStats: {
+          anytimeCount: analytics.filter((s) => s.readonlySeconds > 0).length,
+          totalReadonlySeconds: analytics.reduce((sum, s) => sum + s.readonlySeconds, 0),
+          completedMaterials: analytics.reduce((sum, s) => sum + s.completedMaterials, 0),
+          totalMaterials: analytics.reduce((sum, s) => sum + s.totalMaterials, 0),
+        },
         // 筛选选项
         courses,
         classes,

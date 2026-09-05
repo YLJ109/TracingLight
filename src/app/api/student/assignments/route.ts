@@ -59,7 +59,10 @@ export async function GET(request: NextRequest) {
       const allGraded = gradingTasks.length > 0 &&
         gradingTasks.every((g) => g.status === 'completed');
 
-      // 最终分：老师改分（override）优先，未改则 AI 分
+      // 成绩发布状态：老师未发布前隐藏分数
+      const gradesPublished = !!Number(asgn.grades_published ?? 0);
+
+      // 最终分：老师改分（override）优先，未改则 AI 分（仅已发布且全部批改才展示）
       const myScore = gradingTasks.reduce(
         (sum: number, g) => sum + (g.teacher_override_score ?? g.total_score ?? 0), 0
       );
@@ -85,7 +88,8 @@ export async function GET(request: NextRequest) {
         end_time: asgn.end_time,
         question_count: questionCount,
         status,
-        my_score: allGraded ? myScore : undefined,
+        my_score: (allGraded && gradesPublished) ? myScore : undefined,
+        grades_published: gradesPublished,
         is_submitted: isSubmitted,
         returned: isReturned,
       };

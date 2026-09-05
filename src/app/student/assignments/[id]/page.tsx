@@ -5,10 +5,14 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { getCurrentUser } from '@/lib/auth-helper';
 import RichAnswer from '@/components/rich-answer';
-import { sanitizeRichHTML, renderRichContent } from '@/lib/rich-text';
+import { sanitizeRichHTML, renderRichContent, htmlToPlainText } from '@/lib/rich-text';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -27,6 +31,10 @@ interface QuestionDetail {
   default_score: number;
   analysis: string;
   options: string[] | null;
+  min_chars?: number | null;
+  max_chars?: number | null;
+  min_select?: number | null;
+  max_select?: number | null;
   knowledge_point: { name: string } | null;
 }
 
@@ -56,6 +64,7 @@ interface AssignmentDetail {
   questions: QuestionDetail[];
   answers: AnswerDetail[];
   my_score: number | null;
+  grades_published: boolean;
   is_submitted: boolean;
   returned?: boolean;
   return_comment?: string | null;
@@ -145,7 +154,11 @@ export default function StudentAssignmentDetailPage() {
 
   // ── Auto-save draft to localStorage (debounced 2s) ──
   useEffect(() => {
-    if (!draftRestored || submitted) return;
+    if (!draftRestored) return;
+    // 重做模式或已提交但尚未批改（继续修改）时允许自动保存；已批改锁定的作业不自动保存
+    const fullyGraded = detail && detail.questions.length > 0 && detail.questions.every((q) =>
+      detail.answers?.find(a => a.question_id === q.id)?.grading?.status === 'completed');
+    if (submitted && !redoMode && fullyGraded) return;
     const timer = setTimeout(() => {
       const nonEmpty: Record<string, string> = {};
       for (const [k, v] of Object.entries(answers)) {
@@ -156,7 +169,7 @@ export default function StudentAssignmentDetailPage() {
       }
     }, 2000);
     return () => clearTimeout(timer);
-  }, [answers, draftRestored, submitted, draftKey]);
+  }, [answers, draftRestored, submitted, redoMode, detail, draftKey]);
 
   const handleSave = async () => {
     if (!detail) return;
@@ -189,6 +202,35 @@ export default function StudentAssignmentDetailPage() {
 
   const handleSubmit = async () => {
     if (!detail) return;
+    // 前端先校验字数上限/下限与多选数量限制，命中则阻止提交并提示
+    for (const q of detail.questions) {
+      if (isRichType(q.question_type)) {
+        const len = htmlToPlainText(answers[q.id] || '').length;
+        if (q.max_chars != null && len > q.max_chars) {
+          alert(`第 ${q.id} 题作答超过字数上限（最多 ${q.max_chars} 字，当前 ${len} 字），请删减后再提交`);
+          setSubmitting(false);
+          return;
+        }
+        if (q.min_chars != null && len > 0 && len < q.min_chars) {
+          alert(`第 ${q.id} 题作答不足最低字数（至少 ${q.min_chars} 字，当前 ${len} 字）`);
+          setSubmitting(false);
+          return;
+        }
+      }
+      if (q.question_type === 'multi_choice' || q.question_type === 'multiple_choice') {
+        const picked = (answers[q.id] || '').split(',').filter(Boolean).length;
+        if (q.max_select != null && picked > q.max_select) {
+          alert(`第 ${q.id} 题选择项过多（最多 ${q.max_select} 项，当前 ${picked} 项）`);
+          setSubmitting(false);
+          return;
+        }
+        if (q.min_select != null && picked < q.min_select) {
+          alert(`第 ${q.id} 题选择项不足（至少 ${q.min_select} 项，当前 ${picked} 项）`);
+          setSubmitting(false);
+          return;
+        }
+      }
+    }
     setSubmitting(true);
     const user = await getCurrentUser();
     const studentId = String(user?.id || 3);
@@ -239,6 +281,10 @@ export default function StudentAssignmentDetailPage() {
     return detail.answers?.find(a => a.question_id === qId);
   };
 
+  // 整份作业是否已全部批改完成 → 锁定编辑；重做模式始终可编辑
+  const isFullyGraded = detail.questions.length > 0 && detail.questions.every((q) => getAnswerForQuestion(q.id)?.grading?.status === 'completed');
+  const locked = submitted && isFullyGraded && !redoMode;
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       {/* Header */}
@@ -266,6 +312,15 @@ export default function StudentAssignmentDetailPage() {
               {fmt(detail.my_score)}
             </div>
             <div className="text-sm text-slate-500">/ {fmt(detail.total_score)} 分</div>
+          </div>
+        )}
+        {/* 已提交但成绩未发布：提示学生等待老师发布 */}
+        {detail.is_submitted && detail.grades_published === false && (
+          <div className="text-center">
+            <div className="text-lg font-semibold text-amber-600 flex items-center gap-2">
+              <Clock className="w-5 h-5" /> 成绩待发布
+            </div>
+            <div className="text-xs text-slate-500 mt-1">老师发布成绩后即可查看批改结果</div>
           </div>
         )}
       </div>
@@ -412,7 +467,13 @@ export default function StudentAssignmentDetailPage() {
                           if (isMulti) {
                             // Checkbox for multiple choice
                             return (
-                              <div className="grid grid-cols-2 gap-2 mb-3">
+                              <div className="mb-3">
+                                {(q.max_select != null || q.min_select != null) && (
+                                  <p className="text-xs text-slate-400 mb-1.5">
+                                    {q.max_select != null ? `最多选择 ${q.max_select} 项` : ''}{q.max_select != null && q.min_select != null ? ' · ' : ''}{q.min_select != null ? `至少选择 ${q.min_select} 项` : ''}
+                                  </p>
+                                )}
+                              <div className="grid grid-cols-2 gap-2">
                                 {(typeof q.options === 'string' ? JSON.parse(q.options) : q.options)!.map((opt: string, oi: number) => {
                                   const optLetter = opt.charAt(0);
                                   const isSelected = selectedLetters.includes(optLetter);
@@ -439,11 +500,13 @@ export default function StudentAssignmentDetailPage() {
                                         type="checkbox"
                                         value={optLetter}
                                         checked={isSelected}
+                                        disabled={isGraded || (!isSelected && q.max_select != null && selectedLetters.length >= q.max_select)}
                                         onChange={e => {
                                           if (isGraded) return;
                                           setAnswers(prev => {
                                             const cur = (prev[q.id] || '').split(',').filter(Boolean);
                                             if (e.target.checked) {
+                                              if (q.max_select != null && cur.length >= q.max_select) return prev;
                                               cur.push(optLetter);
                                             } else {
                                               const idx = cur.indexOf(optLetter);
@@ -459,6 +522,7 @@ export default function StudentAssignmentDetailPage() {
                                     </label>
                                   );
                                 })}
+                              </div>
                               </div>
                             );
                           } else {
@@ -525,11 +589,29 @@ export default function StudentAssignmentDetailPage() {
                             )}
                           </div>
                         ) : (
-                          <RichAnswer
-                            value={answers[q.id] || ''}
-                            onChange={(html) => setAnswers(prev => ({ ...prev, [q.id]: html }))}
-                            placeholder="在此作答：支持加粗、代码块、公式（$..$）、表格与图片上传"
-                          />
+                          <>
+                            <RichAnswer
+                              value={answers[q.id] || ''}
+                              onChange={(html) => setAnswers(prev => ({ ...prev, [q.id]: html }))}
+                              placeholder="在此作答：支持加粗、代码块、公式（$..$）、表格与图片上传"
+                            />
+                            {(q.min_chars != null || q.max_chars != null) && (
+                              (() => {
+                                const len = htmlToPlainText(answers[q.id] || '').length;
+                                const over = q.max_chars != null && len > q.max_chars;
+                                return (
+                                  <p className={`mt-1 text-xs ${over ? 'text-red-600 font-medium' : 'text-slate-400'}`}>
+                                    字数：<span className={over ? 'font-semibold' : ''}>{len}</span>
+                                    {q.max_chars != null && <> / {q.max_chars}</>}
+                                    <span className="ml-1">
+                                      {q.min_chars != null ? `最少 ${q.min_chars} 字` : ''}{q.max_chars != null ? ` 最多 ${q.max_chars} 字` : ''}
+                                    </span>
+                                    {over && ' · 已超上限，无法提交'}
+                                  </p>
+                                );
+                              })()
+                            )}
+                          </>
                         )
                       ) : isGraded ? (
                         <div className="mb-3 space-y-1.5">
@@ -610,7 +692,7 @@ export default function StudentAssignmentDetailPage() {
             );
           })}
 
-          {!submitted && (
+          {!locked && (
             <div className="flex justify-end gap-3 pt-4">
               <Button
                 onClick={handleSave}
@@ -621,14 +703,29 @@ export default function StudentAssignmentDetailPage() {
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                 {saving ? '保存中...' : saved ? '已保存 ✓' : '保存作业'}
               </Button>
-              <Button
-                onClick={handleSubmit}
-                disabled={submitting || saving}
-                className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200"
-              >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                {submitting ? '提交中...' : '提交作业'}
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    disabled={submitting || saving}
+                    className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200"
+                  >
+                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    {submitting ? '提交中...' : '提交作业'}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>确认提交作业？</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      提交后作业将被锁定评阅，在截止时间前通常无法再修改。请确认所有题目均已作答完成。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>取消</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleSubmit}>确认提交</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           )}
         </TabsContent>

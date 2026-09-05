@@ -13,7 +13,7 @@
  * - 移动端一致：表格/公式横向滚动，字号自适应
  */
 
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -22,11 +22,21 @@ import rehypeHighlight from 'rehype-highlight';
 import 'katex/dist/katex.min.css';
 import 'highlight.js/styles/github.css';
 
+/** mermaid 渲染 ID 池：模块级递增，保证每个图块实例拥有唯一且稳定的 DOM id */
+const renderIdPool = {
+  seq: 0,
+  next() {
+    this.seq += 1;
+    return `mmd-${this.seq}-${Math.round(Math.random() * 1e6)}`;
+  },
+};
+
 /** mermaid 图块：动态加载 mermaid（按需，避免拖累首屏），失败降级为代码块 */
 function MermaidBlock({ chart }: { chart: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
-  const renderId = useMemo(() => `mmd-${Math.random().toString(36).slice(2, 10)}`, []);
+  // 渲染 ID：模块级常量（组件外仅计算一次），供 mermaid.render 生成唯一 DOM id
+  const renderId = renderIdPool.next();
 
   useEffect(() => {
     let cancelled = false;

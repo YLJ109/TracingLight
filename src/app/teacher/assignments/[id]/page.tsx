@@ -6,12 +6,17 @@ import { useParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   ArrowLeft, Clock, CheckCircle2, Users, FileText, Sparkles,
-  BookOpen, TrendingUp, AlertCircle, Eye, Loader2, BarChart3
+  BookOpen, TrendingUp, AlertCircle, Eye, Loader2, BarChart3, Send, BellRing, Download, RotateCcw
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface AssignmentDetail {
   id: number;
@@ -22,6 +27,7 @@ interface AssignmentDetail {
   start_time: string;
   end_time: string;
   status: string;
+  allow_resubmit?: boolean;
   question_ids: number[];
   questions: Array<{
     id: number;
@@ -62,6 +68,12 @@ const difficultyConfig: Record<string, string> = {
   hard: 'bg-red-100 text-red-700',
 };
 
+// 客观题题型（与后端 objective-grading 的 OBJECTIVE_TYPES 保持一致）。
+// 用于前端仅依据题目实际题型判定是否「纯客观」，不受创建时 has_subjective 字段取值差异影响。
+const OBJECTIVE_TYPES = new Set([
+  'single_choice', 'multiple_choice', 'multi_choice', 'fill_blank', 'judgment',
+]);
+
 function fmt(n: number): string {
   return Number.isInteger(n) ? n.toString() : parseFloat(n.toFixed(2)).toString();
 }
@@ -73,6 +85,10 @@ export default function TeacherAssignmentDetailPage() {
   const [detail, setDetail] = useState<AssignmentDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
+  const [gradesPublished, setGradesPublished] = useState<boolean | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [reopening, setReopening] = useState(false);
 
   useEffect(() => {
     apiFetch(`/api/teacher/assignments/${assignmentId}/questions`)
@@ -81,6 +97,11 @@ export default function TeacherAssignmentDetailPage() {
         if (data.success) setDetail(data.data);
       })
       .finally(() => setLoading(false));
+    // 查询成绩发布状态
+    apiFetch(`/api/teacher/assignments/${assignmentId}/publish-grades`)
+      .then(r => r.json())
+      .then(data => { if (data.success) setGradesPublished(!!data.grades_published); })
+      .catch(() => {});
   }, [assignmentId]);
 
   const handleBatchGrade = useCallback(async () => {
@@ -98,6 +119,85 @@ export default function TeacherAssignmentDetailPage() {
     // Refresh
     window.location.reload();
   }, [detail]);
+
+  // 一键发布成绩：发布后学生端即可查看批改结果/分数
+  const handlePublishGrades = useCallback(async () => {
+    setPublishing(true);
+    try {
+      const res = await apiFetch(`/api/teacher/assignments/${assignmentId}/publish-grades`, { method: 'POST' });
+      const json = await res.json();
+      if (json.success) {
+        setGradesPublished(true);
+        toast.success('成绩已发布，学生现在可以查看批改结果');
+      } else {
+        toast.error('发布失败：' + (json.error || '未知错误'));
+      }
+    } catch {
+      toast.error('发布失败，请稍后重试');
+    } finally {
+      setPublishing(false);
+    }
+  }, [assignmentId]);
+
+  // 补考 / 重开提交（C6）：已截止作业可由教师开启补考，学生在截止时间后仍可提交
+  const handleToggleReopen = useCallback(async () => {
+    if (!detail) return;
+    const next = !detail.allow_resubmit;
+    setReopening(true);
+    try {
+      const res = await apiFetch(`/api/teacher/assignments/${assignmentId}/reopen`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allow_resubmit: next }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setDetail((d) => d ? { ...d, allow_resubmit: next } : d);
+        toast.success(next ? '已开启补考，学生可重新提交' : '已关闭补考，提交通道关闭');
+      } else {
+        toast.error('操作失败：' + (json.error || '未知错误'));
+      }
+    } catch {
+      toast.error('操作失败，请稍后重试');
+    } finally {
+      setReopening(false);
+    }
+  }, [assignmentId, detail]);
+
+  // 导出成绩/作答/未交名单为 CSV（浏览器 fetch+Blob 下载，携带同源凭证）
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    try {
+      const res = await apiFetch(`/api/teacher/assignments/${assignmentId}/export`, { method: 'POST' });
+      if (!res.ok) {
+        let msg = '导出失败';
+        try { const j = await res.json(); msg = j.error || msg; } catch { /* keep default */ }
+        toast.error(msg);
+        return;
+      }
+      const blob = await res.blob();
+      // 优先使用服务端 RFC 5987 中文文件名，取不到则回退
+      let filename = `${detail?.title || '作业'}_成绩导出.csv`;
+      const cd = res.headers.get('Content-Disposition') || '';
+      const m = cd.match(/filename\*=UTF-8''([^;]+)/i);
+      if (m && m[1]) {
+        try { filename = decodeURIComponent(m[1]); } catch { /* keep default */ }
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('导出成功');
+    } catch {
+      toast.error('导出失败，请稍后重试');
+    } finally {
+      setExporting(false);
+    }
+  }, [assignmentId, detail]);
 
   if (loading) {
     return (
@@ -122,6 +222,8 @@ export default function TeacherAssignmentDetailPage() {
   const avgScore = detail.submissions
     .filter(s => s.total_score !== null)
     .reduce((sum, s) => sum + (s.total_score || 0), 0) / (gradedCount || 1);
+  // 是否含主观题（依据实际题目题型）：纯客观 → 批改完成自动发布；含主观 → 建议教师复核后手动发布
+  const hasSubjective = detail.questions.some(q => !OBJECTIVE_TYPES.has(q.question_type));
 
   return (
     <div className="space-y-6">
@@ -148,13 +250,95 @@ export default function TeacherAssignmentDetailPage() {
         </div>
         <div className="flex gap-3">
           <Button
-            onClick={handleBatchGrade}
-            className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200"
+            variant={detail.allow_resubmit ? "outline" : "default"}
+            onClick={handleToggleReopen}
+            disabled={reopening}
+            className={detail.allow_resubmit
+              ? "gap-2 border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100"
+              : "gap-2 border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100"}
           >
-            <Sparkles className="w-4 h-4" /> AI 一键批改
+            {reopening ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+            {detail.allow_resubmit ? '补考中' : '开启补考'}
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200"
+              >
+                <Sparkles className="w-4 h-4" /> AI 一键批改
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>确认 AI 一键批改？</AlertDialogTitle>
+                <AlertDialogDescription>
+                  将对该作业中已提交但尚未完成批改的学生作答发起 AI 批量批改。批改结果会写入成绩，发布前学生不可见，操作不可一键撤销。
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>取消</AlertDialogCancel>
+                <AlertDialogAction onClick={handleBatchGrade}>确认批改</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <Button
+            onClick={handleExport}
+            disabled={exporting}
+            variant="outline"
+            className="gap-2"
+          >
+            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} 导出成绩
+          </Button>
+          {gradesPublished ? (
+            <Badge className="gap-1.5 h-10 px-4 bg-emerald-50 text-emerald-700 border-emerald-200 text-sm font-medium">
+              <BellRing className="w-4 h-4" /> 成绩已发布
+            </Badge>
+          ) : gradesPublished === null ? null : (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  disabled={publishing}
+                  className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-200"
+                >
+                  {publishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} 发布成绩
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>确认发布成绩？</AlertDialogTitle>
+                <AlertDialogDescription>
+                  发布后，学生端将立即看到本次作业的批改分数与评语。此操作不可撤销，请确认已批改完成。
+                  {(() => {
+                    const pending = detail.submissions.filter(s => s.is_submitted && s.graded_count < s.total_questions).length;
+                    if (pending > 0) {
+                      return ` 当前还有 ${pending} 名已提交但未全部批改的学生，发布后这些学生仍看不到成绩。`;
+                    }
+                    return '';
+                  })()}
+                </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>取消</AlertDialogCancel>
+                  <AlertDialogAction onClick={handlePublishGrades}>确认发布</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
       </div>
+
+      {/* 发布策略提示：未发布时，按是否含主观题给出自动/手动发布指引 */}
+      {gradesPublished === false && (
+        hasSubjective ? (
+          <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            <AlertCircle className="w-4 h-4" /> 含主观题，建议教师复核后手动发布成绩
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+            <CheckCircle2 className="w-4 h-4" /> 纯客观题作业，AI 批改完成后将自动发布成绩
+          </div>
+        )
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-4 gap-4">

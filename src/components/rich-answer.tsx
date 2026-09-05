@@ -13,11 +13,36 @@ import {
   ImageIcon, Undo2, Eraser,
 } from 'lucide-react';
 
+/** 剔除富文本中残留的白色内联样式（粘贴/历史草稿常见 color:rgba(255,255,255,.85)），保证落库/展示为黑色 */
+function stripWhiteColor(html: string): string {
+  return html
+    // 删除内联 style 里的白色 color 声明
+    .replace(/color:\s*(rgba?\(\s*255\s*,\s*255\s*,\s*255[^)]*\)|#ffffff|#fff|white)\s*[^;]*;?/gi, '')
+    // 删除 <font color="白色" ...> 上的白色 color 属性
+    .replace(/<font\b([^>]*)>/gi, (tag) =>
+      tag.replace(/\s+color\s*=\s*["'](rgba?\(\s*255\s*,\s*255\s*,\s*255[^)]*\)|#ffffff|#fff|white)["']/gi, ''),
+    );
+}
+
 interface RichAnswerProps {
   value: string;
   onChange: (html: string) => void;
   readOnly?: boolean;
   placeholder?: string;
+}
+
+/** 工具栏按钮：纯展示组件，提取到模块级避免渲染期重复创建 */
+function ToolBtn({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onMouseDown={(e) => { e.preventDefault(); onClick(); }}
+      className="px-2 py-1.5 rounded-md hover:bg-slate-200 text-slate-600 transition-colors"
+    >
+      {children}
+    </button>
+  );
 }
 
 export default function RichAnswer({ value, onChange, readOnly, placeholder }: RichAnswerProps) {
@@ -47,7 +72,7 @@ export default function RichAnswer({ value, onChange, readOnly, placeholder }: R
   };
 
   const emit = () => {
-    if (ref.current) onChange(ref.current.innerHTML);
+    if (ref.current) onChange(stripWhiteColor(ref.current.innerHTML));
   };
 
   const insertTable = () => {
@@ -89,22 +114,11 @@ export default function RichAnswer({ value, onChange, readOnly, placeholder }: R
     e.target.value = '';
   };
 
-  const ToolBtn = ({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) => (
-    <button
-      type="button"
-      title={title}
-      onMouseDown={(e) => { e.preventDefault(); onClick(); }}
-      className="px-2 py-1.5 rounded-md hover:bg-slate-200 text-slate-600 transition-colors"
-    >
-      {children}
-    </button>
-  );
-
   return (
-    <div className={`rounded-xl border overflow-hidden ${readOnly ? 'border-slate-200 bg-slate-50' : 'border-slate-300 focus-within:ring-2 focus-within:ring-violet-200 bg-white'}`}>
+    <div className={`rounded-xl border-2 overflow-hidden bg-white shadow-sm transition-all ${readOnly ? 'border-slate-200 bg-slate-50' : 'border-slate-300 hover:border-slate-400 focus-within:border-violet-500 focus-within:ring-4 focus-within:ring-violet-200 focus-within:shadow-md'}`}>
       {/* 工具栏 */}
       {!readOnly && (
-        <div className="flex items-center flex-wrap gap-0.5 px-2 py-1.5 bg-slate-100 border-b border-slate-200">
+        <div className="flex items-center flex-wrap gap-0.5 px-2 py-1.5 bg-slate-200/70 border-b border-slate-300">
           <ToolBtn title="加粗" onClick={() => exec('bold')}><Bold className="w-4 h-4" /></ToolBtn>
           <ToolBtn title="斜体" onClick={() => exec('italic')}><Italic className="w-4 h-4" /></ToolBtn>
           <ToolBtn title="下划线" onClick={() => exec('underline')}><Underline className="w-4 h-4" /></ToolBtn>
@@ -152,8 +166,8 @@ export default function RichAnswer({ value, onChange, readOnly, placeholder }: R
         onInput={emit}
         onBlur={emit}
         data-placeholder={placeholder}
-        className={`rich-answer min-h-[120px] max-h-[50vh] overflow-y-auto px-4 py-3 text-sm leading-relaxed outline-none ${readOnly ? '' : 'empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400'}`}
-        style={{ wordBreak: 'break-word' }}
+        className={`rich-answer min-h-[150px] max-h-[55vh] overflow-y-auto px-4 py-3.5 text-sm leading-relaxed outline-none text-black caret-violet-600 ${readOnly ? 'bg-slate-50/60' : 'bg-slate-100 empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 focus:bg-white transition-colors empty:before:italic'}`}
+        style={{ wordBreak: 'break-word', color: '#000' }}
       />
     </div>
   );

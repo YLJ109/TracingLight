@@ -51,8 +51,13 @@ test('多选漏选部分给分', () => {
   const r = gradeObjectiveQuestion('multiple_choice', 'ABD', 'AB', 10);
   assert.ok(r!.total_score > 0 && r!.total_score < 10);
 });
-test('多选错选零分', () => {
+test('多选错选不归零（半对给分，扣错选）', () => {
   const r = gradeObjectiveQuestion('multiple_choice', 'ABD', 'ABC', 10);
+  // 选对 AB(2) - 错选 C(1) = 1 → 占比 1/3 ≈ 3.3 分；错选只扣分，不直接归零
+  assert.ok(r!.total_score > 0 && r!.total_score < 10);
+});
+test('多选只错不选对 → 零分', () => {
+  const r = gradeObjectiveQuestion('multiple_choice', 'ABD', 'CEF', 10);
   assert.strictEqual(r?.total_score, 0);
 });
 

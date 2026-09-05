@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/storage/database/db";
+import { getDb, saveDb } from "@/storage/database/db";
 import { requireAuth } from "@/lib/server-auth";
 import { createAIClient, aiErrorResponse, invokeStructured } from "@/lib/ai/client";
 import { studentSchedule, knowledgeMasteryLog, knowledgePoint, examSchedule, user, studyPlan } from "@/storage/database/shared/schema";
@@ -177,6 +177,7 @@ ${JSON.stringify(examInfo, null, 2)}
       db.transaction(() => {
         db.insert(studyPlan).values(planItems).run();
       });
+      saveDb();
     }
 
     return NextResponse.json({

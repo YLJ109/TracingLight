@@ -83,27 +83,38 @@ export async function GET(
       .all();
     const submittedCount = submittedCountRows.length;
 
-    // 获取批改统计
-    const gradedCountRows = db.select({ id: gradingTask.id })
+    // 获取批改统计（status=completed 才算已批；退回/重批旧行 superseded 不计入；按 question 去重）
+    const gradedCountRows = db.select({ id: gradingTask.id, question_id: gradingTask.question_id })
       .from(gradingTask)
       .where(and(
         eq(gradingTask.assignment_id, assignmentId),
         eq(gradingTask.status, 'completed'),
       ))
       .all();
-    const gradedCount = gradedCountRows.length;
+    const gradedCount = new Set(gradedCountRows.map((r) => r.question_id)).size;
 
-    // 获取平均分
-    const scores = db.select({ total_score: gradingTask.total_score })
+    // 获取平均分（优先覆盖分；按 question 去重取最新）
+    const scores = db.select({
+      question_id: gradingTask.question_id,
+      total_score: gradingTask.total_score,
+      teacher_override_score: gradingTask.teacher_override_score,
+      completed_at: gradingTask.completed_at,
+    })
       .from(gradingTask)
       .where(and(
         eq(gradingTask.assignment_id, assignmentId),
         eq(gradingTask.status, 'completed'),
       ))
       .all();
+    const latestScoresMap = new Map<number, typeof scores[number]>();
+    for (const s of scores) {
+      const prev = latestScoresMap.get(s.question_id);
+      if (!prev || (s.completed_at || '') >= (prev.completed_at || '')) latestScoresMap.set(s.question_id, s);
+    }
+    const latestScores = [...latestScoresMap.values()];
 
-    const avgScore = scores.length > 0
-      ? scores.reduce((sum, g) => sum + (g.total_score || 0), 0) / scores.length
+    const avgScore = latestScores.length > 0
+      ? latestScores.reduce((sum, g) => sum + (g.teacher_override_score ?? (g.total_score || 0)), 0) / latestScores.length
       : 0;
 
     // 学生集合：仅本人授课班级的学生
@@ -129,20 +140,33 @@ export async function GET(
       .where(eq(answer.assignment_id, assignmentId))
       .all();
 
-    // Get all gradings for this assignment
+    // Get all gradings for this assignment（仅 completed，避免退回旧行重复计入）
     const allGradings = db.select({
+      id: gradingTask.id,
       student_id: gradingTask.student_id,
+      question_id: gradingTask.question_id,
       total_score: gradingTask.total_score,
+      teacher_override_score: gradingTask.teacher_override_score,
+      completed_at: gradingTask.completed_at,
       status: gradingTask.status,
     }).from(gradingTask)
-      .where(eq(gradingTask.assignment_id, assignmentId))
+      .where(and(
+        eq(gradingTask.assignment_id, assignmentId),
+        eq(gradingTask.status, 'completed'),
+      ))
       .all();
 
     const submissions = allStudents.map((student) => {
       const studentAnswers = allAnswers.filter((a) => a.student_id === student.id);
       const studentGradings = allGradings.filter((g) => g.student_id === student.id);
-      const completedGradings = studentGradings.filter((g) => g.status === 'completed');
-      const totalScore = completedGradings.reduce((sum, g) => sum + (g.total_score || 0), 0);
+      // 按 question 去重取最新一条
+      const gradingsByQ = new Map<number, typeof allGradings[number]>();
+      for (const g of studentGradings) {
+        const prev = gradingsByQ.get(g.question_id);
+        if (!prev || (g.completed_at || '') >= (prev.completed_at || '')) gradingsByQ.set(g.question_id, g);
+      }
+      const latest = [...gradingsByQ.values()];
+      const totalScore = latest.reduce((sum, g) => sum + (g.teacher_override_score ?? (g.total_score || 0)), 0);
 
       return {
         student_id: student.id,
@@ -150,7 +174,7 @@ export async function GET(
         student_level: student.student_level,
         is_submitted: studentAnswers.length > 0 && studentAnswers.some((a) => a.is_submitted),
         total_score: totalScore,
-        graded_count: completedGradings.length,
+        graded_count: latest.length,
         total_questions: questionIds.length,
       };
     });

@@ -7,7 +7,6 @@ import {
   BookOpen,
   AlertCircle,
   GitGraph,
-  Calendar,
   Users,
   FileText,
   Library,
@@ -21,7 +20,7 @@ const studentTabs = [
   { href: '/student/errors', label: '错题', icon: AlertCircle },
   { href: '/student/assistant', label: '答疑', icon: MessageCircle },
   { href: '/student/knowledge-graph', label: '图谱', icon: GitGraph },
-  { href: '/student/study-plan', label: '计划', icon: Calendar },
+  { href: '/student/recommend', label: '推荐', icon: Sparkles },
 ];
 
 const teacherTabs = [
@@ -42,7 +41,7 @@ export default function MobileTabBar({ role }: { role: 'student' | 'teacher' }) 
   }
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-sm border-t border-border pb-safe">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 glass-strong border-t border-white/50 pb-safe">
       <div className="flex items-center justify-around h-14 px-1">
         {tabs.map((tab) => {
           const active = isActive(tab.href);
@@ -51,12 +50,15 @@ export default function MobileTabBar({ role }: { role: 'student' | 'teacher' }) 
             <Link
               key={tab.href}
               href={tab.href}
-              className={`flex flex-col items-center justify-center gap-0.5 min-w-0 flex-1 py-1 rounded-lg transition-colors ${
+              className={`relative flex flex-col items-center justify-center gap-0.5 min-w-0 flex-1 py-1 rounded-lg transition-colors ${
                 active
                   ? 'text-violet-600'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
+              {active && (
+                <span className="absolute -top-px w-6 h-0.5 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full" />
+              )}
               <Icon
                 size={20}
                 strokeWidth={active ? 2.5 : 2}
@@ -65,9 +67,6 @@ export default function MobileTabBar({ role }: { role: 'student' | 'teacher' }) 
               <span className={`text-[10px] font-medium leading-none ${active ? 'text-violet-600' : ''}`}>
                 {tab.label}
               </span>
-              {active && (
-                <span className="absolute bottom-0 w-5 h-0.5 bg-gradient-to-r from-violet-500 to-fuchsia-500 rounded-full" />
-              )}
             </Link>
           );
         })}

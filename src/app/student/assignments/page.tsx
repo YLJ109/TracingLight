@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { AsyncState } from '@/components/ui/async-state';
 import { Input } from '@/components/ui/input';
 import { getCurrentUser } from '@/lib/auth-helper';
 import { Textarea } from '@/components/ui/textarea';
@@ -27,6 +28,7 @@ interface AssignmentItem {
   end_time: string;
   question_count: number;
   my_score?: number;
+  grades_published?: boolean;
   is_submitted: boolean;
 }
 
@@ -232,7 +234,7 @@ export default function StudentAssignments() {
           assignment_id: detailAssignment.id,
           student_id: studentId,
           answers: answerList,
-          is_draft: true,
+          save_only: true,
         }),
       });
       const data = await res.json();
@@ -251,25 +253,51 @@ export default function StudentAssignments() {
   return (
     <div className="space-y-6 animate-fade-in-up">
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <div className="text-2xl font-bold text-teal-600">{pending.length}</div>
-            <p className="text-sm text-slate-500">待提交</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <div className="text-2xl font-bold text-amber-600">{submitted.length}</div>
-            <p className="text-sm text-slate-500">已提交/已批改</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6 text-center">
-            <div className="text-2xl font-bold text-green-600">
-              {assignments.filter(a => a.status === 'graded').length}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* 待提交 */}
+        <Card className="overflow-hidden group relative border-0 bg-gradient-to-br from-amber-50 to-orange-100/70 hover:shadow-lg transition-all duration-300">
+          <CardContent className="pt-6 pb-5 px-5 relative">
+            <div className="absolute -right-6 -top-6 w-20 h-20 bg-amber-200/50 rounded-full group-hover:scale-110 transition-transform duration-300" />
+            <div className="absolute right-2 bottom-2 w-8 h-8 bg-amber-100 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="relative flex flex-col items-center text-center">
+              <div className="w-12 h-12 rounded-2xl bg-white/80 backdrop-blur-sm flex items-center justify-center mb-3 shadow-sm border border-amber-100">
+                <Clock className="w-6 h-6 text-amber-600" />
+              </div>
+              <div className="text-3xl font-extrabold text-amber-700 tracking-tight">{pending.length}</div>
+              <p className="text-xs text-amber-600/90 mt-1 font-medium">待提交作业</p>
             </div>
-            <p className="text-sm text-slate-500">已批改</p>
+          </CardContent>
+        </Card>
+
+        {/* 已提交 / 待批改 */}
+        <Card className="overflow-hidden group relative border-0 bg-gradient-to-br from-blue-50 to-indigo-100/70 hover:shadow-lg transition-all duration-300">
+          <CardContent className="pt-6 pb-5 px-5 relative">
+            <div className="absolute -right-6 -top-6 w-20 h-20 bg-blue-200/50 rounded-full group-hover:scale-110 transition-transform duration-300" />
+            <div className="absolute right-2 bottom-2 w-8 h-8 bg-blue-100 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="relative flex flex-col items-center text-center">
+              <div className="w-12 h-12 rounded-2xl bg-white/80 backdrop-blur-sm flex items-center justify-center mb-3 shadow-sm border border-blue-100">
+                <Send className="w-6 h-6 text-blue-600" />
+              </div>
+              <div className="text-3xl font-extrabold text-blue-700 tracking-tight">{submitted.length}</div>
+              <p className="text-xs text-blue-600/90 mt-1 font-medium">已提交 / 待批改</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 已批改 */}
+        <Card className="overflow-hidden group relative border-0 bg-gradient-to-br from-teal-50 to-emerald-100/70 hover:shadow-lg transition-all duration-300">
+          <CardContent className="pt-6 pb-5 px-5 relative">
+            <div className="absolute -right-6 -top-6 w-20 h-20 bg-teal-200/50 rounded-full group-hover:scale-110 transition-transform duration-300" />
+            <div className="absolute right-2 bottom-2 w-8 h-8 bg-teal-100 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="relative flex flex-col items-center text-center">
+              <div className="w-12 h-12 rounded-2xl bg-white/80 backdrop-blur-sm flex items-center justify-center mb-3 shadow-sm border border-teal-100">
+                <CheckCircle2 className="w-6 h-6 text-teal-600" />
+              </div>
+              <div className="text-3xl font-extrabold text-teal-700 tracking-tight">
+                {assignments.filter(a => a.status === 'graded').length}
+              </div>
+              <p className="text-xs text-teal-600/90 mt-1 font-medium">已批改作业</p>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -284,22 +312,22 @@ export default function StudentAssignments() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {STATUS_TABS.map((tab: { key: string; label: string; color: string }) => (
-            <button key={tab.key} onClick={() => setFilterStatus(tab.key)} className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${filterStatus === tab.key ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>{tab.label} <span className="ml-1.5 text-xs opacity-70">{tab.key === 'all' ? assignments.length : assignments.filter(a => a.status === tab.key || (tab.key === 'submitted' && (a.status === 'submitted' || a.status === 'graded'))).length}</span></button>
+            <button key={tab.key} onClick={() => setFilterStatus(tab.key)} className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${filterStatus === tab.key ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>{tab.label} <span className="ml-1.5 text-xs opacity-70">{tab.key === 'all' ? assignments.length : assignments.filter(a => a.status === tab.key).length}</span></button>
           ))}
         </div>
       </div>
 
       {/* Assignment List */}
       {loading ? (
-        <div className="text-center py-12 text-slate-400">加载中...</div>
+        <AsyncState state="loading" minHeight="min-h-[30vh]" />
       ) : filtered.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <p className="text-slate-500">暂无作业</p>
-            <p className="text-sm text-slate-400 mt-1">请等待教师发布作业</p>
-          </CardContent>
-        </Card>
+        <AsyncState
+          state="empty"
+          minHeight="min-h-[30vh]"
+          emptyIcon={<BookOpen className="w-7 h-7" />}
+          emptyTitle="暂无作业"
+          emptyDescription="请等待教师发布作业"
+        />
       ) : (
         <div className="space-y-3">
           {filtered.map(asgn => {
@@ -313,8 +341,8 @@ export default function StudentAssignments() {
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="font-semibold text-slate-800">{asgn.title}</h3>
                         <Badge variant="outline" className="text-xs">{asgn.course_name}</Badge>
-                        <Badge className={`text-xs ${config.className}`} variant="outline">
-                          <Icon className="w-3 h-3 mr-1" />{config.label}
+                        <Badge className={`text-xs ${asgn.status === 'graded' && asgn.grades_published === false ? 'bg-amber-50 text-amber-700' : config.className}`} variant="outline">
+                          <Icon className="w-3 h-3 mr-1" />{asgn.status === 'graded' && asgn.grades_published === false ? '成绩待发布' : config.label}
                         </Badge>
                       </div>
                       <div className="flex items-center gap-2 sm:gap-4 text-sm text-slate-500 flex-wrap">

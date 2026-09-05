@@ -213,17 +213,18 @@ export default function StudentDashboard() {
         {indicators.map((ind, i) => {
           const IconComp = INDICATOR_ICON_MAP[ind.icon || 'Target'] || Target;
           return (
-            <Card key={i} className={`relative overflow-hidden border-slate-200/60 shadow-sm card-hover bg-gradient-to-br ${INDICATOR_GRADIENT[ind.color] || 'from-slate-50 to-white'} py-0`}>
-              <CardContent className="p-5">
-                <div className="flex items-center justify-between mb-3">
+            <Card key={i} className={`relative overflow-hidden border-0 group card-hover bg-gradient-to-br py-0 ${INDICATOR_GRADIENT[ind.color] || 'from-slate-50 to-white'} rounded-2xl`}>
+              <CardContent className="p-5 relative">
+                <div className="absolute -right-6 -top-6 w-16 h-16 rounded-full bg-white/40 group-hover:scale-110 transition-transform duration-300" />
+                <div className="relative flex items-center justify-between mb-3">
                   <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{ind.label}</span>
                   <div className={`w-8 h-8 rounded-lg ${INDICATOR_BG[ind.color] || 'bg-slate-100'} flex items-center justify-center`}><IconComp className="w-4 h-4" /></div>
                 </div>
-                <div className={`text-3xl font-bold tracking-tight ${INDICATOR_VAL[ind.color] || 'text-slate-700'}`}>
+                <div className={`relative text-3xl font-bold tracking-tight ${INDICATOR_VAL[ind.color] || 'text-slate-700'}`}>
                   {ind.value}
                   {ind.unit && <span className="text-sm font-normal text-muted-foreground ml-0.5">{ind.unit}</span>}
                 </div>
-                {ind.trend && <p className="text-xs text-muted-foreground mt-1.5">{ind.trend}</p>}
+                {ind.trend && <p className="relative text-xs text-muted-foreground mt-1.5">{ind.trend}</p>}
               </CardContent>
             </Card>
           );
@@ -232,11 +233,11 @@ export default function StudentDashboard() {
 
       {/* Charts Row 1: Radar + Trend */}
       <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-2">
-        <Card className="border-slate-200/60 shadow-sm">
+        <Card className="border-slate-200/60 shadow-soft rounded-2xl">
           <CardHeader className="pb-2"><CardTitle className="text-base font-semibold flex items-center gap-2"><Target className="w-4 h-4 text-teal-500" />能力雷达</CardTitle></CardHeader>
           <CardContent className="pt-0"><div ref={radarRef} className="w-full h-72" /></CardContent>
         </Card>
-        <Card className="border-slate-200/60 shadow-sm">
+        <Card className="border-slate-200/60 shadow-soft rounded-2xl">
           <CardHeader className="pb-2"><CardTitle className="text-base font-semibold flex items-center gap-2"><TrendingUp className="w-4 h-4 text-blue-500" />成绩趋势</CardTitle></CardHeader>
           <CardContent className="pt-0"><div ref={trendRef} className="w-full h-72" /></CardContent>
         </Card>
@@ -244,7 +245,7 @@ export default function StudentDashboard() {
 
       {/* Charts Row 2: Weak Points + Course Comparison */}
       <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-2">
-        <Card className="border-slate-200/60 shadow-sm">
+        <Card className="border-slate-200/60 shadow-soft rounded-2xl">
           <CardHeader className="pb-2"><CardTitle className="text-base font-semibold flex items-center gap-2"><AlertCircle className="w-4 h-4 text-red-500" />薄弱知识点 Top {weakTop10.length}</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             {weakTop10.map((w, i) => (
@@ -266,7 +267,7 @@ export default function StudentDashboard() {
             ))}
           </CardContent>
         </Card>
-        <Card className="border-slate-200/60 shadow-sm">
+        <Card className="border-slate-200/60 shadow-soft rounded-2xl">
           <CardHeader className="pb-2"><CardTitle className="text-base font-semibold flex items-center gap-2"><BookOpen className="w-4 h-4 text-purple-500" />课程对比</CardTitle></CardHeader>
           <CardContent className="pt-0"><div ref={compareRef} className="w-full h-72" /></CardContent>
         </Card>

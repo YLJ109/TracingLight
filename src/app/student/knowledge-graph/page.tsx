@@ -43,8 +43,18 @@ export default function KnowledgeGraphPage() {
   const [courseId, setCourseId] = useState(1);
   const [courses, setCourses] = useState<CourseInfo[]>([]);
   const [viewMode, setViewMode] = useState<'radial'|'tree'>('radial');
-  const [graphType, setGraphType] = useState<'knowledge'|'ability'|'ideology'>('knowledge');
-  const [tripleData, setTripleData] = useState<Array<{ id: number; name: string; description: string | null; knowledge: (string | undefined)[] }>>([]);
+  const [graphType, setGraphType] = useState<'knowledge'|'ability'>('knowledge');
+  interface AbilityItem {
+    id: number;
+    name: string;
+    description: string | null;
+    score: number;
+    level: string;
+    color: string;
+    kps: { id: number; name: string; mastery: number | null; mastery_color: string; weak: boolean }[];
+    weak_kps: string[];
+  }
+  const [tripleData, setTripleData] = useState<AbilityItem[]>([]);
   const [tripleLoading, setTripleLoading] = useState(false);
   const [maxDepth, setMaxDepth] = useState<number>(3); // 1=L1章, 2=L2节, 3=L3知识点(全部)
   const svgRef = useRef<SVGSVGElement>(null);
@@ -288,7 +298,7 @@ export default function KnowledgeGraphPage() {
     walk(root, 0);
   }, []);
 
-  useEffect(()=>{if(!graphData)return;const r=buildRoot();if(!r)return;collapseByDepth(r,maxDepth);rootRef.current=r;const t=setTimeout(()=>renderGraph(),120);return()=>clearTimeout(t);},[graphData,renderGraph,buildRoot,collapseByDepth,maxDepth]);
+  useEffect(()=>{if(!graphData||graphType!=='knowledge')return;const r=buildRoot();if(!r)return;collapseByDepth(r,maxDepth);rootRef.current=r;const t=setTimeout(()=>renderGraph(),120);return()=>clearTimeout(t);},[graphData,renderGraph,buildRoot,collapseByDepth,maxDepth,graphType]);
   useEffect(()=>{const h=()=>renderGraph();window.addEventListener('resize',h);return()=>window.removeEventListener('resize',h);},[renderGraph]);
 
   const exportSVG=()=>{
@@ -339,6 +349,14 @@ export default function KnowledgeGraphPage() {
   const stat=graphData?.masteryStats;
 
   if (graphType !== 'knowledge') {
+    // 综合能力画像汇总（薄弱在前，便于优先补强）
+    const totalScore = tripleData.length
+      ? Math.round(tripleData.reduce((s, it) => s + it.score, 0) / tripleData.length)
+      : 0;
+    const totalLvl = totalScore >= 80 ? '熟练' : totalScore >= 60 ? '基本具备' : totalScore >= 40 ? '薄弱' : '待加强';
+    const totalColor = totalScore >= 80 ? '#10b981' : totalScore >= 60 ? '#22c55e' : totalScore >= 40 ? '#f59e0b' : '#ef4444';
+    const weakCount = tripleData.filter((it) => it.score < 60).length;
+
     return (
       <div className="flex flex-col h-full bg-[#fafbfc]" style={{minHeight:0}}>
         <div className="flex-none flex items-center justify-between px-5 py-2.5 bg-white border-b border-slate-200/50 z-20">
@@ -346,12 +364,10 @@ export default function KnowledgeGraphPage() {
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center">
               <Target className="w-4 h-4 text-white" />
             </div>
-            <h1 className="page-title">
-              {graphType === 'ability' ? '能力谱图' : '思政谱图'}
-            </h1>
+            <h1 className="page-title">能力图谱</h1>
             {/* 图谱类型 Tab：固定在左侧标题旁 */}
             <div className="flex bg-slate-100 rounded-lg p-0.5">
-              {([['knowledge','知识'],['ability','能力'],['ideology','思政']] as const).map(([k,l]) => (
+              {([['knowledge','知识'],['ability','能力']] as const).map(([k,l]) => (
                 <button key={k} onClick={() => setGraphType(k)}
                   className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${graphType===k?'bg-white text-slate-800 shadow-sm':'text-slate-500 hover:text-slate-700'}`}>
                   {l}
@@ -369,42 +385,87 @@ export default function KnowledgeGraphPage() {
           ) : tripleData.length === 0 ? (
             <div className="text-center py-16 text-slate-400">
               <Target className="w-12 h-12 mx-auto opacity-40" />
-              <p className="text-sm mt-3">该课程暂无{graphType === 'ability' ? '能力' : '思政'}图谱数据</p>
+              <p className="text-sm mt-3">该课程暂无能力数据</p>
               <p className="text-xs mt-1">切换其他课程查看</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-4xl mx-auto">
-              {tripleData.map((item, i) => (
-                <div key={item.id} className="rounded-2xl border border-slate-100 shadow-sm bg-white p-5 card-hover">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${i%2===0?'from-violet-500 to-fuchsia-500':'from-fuchsia-500 to-pink-500'} flex items-center justify-center text-white font-bold`}>
-                      {item.name[0]}
-                    </div>
-                    <div>
-                      <p className="font-semibold text-slate-800">{item.name}</p>
-                      <p className="text-xs text-slate-400">{item.knowledge.length} 个关联知识点</p>
-                    </div>
-                  </div>
-                  {item.description && <p className="text-sm text-slate-500 mt-3">{item.description}</p>}
-                  <div className="flex flex-wrap gap-2 mt-3">
-                    {item.knowledge.map(k => (
-                      <span key={k} className="px-2 py-1 rounded-md bg-violet-50 text-violet-600 text-xs font-medium">{k}</span>
-                    ))}
-                  </div>
-                  {/* 行动入口：让能力/思政维度可操作 */}
-                  <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
-                    <button
-                      onClick={() => router.push('/student/materials')}
-                      className="flex-1 text-xs py-1.5 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors"
-                    >去学习相关材料</button>
-                    <button
-                      onClick={() => router.push('/student/assistant')}
-                      className="flex-1 text-xs py-1.5 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
-                    >问 AI 老师</button>
+            <>
+              {/* 能力总览 */}
+              <div className="max-w-4xl mx-auto mb-4 rounded-2xl border border-slate-100 shadow-sm bg-white p-5 flex flex-col sm:flex-row sm:items-center gap-5">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center text-white font-bold text-2xl">
+                  {totalScore}
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm text-slate-400">综合能力掌握度</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-2xl font-bold" style={{color: totalColor}}>{totalLvl}</span>
+                    <span className="text-xs text-slate-400">（{tripleData.length} 项能力）</span>
                   </div>
                 </div>
-              ))}
-            </div>
+                <div className={`shrink-0 text-sm px-3 py-1.5 rounded-lg ${weakCount ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                  {weakCount > 0 ? `${weakCount} 项能力待加强，建议优先复习薄弱知识点` : '各项能力掌握良好'}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-4xl mx-auto">
+                {tripleData.map((item) => (
+                  <div key={item.id} className="rounded-2xl border border-slate-100 shadow-sm bg-white p-5 card-hover">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center text-white font-bold">
+                        {item.name[0]}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-slate-800 truncate">{item.name}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{background:`${item.color}1a`, color:item.color}}>{item.level}</span>
+                          <span className="text-xs text-slate-400">{item.kps.length} 个知识点</span>
+                        </div>
+                      </div>
+                      <span className="text-lg font-bold" style={{color:item.color}}>{item.score}<span className="text-xs text-slate-400 font-normal">%</span></span>
+                    </div>
+
+                    {/* 掌握度进度条 */}
+                    <div className="h-2 bg-slate-100 rounded-full mt-4 overflow-hidden">
+                      <div className="h-full rounded-full transition-all" style={{width:`${item.score}%`, background:item.color}} />
+                    </div>
+
+                    {item.description && <p className="text-xs text-slate-500 mt-3">{item.description}</p>}
+
+                    {/* 薄弱点高亮 */}
+                    {item.weak_kps.length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-xs font-medium text-amber-600">亟需加强</p>
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          {item.weak_kps.map(k => <span key={k} className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-600 text-xs font-medium">{k}</span>)}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 知识点掌握明细 */}
+                    <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap gap-1.5">
+                      {item.kps.map(k => (
+                        <span key={k.id} className={`px-2 py-0.5 rounded-md text-xs font-medium ${k.weak ? 'bg-red-50 text-red-600 ring-1 ring-red-100' : 'bg-slate-50 text-slate-600'}`}>
+                          {k.name}
+                          <span className="ml-1" style={{color:k.mastery_color}}>{k.mastery ?? '--'}%</span>
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* 行动入口 */}
+                    <div className="flex gap-2 mt-4 pt-3 border-t border-slate-100">
+                      <button
+                        onClick={() => router.push('/student/materials')}
+                        className="flex-1 text-xs py-1.5 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors"
+                      >去学习相关材料</button>
+                      <button
+                        onClick={() => router.push('/student/assistant')}
+                        className="flex-1 text-xs py-1.5 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors"
+                      >问 AI 老师</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -424,7 +485,7 @@ export default function KnowledgeGraphPage() {
           </div>
           {/* 图谱类型 Tab */}
           <div className="flex bg-slate-100 rounded-lg p-0.5">
-            {([['knowledge','知识'],['ability','能力'],['ideology','思政']] as const).map(([k,l]) => (
+            {([['knowledge','知识'],['ability','能力']] as const).map(([k,l]) => (
               <button key={k} onClick={() => setGraphType(k)}
                 className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${graphType===k?'bg-white text-slate-800 shadow-sm':'text-slate-500 hover:text-slate-700'}`}>
                 {l}

@@ -43,11 +43,13 @@ export async function GET(
     const questionIds: number[] = assignmentData.question_ids as number[] || [];
     let questions: any[] = [];
     if (questionIds.length > 0) {
-      questions = db.select()
+      const fetched = db.select()
         .from(question)
         .where(inArray(question.id, questionIds))
-        .orderBy(question.id)
         .all();
+      // 按 assignment.question_ids 的原始顺序返回，避免 .orderBy(id) 打乱教师题序
+      const qMap = new Map(fetched.map((q) => [q.id, q]));
+      questions = questionIds.map((qid) => qMap.get(Number(qid))).filter(Boolean);
     }
 
     // 获取学生作答
@@ -71,13 +73,15 @@ export async function GET(
     // 构建题目+作答+批改的合并数据
     const answerMap = new Map(studentAnswers.map((a) => [a.question_id, a]));
     const gradingMap = new Map(gradingTasks.map((g) => [g.question_id, g]));
+    // 成绩未发布前对学生隐藏批改分数（发布由老师"一键发布成绩"控制）
+    const gradesPublished = !!Number(assignmentData.grades_published ?? 0);
 
     const questionsWithAnswers = questions.map((q) => ({
       ...q,
       student_answer: answerMap.get(q.id)?.student_answer || null,
       is_submitted: answerMap.get(q.id)?.is_submitted || false,
       submitted_at: answerMap.get(q.id)?.submitted_at || null,
-      grading: gradingMap.get(q.id) ? {
+      grading: gradesPublished && gradingMap.get(q.id) ? {
         total_score: gradingMap.get(q.id)!.teacher_override_score ?? gradingMap.get(q.id)!.total_score,
         ai_score: gradingMap.get(q.id)!.total_score,
         full_score: gradingMap.get(q.id)!.full_score,
@@ -103,7 +107,8 @@ export async function GET(
         ...assignmentData,
         course: courseData ? { name: courseData.name } : null,
         questions: questionsWithAnswers,
-        my_score: gradingTasks.length > 0 ? totalScore : null,
+        my_score: gradesPublished && gradingTasks.length > 0 ? totalScore : null,
+        grades_published: gradesPublished,
         is_submitted: isSubmitted,
         returned: isReturned,
         return_comment: returnComment,
@@ -112,7 +117,7 @@ export async function GET(
           student_answer: a.student_answer,
           is_submitted: a.is_submitted,
           returned: a.returned,
-          grading: gradingMap.get(a.question_id) ? {
+          grading: gradesPublished && gradingMap.get(a.question_id) ? {
             total_score: gradingMap.get(a.question_id)!.total_score,
             full_score: gradingMap.get(a.question_id)!.full_score,
             dimension_scores: gradingMap.get(a.question_id)!.dimension_scores,

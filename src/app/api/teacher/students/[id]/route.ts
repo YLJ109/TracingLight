@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/storage/database/db';
 import { parseIntSafe, validationErrorResponse } from '@/lib/validation';
-import { requireAuth } from '@/lib/server-auth';
+import { requireAuthWithStatus } from '@/lib/server-auth';
 import { eq, desc, and, inArray } from 'drizzle-orm';
 import {
   user,
@@ -23,15 +23,22 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const authUser = await requireAuth(request, 'teacher');
-    if (!authUser) return NextResponse.json({ error: '未登录' }, { status: 401 });
+    const { user: authUser, status } = await requireAuthWithStatus(request, 'teacher');
+    if (!authUser) return NextResponse.json({ error: status === 403 ? '权限不足' : '未登录' }, { status });
     const parsed = parseIntSafe(id);
     if (!parsed.valid) return validationErrorResponse(parsed.error!);
     const studentId = parsed.value!;
     const db = getDb();
 
-    // 1. 学生基本信息
-    const studentRows = db.select().from(user)
+    // 1. 学生基本信息（显式列选择，不加载 password）
+    const studentRows = db.select({
+      id: user.id,
+      username: user.username,
+      real_name: user.real_name,
+      class_id: user.class_id,
+      student_level: user.student_level,
+      avatar_url: user.avatar_url,
+    }).from(user)
       .where(and(eq(user.id, studentId), eq(user.role, 'student')))
       .limit(1).all();
     const student = studentRows[0] || null;

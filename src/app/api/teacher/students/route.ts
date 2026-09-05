@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/storage/database/db';
-import { requireAuth } from '@/lib/server-auth';
+import { requireAuthWithStatus } from '@/lib/server-auth';
 import { eq, and, inArray } from 'drizzle-orm';
 import { user } from '@/storage/database/shared/schema';
 import { getTeacherClassIds } from '@/lib/teacher-scope';
 
 export async function GET(request: NextRequest) {
   try {
-    const authUser = await requireAuth(request, 'teacher');
-    if (!authUser) return NextResponse.json({ error: '未登录' }, { status: 401 });
+    const { user: authUser, status } = await requireAuthWithStatus(request, 'teacher');
+    if (!authUser) return NextResponse.json({ error: status === 403 ? '权限不足' : '未登录' }, { status });
     const db = getDb();
     const { searchParams } = new URL(request.url);
     const level = searchParams.get('level');
@@ -26,7 +26,17 @@ export async function GET(request: NextRequest) {
       filters.push(eq(user.student_level, level));
     }
 
-    const data = db.select().from(user)
+    // 显式列选择，绝不返回 password 哈希
+    const data = db.select({
+      id: user.id,
+      username: user.username,
+      real_name: user.real_name,
+      class_id: user.class_id,
+      student_level: user.student_level,
+      avatar_url: user.avatar_url,
+      is_active: user.is_active,
+      created_at: user.created_at,
+    }).from(user)
       .where(and(...filters))
       .orderBy(user.id)
       .all();

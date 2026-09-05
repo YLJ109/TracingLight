@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/storage/database/db';
+import { getDb, saveDb } from '@/storage/database/db';
 import { assignment, question, answer, knowledgePoint, user, gradingTask } from '@/storage/database/shared/schema';
 import { eq, and, inArray } from 'drizzle-orm';
 import { requireAuth } from '@/lib/server-auth';
 import { isAssignmentInTeacherScope, isStudentInTeacherScope } from '@/lib/teacher-scope';
 import { gradeOneAndRecord, notifyGraded } from '@/services/grading.service';
+import { isObjectiveType } from '@/lib/objective-grading';
 import { aiErrorResponse } from '@/lib/ai/client';
 
 /**
@@ -134,6 +135,18 @@ export async function POST(request: NextRequest) {
       } catch (err) {
         console.error(`Batch grading failed for question ${qId}:`, err);
         failed.push({ question_id: qId, error: '批改失败' });
+      }
+    }
+
+    // 发布策略：纯客观题作业在 AI 批改完成后自动发布成绩（含主观题需教师复核后手动发布）。
+    // 用「实际题目题型」判定是否纯客观：避免依赖创建时写入的 has_subjective（其判定曾用 'short'/'code' 取值，
+    // 与题库实际 short_answer/programming/multiple_choice 等不一致，可能把主观题作业误判为纯客观而自动发布），
+    // 此处直接基于本轮加载的 assignment.question_ids 对应题型判定，保证自动发布语义与真实题目一致。
+    if (results.length > 0) {
+      const hasSubjective = questions.some((q) => !isObjectiveType(q.question_type));
+      if (!hasSubjective) {
+        db.update(assignment).set({ grades_published: true }).where(eq(assignment.id, Number(assignment_id))).run();
+        saveDb();
       }
     }
 

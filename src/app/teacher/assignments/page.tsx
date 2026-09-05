@@ -13,7 +13,7 @@ import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Eye, CheckCircle2, Clock, AlertCircle, Sparkles, Loader2, BookOpen, X, Users, GraduationCap, FileText, BarChart3, ChevronRight } from 'lucide-react';
+import { Plus, Eye, CheckCircle2, Clock, AlertCircle, Sparkles, Loader2, BookOpen, X, Users, GraduationCap, FileText, BarChart3, ChevronRight, SlidersHorizontal } from 'lucide-react';
 
 interface AssignmentItem {
   id: number;
@@ -173,7 +173,7 @@ export default function TeacherAssignments() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          course_id: courseId, teacher_id: 1, title: newTitle,
+          course_id: courseId, title: newTitle,
           description: newDesc, question_ids: selectedQuestions,
           total_score: totalScore, start_time: newStartTime,
           end_time: newEndTime, status: 'published',
@@ -246,6 +246,9 @@ export default function TeacherAssignments() {
           <p className="text-sm text-slate-500">按课程/学生维度管理作业与批改</p>
         </div>
         <div className="flex gap-2">
+          <Button size="sm" variant="ghost" onClick={() => router.push('/teacher/grading-config')}>
+            <SlidersHorizontal className="w-4 h-4 mr-1" /> 批改规则
+          </Button>
           <Button size="sm" variant="outline" onClick={() => router.push('/teacher/assignments/new')}>
             <Plus className="w-4 h-4 mr-1" /> 新建作业
           </Button>
@@ -319,7 +322,7 @@ export default function TeacherAssignments() {
           <CardContent className="p-12 text-center">
             <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-3" />
             <p className="text-slate-500">暂无作业</p>
-            <p className="text-sm text-slate-400 mt-1">点击"新建作业"从题库选题布置</p>
+            <p className="text-sm text-slate-400 mt-1">点击&ldquo;新建作业&rdquo;从题库选题布置</p>
           </CardContent>
         </Card>
       ) : viewMode === 'list' ? (

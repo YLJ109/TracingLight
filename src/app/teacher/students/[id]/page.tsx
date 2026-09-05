@@ -90,6 +90,8 @@ export default function StudentDetailPage() {
   const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [participation, setParticipation] = useState<any>(null);
+  const [participationLoading, setParticipationLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("radar");
   const [report, setReport] = useState<any>(null);
   const [reportLoading, setReportLoading] = useState(false);
@@ -167,6 +169,16 @@ export default function StudentDetailPage() {
       }
     };
     fetchData();
+  }, [id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch(`/api/teacher/students/${id}/participation`)
+      .then((r) => r.json())
+      .then((json) => { if (!cancelled && json.success) setParticipation(json.data); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setParticipationLoading(false); });
+    return () => { cancelled = true; };
   }, [id]);
 
   // ECharts - Radar Chart (only when tab is active)
@@ -487,6 +499,74 @@ export default function StudentDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* 平时表现 / 学习参与度（D5 权重制） */}
+      <Card className="border-violet-200/70 bg-gradient-to-br from-violet-50/40 to-white py-0">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Flame className="w-4 h-4 text-violet-600" />
+            平时表现分（近 30 天学习投入）
+          </CardTitle>
+          <CardDescription>
+            按「签到 30% · 作业完成 20% · 阅读投入 25% · 讨论贡献 15% · 错题复习 10%」权重综合评定时分，满分 100
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {participationLoading ? (
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-5 h-5 animate-spin text-violet-600" />
+              <span className="text-sm text-muted-foreground">计算中…</span>
+            </div>
+          ) : participation ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+              <div className="flex flex-col items-center justify-center">
+                <div className="relative w-20 h-20">
+                  <svg viewBox="0 0 36 36" className="w-20 h-20 -rotate-90">
+                    <circle cx="18" cy="18" r="15.9" fill="none" stroke="#ede9fe" strokeWidth="3.5" />
+                    <circle
+                      cx="18" cy="18" r="15.9" fill="none" stroke="#8b5cf6" strokeWidth="3.5"
+                      strokeLinecap="round" strokeDasharray={`${participation.score} 100`}
+                    />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-lg font-bold text-violet-700">
+                    {participation.score}
+                  </span>
+                </div>
+                <span className="text-xs text-muted-foreground mt-1">平时表现分</span>
+              </div>
+              <div className="flex flex-col gap-2 lg:col-span-5">
+                <div className="flex items-center gap-2">
+                  <span className="w-24 shrink-0 text-xs text-muted-foreground">签到率</span>
+                  <Progress value={participation.signinRate} className="h-2" />
+                  <span className="w-20 shrink-0 text-right text-xs text-slate-600">{participation.signinDays}/{participation.windowDays} 天 · {participation.signinRate}%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-24 shrink-0 text-xs text-muted-foreground">作业完成</span>
+                  <Progress value={participation.homeworkRate} className="h-2" />
+                  <span className="w-20 shrink-0 text-right text-xs text-slate-600">{participation.submittedCount}/{participation.assignedCount} · {participation.homeworkRate}%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-24 shrink-0 text-xs text-muted-foreground">阅读投入</span>
+                  <Progress value={participation.readingScore * 4} className="h-2" />
+                  <span className="w-20 shrink-0 text-right text-xs text-slate-600">{participation.readingMinutes} 分钟 · {participation.readingScore}/25</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-24 shrink-0 text-xs text-muted-foreground">讨论贡献</span>
+                  <Progress value={participation.discussionContribution * (100 / 15)} className="h-2" />
+                  <span className="w-20 shrink-0 text-right text-xs text-slate-600">发帖 {participation.postCount} · 回复 {participation.replyCount} · {participation.discussionContribution}/15</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-24 shrink-0 text-xs text-muted-foreground">错题复习</span>
+                  <Progress value={participation.reviewRate} className="h-2" />
+                  <span className="w-20 shrink-0 text-right text-xs text-slate-600">{participation.reviewRate}% · {participation.reviewScore}/10</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">平时表现数据获取失败</p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Tabs */}
       <Tabs defaultValue="radar" value={activeTab} onValueChange={setActiveTab} className="space-y-6">

@@ -39,12 +39,7 @@ export default function TeacherExamsPage() {
     knowledge_scope: [] as string[],
   });
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (authLoading) return;
-    if (!user || user.role !== 'teacher') { window.location.href = '/'; return; }
-    loadExams();
-  }, [user, authLoading]);
+  // 注意：authLoading/user/role 校验的 useEffect 移到了 loadExams 声明之后（避免 TDZ 静态报错）
 
   const loadExams = async () => {
     setLoading(true);
@@ -55,6 +50,12 @@ export default function TeacherExamsPage() {
     } catch (e) { console.error(e); }
     setLoading(false);
   };
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user || user.role !== 'teacher') { window.location.href = '/'; return; }
+    loadExams();
+  }, [user, authLoading]);
 
   const handleCreate = async () => {
     if (!form.exam_name.trim() || !form.exam_date) return;

@@ -10,7 +10,7 @@ import { gradeObjectiveQuestion, isObjectiveType } from '@/lib/objective-grading
  * 服务端按统一客观题规则引擎判分（含数学等价/多选半对），答案与解析在判分后下发。
  * 练习结果回写掌握度（指数平滑），供图谱/推荐/规划使用——练习真正进入学习闭环。
  */
-const g = globalThis as unknown as { __TL_PRACTICE_STORE?: Map<string, { studentId: number; questions: Array<{ content: string; question_type: string; options: Record<string, string> | null; answer: string; analysis: string; default_score: number }>; createdAt: number }> };
+const g = globalThis as unknown as { __TL_PRACTICE_STORE?: Map<string, { studentId: number; knowledge_point_id: number; questions: Array<{ content: string; question_type: string; options: Record<string, string> | null; answer: string; analysis: string; default_score: number }>; createdAt: number }> };
 const practiceStore = g.__TL_PRACTICE_STORE!;
 
 export async function POST(request: NextRequest) {
@@ -55,8 +55,9 @@ export async function POST(request: NextRequest) {
     // 练习结果回写掌握度：以本次正确率为「本次表现」，与历史掌握度指数平滑（0.3 权重）
     const correctCount = results.filter((r) => r.is_correct).length;
     const thisRate = results.length > 0 ? Math.round((correctCount / results.length) * 100) : 0;
-    // 练习生成自错题知识点——从前端透传，由 submit 单独字段携带
-    const kpId = Number(body?.knowledge_point_id) || null;
+    // 练习生成自错题知识点——knowledge_point_id 从服务端 store 取（generate 时由错题归属写入），
+    // 不信任前端请求体透传，杜绝伪造上游知识点提升任意掌握度
+    const kpId = Number(practice.knowledge_point_id) || null;
     if (kpId) {
       try {
         const db = getDb();

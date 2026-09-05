@@ -225,7 +225,7 @@ export default function StudentErrors() {
       setErrors(prev => prev.map(e => e.id === errorId ? { ...e, review_status: 'mastered' } : e));
       // Show toast
       const err = errors.find(e => e.id === errorId);
-      if (err) setToast({ message: '已掌握！知识图谱掌握度已同步更新', kpName: err.knowledge_point_name });
+      if (err) setToast({ message: '已掌握！该错题已归档至掌握列表', kpName: err.knowledge_point_name });
     } catch {}
   };
 

@@ -1,9 +1,10 @@
 /**
- * 数据库客户端 - SQLite via sql.js + Drizzle ORM
+ * 数据库客户端 - SQLite via better-sqlite3 + Drizzle ORM
  * 使用 globalThis 共享实例，避免 tsup 和 Next.js 模块隔离问题
+ * better-sqlite3 每次写事务即实时落盘，无需手动 export/save。
  */
-import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
-import { drizzle } from 'drizzle-orm/sql-js';
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from './shared/schema';
 import * as relations from './shared/relations';
 import * as fs from 'fs';
@@ -12,26 +13,17 @@ import * as path from 'path';
 // 全局共享状态（tsup bundle 和 .next chunks 共享同一个实例）
 const g = globalThis as unknown as {
   __TL_DB?: ReturnType<typeof drizzle>;
-  __TL_SQLJS?: SqlJsDatabase;
+  __TL_BSQLITE?: Database.Database;
   __TL_INIT_PROMISE?: Promise<ReturnType<typeof drizzle>>;
-  __TL_SAVE_INTERVAL?: NodeJS.Timeout;
 };
 
 function getDbPath(): string {
   return process.env.DATABASE_PATH || path.resolve(process.cwd(), 'data', 'tracinglight.db');
 }
 
-function saveToDisk(silent = false) {
-  if (g.__TL_SQLJS) {
-    const dbPath = getDbPath();
-    const dir = path.dirname(dbPath);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const data = g.__TL_SQLJS.export();
-    fs.writeFileSync(dbPath, Buffer.from(data));
-    if (!silent) console.log(`  DB saved (${(data.length / 1024).toFixed(0)}KB) to ${dbPath}`);
-  } else if (!silent) {
-    console.log('  DB save skipped: no SQLJS instance');
-  }
+// better-sqlite3 每次写事务即落盘；保留该函数仅为兼容既有调用点（saveDb/closeDb）
+function saveToDisk(_silent = false) {
+  /* no-op: 数据已实时落盘 */
 }
 
 export function getDb() {
@@ -65,16 +57,26 @@ CREATE TABLE IF NOT EXISTS knowledge_graph_edge (id INTEGER PRIMARY KEY AUTOINCR
 CREATE INDEX IF NOT EXISTS kge_from_node_id_idx ON knowledge_graph_edge(from_node_id);
 CREATE INDEX IF NOT EXISTS kge_to_node_id_idx ON knowledge_graph_edge(to_node_id);
 CREATE UNIQUE INDEX IF NOT EXISTS kge_unique_idx ON knowledge_graph_edge(from_node_id, to_node_id, relation_type);
-CREATE TABLE IF NOT EXISTS question (id INTEGER PRIMARY KEY AUTOINCREMENT, course_id INTEGER NOT NULL REFERENCES course(id), knowledge_point_id INTEGER NOT NULL REFERENCES knowledge_point(id), question_type TEXT NOT NULL, difficulty TEXT NOT NULL, content TEXT NOT NULL, options TEXT, answer TEXT NOT NULL, analysis TEXT, default_score INTEGER DEFAULT 10, source TEXT DEFAULT 'ai', version INTEGER DEFAULT 1, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (CURRENT_TIMESTAMP));
+CREATE TABLE IF NOT EXISTS question (id INTEGER PRIMARY KEY AUTOINCREMENT, course_id INTEGER NOT NULL REFERENCES course(id), knowledge_point_id INTEGER NOT NULL REFERENCES knowledge_point(id), question_type TEXT NOT NULL, difficulty TEXT NOT NULL, content TEXT NOT NULL, options TEXT, answer TEXT NOT NULL, analysis TEXT, default_score INTEGER DEFAULT 10, source TEXT DEFAULT 'ai', version INTEGER DEFAULT 1, is_active INTEGER DEFAULT 1, locked INTEGER DEFAULT 0, min_chars INTEGER, max_chars INTEGER, min_select INTEGER, max_select INTEGER, created_at TEXT DEFAULT (CURRENT_TIMESTAMP));
 CREATE INDEX IF NOT EXISTS q_course_id_idx ON question(course_id);
 CREATE INDEX IF NOT EXISTS q_kp_id_idx ON question(knowledge_point_id);
 CREATE INDEX IF NOT EXISTS q_type_idx ON question(question_type);
 CREATE INDEX IF NOT EXISTS q_difficulty_idx ON question(difficulty);
-CREATE TABLE IF NOT EXISTS assignment (id INTEGER PRIMARY KEY AUTOINCREMENT, course_id INTEGER NOT NULL REFERENCES course(id), teacher_id INTEGER NOT NULL REFERENCES user(id), title TEXT NOT NULL, description TEXT, question_ids TEXT NOT NULL, total_score REAL DEFAULT 100, start_time TEXT NOT NULL, end_time TEXT NOT NULL, status TEXT DEFAULT 'published', allow_resubmit INTEGER DEFAULT 0, review_mode TEXT DEFAULT 'auto', has_subjective INTEGER DEFAULT 0, created_at TEXT DEFAULT (CURRENT_TIMESTAMP));
+CREATE TABLE IF NOT EXISTS assignment (id INTEGER PRIMARY KEY AUTOINCREMENT, course_id INTEGER NOT NULL REFERENCES course(id), teacher_id INTEGER NOT NULL REFERENCES user(id), title TEXT NOT NULL, description TEXT, question_ids TEXT NOT NULL, total_score REAL DEFAULT 100, start_time TEXT NOT NULL, end_time TEXT NOT NULL, status TEXT DEFAULT 'published', allow_resubmit INTEGER DEFAULT 0, review_mode TEXT DEFAULT 'auto', has_subjective INTEGER DEFAULT 0, grades_published INTEGER DEFAULT 0, created_at TEXT DEFAULT (CURRENT_TIMESTAMP));
 CREATE INDEX IF NOT EXISTS asgn_course_id_idx ON assignment(course_id);
 CREATE INDEX IF NOT EXISTS asgn_status_idx ON assignment(status);
 CREATE TABLE IF NOT EXISTS answer (id INTEGER PRIMARY KEY AUTOINCREMENT, assignment_id INTEGER NOT NULL REFERENCES assignment(id) ON DELETE CASCADE, student_id INTEGER NOT NULL REFERENCES user(id), question_id INTEGER NOT NULL REFERENCES question(id), student_answer TEXT, is_submitted INTEGER DEFAULT 0, submitted_at TEXT, returned INTEGER DEFAULT 0, returned_at TEXT, return_comment TEXT, created_at TEXT DEFAULT (CURRENT_TIMESTAMP));
 CREATE TABLE IF NOT EXISTS grading_config (id INTEGER PRIMARY KEY AUTOINCREMENT, teacher_id INTEGER NOT NULL REFERENCES user(id), name TEXT NOT NULL, course_id INTEGER, question_type TEXT, scoring_criteria TEXT, deduction_rules TEXT, comment_style TEXT, grade_levels TEXT, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (CURRENT_TIMESTAMP), updated_at TEXT);
+CREATE TABLE IF NOT EXISTS points_account (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL UNIQUE REFERENCES user(id), total_earned INTEGER DEFAULT 0, balance INTEGER DEFAULT 0, total_spent INTEGER DEFAULT 0, expired INTEGER DEFAULT 0, frozen INTEGER DEFAULT 0, version INTEGER DEFAULT 0, level INTEGER DEFAULT 1, rank_visible INTEGER DEFAULT 1, updated_at TEXT);
+CREATE TABLE IF NOT EXISTS points_ledger (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, direction TEXT NOT NULL, amount INTEGER NOT NULL, balance_after INTEGER NOT NULL, biz_type TEXT NOT NULL, biz_ref TEXT, idempotency_key TEXT UNIQUE, remark TEXT, expire_at TEXT, operator_id INTEGER, created_at TEXT DEFAULT (CURRENT_TIMESTAMP));
+CREATE INDEX IF NOT EXISTS pl_user_time_idx ON points_ledger(user_id, created_at);
+CREATE TABLE IF NOT EXISTS sign_in_record (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, sign_date TEXT NOT NULL, streak_day INTEGER NOT NULL, points INTEGER NOT NULL, source TEXT DEFAULT 'normal', created_at TEXT DEFAULT (CURRENT_TIMESTAMP));
+CREATE UNIQUE INDEX IF NOT EXISTS sr_user_date_uq ON sign_in_record(user_id, sign_date);
+CREATE TABLE IF NOT EXISTS sign_in_summary (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL UNIQUE, current_streak INTEGER DEFAULT 0, max_streak INTEGER DEFAULT 0, last_sign_date TEXT, total_days INTEGER DEFAULT 0, month TEXT, month_days INTEGER DEFAULT 0, year_days INTEGER DEFAULT 0, remedy_cards INTEGER DEFAULT 1, updated_at TEXT);
+CREATE TABLE IF NOT EXISTS shop_item (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, type TEXT NOT NULL, subtype TEXT NOT NULL, rarity TEXT DEFAULT 'common', description TEXT, config_key TEXT, config_value TEXT, preview TEXT, points_price INTEGER NOT NULL, stock INTEGER DEFAULT -1, per_user_limit INTEGER DEFAULT 0, need_teacher_review INTEGER DEFAULT 0, status TEXT DEFAULT 'on_shelf', start_at TEXT, end_at TEXT, version INTEGER DEFAULT 0, created_at TEXT DEFAULT (CURRENT_TIMESTAMP), updated_at TEXT);
+CREATE TABLE IF NOT EXISTS redeem_order (id INTEGER PRIMARY KEY AUTOINCREMENT, order_no TEXT NOT NULL UNIQUE, user_id INTEGER NOT NULL, item_id INTEGER NOT NULL, quantity INTEGER DEFAULT 1, points_cost INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'completed', receiver_info TEXT, idempotency_key TEXT UNIQUE, handled_by INTEGER, remark TEXT, created_at TEXT DEFAULT (CURRENT_TIMESTAMP), updated_at TEXT);
+CREATE TABLE IF NOT EXISTS user_decoration (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, item_id INTEGER, subtype TEXT NOT NULL, config_key TEXT, config_value TEXT, source TEXT DEFAULT 'purchase', is_equipped INTEGER DEFAULT 0, acquired_at TEXT DEFAULT (CURRENT_TIMESTAMP), expire_at TEXT);
+CREATE INDEX IF NOT EXISTS ud_user_subtype_idx ON user_decoration(user_id, subtype);
 CREATE INDEX IF NOT EXISTS ans_assignment_id_idx ON answer(assignment_id);
 CREATE INDEX IF NOT EXISTS ans_student_id_idx ON answer(student_id);
 CREATE UNIQUE INDEX IF NOT EXISTS ans_unique_idx ON answer(assignment_id, student_id, question_id);
@@ -139,6 +141,13 @@ CREATE TABLE IF NOT EXISTS qa_message (id INTEGER PRIMARY KEY AUTOINCREMENT, ses
 CREATE INDEX IF NOT EXISTS qm_session_id_idx ON qa_message(session_id);
 CREATE TABLE IF NOT EXISTS review_record (id INTEGER PRIMARY KEY AUTOINCREMENT, grading_task_id INTEGER NOT NULL REFERENCES grading_task(id), reviewer_id INTEGER NOT NULL REFERENCES user(id), reviewer_role TEXT, action TEXT NOT NULL, ai_score REAL, final_score REAL, comment TEXT, created_at TEXT DEFAULT (CURRENT_TIMESTAMP));
 CREATE INDEX IF NOT EXISTS rr_task_id_idx ON review_record(grading_task_id);
+CREATE TABLE IF NOT EXISTS discussion_post (id INTEGER PRIMARY KEY AUTOINCREMENT, course_id INTEGER NOT NULL REFERENCES course(id), author_id INTEGER NOT NULL REFERENCES user(id), title TEXT NOT NULL, content TEXT NOT NULL, is_pinned INTEGER DEFAULT 0, like_count INTEGER DEFAULT 0, reply_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (CURRENT_TIMESTAMP), updated_at TEXT);
+CREATE INDEX IF NOT EXISTS dp_course_id_idx ON discussion_post(course_id);
+CREATE INDEX IF NOT EXISTS dp_created_at_idx ON discussion_post(created_at);
+CREATE TABLE IF NOT EXISTS discussion_reply (id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER NOT NULL REFERENCES discussion_post(id) ON DELETE CASCADE, author_id INTEGER NOT NULL REFERENCES user(id), content TEXT NOT NULL, like_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (CURRENT_TIMESTAMP));
+CREATE INDEX IF NOT EXISTS dr_post_id_idx ON discussion_reply(post_id);
+CREATE TABLE IF NOT EXISTS discussion_like (id INTEGER PRIMARY KEY AUTOINCREMENT, target_type TEXT NOT NULL, target_id INTEGER NOT NULL, user_id INTEGER NOT NULL REFERENCES user(id), created_at TEXT DEFAULT (CURRENT_TIMESTAMP));
+CREATE UNIQUE INDEX IF NOT EXISTS dl_unique_idx ON discussion_like(target_type, target_id, user_id);
 `;
 }
 
@@ -147,20 +156,15 @@ export async function initDb(): Promise<ReturnType<typeof drizzle>> {
   if (g.__TL_INIT_PROMISE) return g.__TL_INIT_PROMISE;
 
   g.__TL_INIT_PROMISE = (async () => {
-    const SQL = await initSqlJs();
     const dbPath = getDbPath();
     const dir = path.dirname(dbPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
     const isNew = !fs.existsSync(dbPath);
 
-    if (!isNew) {
-      g.__TL_SQLJS = new SQL.Database(new Uint8Array(fs.readFileSync(dbPath)));
-    } else {
-      g.__TL_SQLJS = new SQL.Database();
-    }
-
-    g.__TL_SQLJS.run('PRAGMA foreign_keys = ON');
+    const sqlite = new Database(dbPath);
+    sqlite.pragma('foreign_keys = ON');
+    g.__TL_BSQLITE = sqlite;
 
     if (isNew) {
       const stmts = getCreateTableSQL()
@@ -168,7 +172,7 @@ export async function initDb(): Promise<ReturnType<typeof drizzle>> {
         .map(s => s.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim())
         .filter(s => s.length > 0 && !s.startsWith('--'));
       for (const stmt of stmts) {
-        try { g.__TL_SQLJS.run(stmt + ';'); } catch (e: any) {
+        try { sqlite.exec(stmt + ';'); } catch (e: any) {
           if (!e.message?.includes('already exists')) console.warn('SQL:', (e.message || '').slice(0, 80));
         }
       }
@@ -182,29 +186,36 @@ export async function initDb(): Promise<ReturnType<typeof drizzle>> {
       'ALTER TABLE answer ADD COLUMN return_comment TEXT',
       'ALTER TABLE error_book ADD COLUMN next_review_at TEXT',
       'ALTER TABLE error_book ADD COLUMN review_count INTEGER DEFAULT 0',
+      'CREATE TABLE IF NOT EXISTS points_account (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL UNIQUE REFERENCES user(id), total_earned INTEGER DEFAULT 0, balance INTEGER DEFAULT 0, total_spent INTEGER DEFAULT 0, expired INTEGER DEFAULT 0, frozen INTEGER DEFAULT 0, version INTEGER DEFAULT 0, level INTEGER DEFAULT 1, rank_visible INTEGER DEFAULT 1, updated_at TEXT)',
+      'CREATE TABLE IF NOT EXISTS points_ledger (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, direction TEXT NOT NULL, amount INTEGER NOT NULL, balance_after INTEGER NOT NULL, biz_type TEXT NOT NULL, biz_ref TEXT, idempotency_key TEXT UNIQUE, remark TEXT, expire_at TEXT, operator_id INTEGER, created_at TEXT DEFAULT (CURRENT_TIMESTAMP))',
+      'CREATE UNIQUE INDEX IF NOT EXISTS sr_user_date_uq ON sign_in_record(user_id, sign_date)',
       `CREATE TABLE IF NOT EXISTS grading_config (id INTEGER PRIMARY KEY AUTOINCREMENT, teacher_id INTEGER NOT NULL REFERENCES user(id), name TEXT NOT NULL, course_id INTEGER, question_type TEXT, scoring_criteria TEXT, deduction_rules TEXT, comment_style TEXT, grade_levels TEXT, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (CURRENT_TIMESTAMP), updated_at TEXT)`,
+      'ALTER TABLE user ADD COLUMN token_version INTEGER DEFAULT 0',
+      'ALTER TABLE assignment ADD COLUMN grades_published INTEGER DEFAULT 0',
+      'ALTER TABLE question ADD COLUMN locked INTEGER DEFAULT 0',
+      'ALTER TABLE question ADD COLUMN min_chars INTEGER',
+      'ALTER TABLE question ADD COLUMN max_chars INTEGER',
+      'ALTER TABLE question ADD COLUMN min_select INTEGER',
+      'ALTER TABLE question ADD COLUMN max_select INTEGER',
+      'ALTER TABLE learning_material ADD COLUMN chapter TEXT',
+      'ALTER TABLE learning_material ADD COLUMN is_required INTEGER DEFAULT 0',
+      'ALTER TABLE qa_message ADD COLUMN attachment TEXT',
+      `CREATE TABLE IF NOT EXISTS discussion_post (id INTEGER PRIMARY KEY AUTOINCREMENT, course_id INTEGER NOT NULL, author_id INTEGER NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL, is_pinned INTEGER DEFAULT 0, like_count INTEGER DEFAULT 0, reply_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (CURRENT_TIMESTAMP), updated_at TEXT)`,
+      `CREATE TABLE IF NOT EXISTS discussion_reply (id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER NOT NULL, author_id INTEGER NOT NULL, content TEXT NOT NULL, like_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (CURRENT_TIMESTAMP))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS dr_post_id_idx ON discussion_reply(post_id)`,
+      `CREATE TABLE IF NOT EXISTS discussion_like (id INTEGER PRIMARY KEY AUTOINCREMENT, target_type TEXT NOT NULL, target_id INTEGER NOT NULL, user_id INTEGER NOT NULL, created_at TEXT DEFAULT (CURRENT_TIMESTAMP))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS dl_unique_idx ON discussion_like(target_type, target_id, user_id)`,
+      // 学校名称统一（幂等）：历史库沿用旧名时改名
+      `UPDATE school SET name = '福州理工学院', short_name = 'FIT' WHERE name = '福州大学'`,
     ];
     for (const stmt of MIGRATIONS) {
-      try { g.__TL_SQLJS.run(stmt); } catch { /* 列已存在 */ }
+      try { sqlite.exec(stmt); } catch { /* 列已存在 */ }
     }
 
-    g.__TL_DB = drizzle(g.__TL_SQLJS, { schema: { ...schema, ...relations } });
-    if (isNew) saveToDisk();
+    g.__TL_DB = drizzle(sqlite, { schema: { ...schema, ...relations } });
 
-    // 进程退出时自动保存（Ctrl+C / 正常关闭）
-    const doSave = () => { try { saveToDisk(); } catch {} };
-    process.on('exit', doSave);
-    process.on('SIGINT', () => { doSave(); process.exit(); });
-    process.on('SIGTERM', () => { doSave(); process.exit(); });
-
-    // 定时自动持久化兜底：运行时写操作（提交/批改/改错题等）不再依赖进程退出才落盘，
-    // 每 30 秒静默保存一次，强杀/崩溃时最多丢 30 秒数据
-    if (!g.__TL_SAVE_INTERVAL) {
-      g.__TL_SAVE_INTERVAL = setInterval(() => {
-        try { saveToDisk(true); } catch {}
-      }, 30 * 1000);
-      g.__TL_SAVE_INTERVAL.unref?.();
-    }
+    // 启动后兜底补齐轻量列：旧库缺列时补 ALTER
+    ensureColumn('qa_message', 'attachment', 'ALTER TABLE qa_message ADD COLUMN attachment TEXT');
 
     return g.__TL_DB;
   })();
@@ -213,20 +224,33 @@ export async function initDb(): Promise<ReturnType<typeof drizzle>> {
 }
 
 export function closeDb() {
-  if (g.__TL_SQLJS) {
-    try { saveToDisk(); } catch {}
-    g.__TL_SQLJS.close();
+  if (g.__TL_BSQLITE) {
+    try { g.__TL_BSQLITE.close(); } catch {}
   }
-  g.__TL_SQLJS = undefined;
+  g.__TL_BSQLITE = undefined;
   g.__TL_DB = undefined;
   g.__TL_INIT_PROMISE = undefined;
 }
 
-export function saveDb() { saveToDisk(); }
+export function saveDb() { /* better-sqlite3 已实时落盘，无需额外操作 */ }
 
-export function getSqlite(): SqlJsDatabase {
-  if (!g.__TL_SQLJS) throw new Error('Database not initialized');
-  return g.__TL_SQLJS;
+/**
+ * 运行时兜底：确保某表存在某列（针对已在运行中、单例 DB 未重跑迁移的进程）。
+ * 幂等：列已存在则跳过；任何异常静默忽略，避免影响主流程。
+ */
+export function ensureColumn(table: string, column: string, ddl: string): void {
+  try {
+    const sqlite = g.__TL_BSQLITE;
+    if (!sqlite) return;
+    const info = sqlite.prepare(`PRAGMA table_info(${table})`).all();
+    const exists = (info as Array<{ name: string }>).some((r) => r.name === column);
+    if (!exists) sqlite.exec(ddl);
+  } catch { /* 忽略 */ }
+}
+
+export function getSqlite(): Database.Database {
+  if (!g.__TL_BSQLITE) throw new Error('Database not initialized');
+  return g.__TL_BSQLITE;
 }
 
 export { schema };

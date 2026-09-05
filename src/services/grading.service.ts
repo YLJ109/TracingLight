@@ -209,6 +209,17 @@ export function recordGrading(params: {
   const { questionData, studentId, assignmentId, studentAnswer, answerId, result, notify = false } = params;
 
   const gradingTaskId = db.transaction(() => {
+    // 防重复累计：同一 (assignment, student, question) 此前若已批改（含退回后重批），旧行置 superseded 作废，
+    // 各汇总只认最新一条 completed，避免总分/题数因行数叠加而膨胀。
+    db.update(gradingTask)
+      .set({ status: 'superseded' })
+      .where(and(
+        eq(gradingTask.assignment_id, assignmentId),
+        eq(gradingTask.student_id, studentId),
+        eq(gradingTask.question_id, questionData.id),
+      ))
+      .run();
+
     const inserted = db.insert(gradingTask).values({
       answer_id: answerId || 0,
       assignment_id: assignmentId,
@@ -230,9 +241,9 @@ export function recordGrading(params: {
     }).returning().all();
     const taskId = inserted[0]?.id ?? null;
 
-    // 非满分自动归档错题（含去重）
+    // 非满分错题归档（含去重）。空答/未作答只计 0 分但不进错题本，避免"未作答"污染错题复习队列
     const fullScore = result.full_score || questionData.default_score || 10;
-    if (!studentAnswer?.trim() || result.total_score < fullScore) {
+    if (studentAnswer?.trim() && result.total_score < fullScore) {
       const existing = db.select({ id: errorBook.id })
         .from(errorBook)
         .where(and(

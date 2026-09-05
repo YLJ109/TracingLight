@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/storage/database/db';
+import { getDb, saveDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
 import { eq, and } from 'drizzle-orm';
 import { learningBehaviorLog } from '@/storage/database/shared/schema';
@@ -44,6 +44,9 @@ export async function POST(request: NextRequest) {
         last_watched_at: new Date().toISOString(),
       }).run();
     }
+
+    // 关键写路径即时落盘，避免崩溃丢失学习行为记录
+    try { saveDb(); } catch { /* 定时持久化兜底 */ }
 
     return NextResponse.json({ success: true });
   } catch (e) {

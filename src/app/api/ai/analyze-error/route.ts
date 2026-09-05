@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAIClient, HeaderUtils, invokeStructured, aiErrorResponse } from "@/lib/ai/client";
 import { ERROR_ANALYSIS_SYSTEM_PROMPT, buildErrorAnalysisPrompt } from "@/lib/ai/prompts/error-analysis";
-import { getDb } from "@/storage/database/db";
+import { getDb, saveDb } from "@/storage/database/db";
 import { errorBook, user, question, knowledgePoint } from "@/storage/database/shared/schema";
 import { eq } from "drizzle-orm";
 import { requireAuth } from "@/lib/server-auth";
@@ -111,6 +111,8 @@ export async function POST(request: NextRequest) {
       }));
       db.insert(question).values(newQuestions).run();
     }
+
+    saveDb();
 
     return NextResponse.json({
       success: true,

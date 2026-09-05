@@ -26,8 +26,8 @@ class SeededRandom {
     let u = 0, v = 0;
     while (u === 0) u = this.next();
     while (v === 0) v = this.next();
-    let z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
-    let val = mean + z * stdDev;
+    const z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+    const val = mean + z * stdDev;
     return Math.max(min, Math.min(max, Math.round(val)));
   }
   pick<T>(arr: T[]): T { return arr[this.int(0, arr.length - 1)]; }
@@ -240,7 +240,7 @@ function generateWeakTop10(rng: SeededRandom, masteryData: ReturnType<typeof gen
   const sorted = [...masteryData]
     .filter(m => m.level === 'weak')
     .sort((a, b) => a.mastery - b.mastery)
-    .slice(0, 10);
+    .slice(0, 5);
 
   return sorted.map((m, i) => ({
     rank: i + 1,

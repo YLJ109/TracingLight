@@ -45,6 +45,7 @@ export const user = sqliteTable("user", {
   student_level: text("student_level"), // top / medium / weak
   avatar_url: text("avatar_url"),
   is_active: integer("is_active", { mode: 'boolean' }).default(true),
+  token_version: integer("token_version").default(0), // 改密/禁用时递增，使旧 JWT 全部失效
   created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("user_role_idx").on(table.role),
@@ -125,6 +126,11 @@ export const question = sqliteTable("question", {
   source: text("source").default("ai"),
   version: integer("version").default(1),
   is_active: integer("is_active", { mode: 'boolean' }).default(true),
+  locked: integer("locked", { mode: 'boolean' }).default(false), // 锁定后选题/组卷不可选
+  min_chars: integer("min_chars"), // 主观题作答最低字数（NULL=不限）
+  max_chars: integer("max_chars"), // 主观题作答最高字数（NULL=不限）
+  min_select: integer("min_select"), // 多选至少选择项数（NULL=不限）
+  max_select: integer("max_select"), // 多选最多选择项数（NULL=不限）
   created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("q_course_id_idx").on(table.course_id),
@@ -149,6 +155,7 @@ export const assignment = sqliteTable("assignment", {
   allow_resubmit: integer("allow_resubmit", { mode: 'boolean' }).default(false),
   review_mode: text("review_mode").default("auto"), // auto / teacher_review
   has_subjective: integer("has_subjective", { mode: 'boolean' }).default(false),
+  grades_published: integer("grades_published", { mode: 'boolean' }).default(false), // 成绩是否已发布给学生（发布前学生不可见批改分数）
   created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("asgn_course_id_idx").on(table.course_id),
@@ -429,6 +436,8 @@ export const learningMaterial = sqliteTable("learning_material", {
   url: text("url"),
   duration_minutes: integer("duration_minutes"),
   knowledge_point_ids: text("knowledge_point_ids", { mode: 'json' }),
+  chapter: text("chapter"), // 章节名（课程知识定位）
+  is_required: integer("is_required", { mode: 'boolean' }).default(false), // 必学任务点标记
   created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("lm_course_id_idx").on(table.course_id),
@@ -447,6 +456,119 @@ export const learningBehaviorLog = sqliteTable("learning_behavior_log", {
   uniqueIndex("lbl_unique_idx").on(table.student_id, table.material_id),
   index("lbl_student_id_idx").on(table.student_id),
 ]);
+
+// ===================== 激励体系：积分 / 签到 / 商店 =====================
+
+/** 积分账户（每学生一行）：总积分 total_earned 只增不减（排行榜依据），balance 可用积分（商城消费） */
+export const pointsAccount = sqliteTable("points_account", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  user_id: integer("user_id").notNull().references(() => user.id).unique(),
+  total_earned: integer("total_earned").default(0), // 总积分（累计获得，只增不减）
+  balance: integer("balance").default(0),           // 可用积分（可消费）
+  total_spent: integer("total_spent").default(0),   // 累计消耗
+  expired: integer("expired").default(0),           // 累计过期（预留）
+  frozen: integer("frozen").default(0),             // 冻结（预留）
+  version: integer("version").default(0),           // 乐观锁
+  level: integer("level").default(1),
+  rank_visible: integer("rank_visible", { mode: 'boolean' }).default(true),
+  updated_at: text("updated_at"),
+});
+
+/** 积分流水：每笔变动必留痕，balance_after 快照用于对账 */
+export const pointsLedger = sqliteTable("points_ledger", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  user_id: integer("user_id").notNull(),
+  direction: text("direction").notNull(), // earn / spend / refund / expire / adjust
+  amount: integer("amount").notNull(),
+  balance_after: integer("balance_after").notNull(),
+  biz_type: text("biz_type").notNull(),   // checkin / homework / review / practice / qa / reading / teacher_grant / redeem / remedy
+  biz_ref: text("biz_ref"),
+  idempotency_key: text("idempotency_key").unique(),
+  remark: text("remark"),
+  expire_at: text("expire_at"),
+  operator_id: integer("operator_id"),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+}, (table) => [index("pl_user_time_idx").on(table.user_id, table.created_at)]);
+
+/** 签到记录：UNIQUE(user_id, sign_date) 数据库层防重复 */
+export const signInRecord = sqliteTable("sign_in_record", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  user_id: integer("user_id").notNull(),
+  sign_date: text("sign_date").notNull(), // YYYY-MM-DD
+  streak_day: integer("streak_day").notNull(),
+  points: integer("points").notNull(),
+  source: text("source").notNull().default("normal"), // normal / remedy
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+}, (table) => [uniqueIndex("sr_user_date_uq").on(table.user_id, table.sign_date)]);
+
+/** 签到汇总：避免每次聚合 */
+export const signInSummary = sqliteTable("sign_in_summary", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  user_id: integer("user_id").notNull().unique(),
+  current_streak: integer("current_streak").default(0),
+  max_streak: integer("max_streak").default(0),
+  last_sign_date: text("last_sign_date"),
+  total_days: integer("total_days").default(0),
+  month: text("month"),
+  month_days: integer("month_days").default(0),
+  year_days: integer("year_days").default(0),
+  remedy_cards: integer("remedy_cards").default(1),
+  updated_at: text("updated_at"),
+});
+
+/** 商城商品 */
+export const shopItem = sqliteTable("shop_item", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  type: text("type").notNull(),       // decoration / benefit / physical
+  subtype: text("subtype").notNull(), // avatar_frame / chat_bubble / name_color / font / profile_theme / title / effect / consumable
+  rarity: text("rarity").default("common"), // common / rare / epic / limited
+  description: text("description"),
+  config_key: text("config_key"),     // 装饰样式键
+  config_value: text("config_value"), // 样式值（色值/字体栈）
+  preview: text("preview"),
+  points_price: integer("points_price").notNull(),
+  stock: integer("stock").default(-1), // -1 不限
+  per_user_limit: integer("per_user_limit").default(0),
+  need_teacher_review: integer("need_teacher_review", { mode: 'boolean' }).default(false),
+  status: text("status").default("on_shelf"), // on_shelf / off_shelf
+  start_at: text("start_at"),
+  end_at: text("end_at"),
+  version: integer("version").default(0),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+  updated_at: text("updated_at"),
+});
+
+/** 兑换订单 */
+export const redeemOrder = sqliteTable("redeem_order", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  order_no: text("order_no").notNull().unique(),
+  user_id: integer("user_id").notNull(),
+  item_id: integer("item_id").notNull(),
+  quantity: integer("quantity").default(1),
+  points_cost: integer("points_cost").notNull(),
+  status: text("status").notNull().default("completed"), // pending / paid / shipped / completed / cancelled / refunded
+  receiver_info: text("receiver_info"),
+  idempotency_key: text("idempotency_key").unique(),
+  handled_by: integer("handled_by"),
+  remark: text("remark"),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+  updated_at: text("updated_at"),
+});
+
+/** 用户装饰背包与装备：同 subtype 只能装备 1 个 */
+export const userDecoration = sqliteTable("user_decoration", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  user_id: integer("user_id").notNull(),
+  item_id: integer("item_id"),
+  subtype: text("subtype").notNull(),
+  config_key: text("config_key"),
+  config_value: text("config_value"),
+  source: text("source").default("purchase"), // purchase / achievement / grant
+  is_equipped: integer("is_equipped", { mode: 'boolean' }).default(false),
+  acquired_at: text("acquired_at").default(sql`(CURRENT_TIMESTAMP)`),
+  expire_at: text("expire_at"),
+}, (table) => [index("ud_user_subtype_idx").on(table.user_id, table.subtype)]);
 
 // ===================== 教师批改规则配置 =====================
 
@@ -523,6 +645,7 @@ export const qaMessage = sqliteTable("qa_message", {
   session_id: integer("session_id").notNull().references(() => qaSession.id),
   role: text("role").notNull(), // user / assistant
   content: text("content").notNull(),
+  attachment: text("attachment"), // JSON: {type:'image'|'file', name, size, dataUrl?} 用户上传附件
   created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("qm_session_id_idx").on(table.session_id),
@@ -542,4 +665,43 @@ export const reviewRecord = sqliteTable("review_record", {
   created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("rr_task_id_idx").on(table.grading_task_id),
+]);
+
+// ===================== 讨论区 =====================
+
+export const discussionPost = sqliteTable("discussion_post", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  course_id: integer("course_id").notNull().references(() => course.id),
+  author_id: integer("author_id").notNull().references(() => user.id),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  is_pinned: integer("is_pinned", { mode: 'boolean' }).default(false),
+  like_count: integer("like_count").default(0),
+  reply_count: integer("reply_count").default(0),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+  updated_at: text("updated_at"),
+}, (table) => [
+  index("dp_course_id_idx").on(table.course_id),
+  index("dp_created_at_idx").on(table.created_at),
+]);
+
+export const discussionReply = sqliteTable("discussion_reply", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  post_id: integer("post_id").notNull().references(() => discussionPost.id, { onDelete: "cascade" }),
+  author_id: integer("author_id").notNull().references(() => user.id),
+  content: text("content").notNull(),
+  like_count: integer("like_count").default(0),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+}, (table) => [
+  index("dr_post_id_idx").on(table.post_id),
+]);
+
+export const discussionLike = sqliteTable("discussion_like", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  target_type: text("target_type").notNull(), // post / reply
+  target_id: integer("target_id").notNull(),
+  user_id: integer("user_id").notNull().references(() => user.id),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+}, (table) => [
+  uniqueIndex("dl_unique_idx").on(table.target_type, table.target_id, table.user_id),
 ]);

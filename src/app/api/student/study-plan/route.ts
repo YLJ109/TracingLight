@@ -16,17 +16,18 @@ export async function GET(request: NextRequest) {
     const db = getDb();
     const mockData = generateStudentData(studentId);
 
-    // Get DB study plans（查今天及未来的未完成计划，避免过期计划干扰）
+    // Get DB study plans（查今天及未来的全部计划，含已完成，用于准确的完成统计）
     const today = new Date().toISOString().split("T")[0];
-    const plans = db.select()
+    const allPlans = db.select()
       .from(studyPlan)
       .where(and(
         eq(studyPlan.student_id, studentId),
-        eq(studyPlan.status, "pending"),
         gte(studyPlan.plan_date, today)
       ))
       .orderBy(asc(studyPlan.plan_date), asc(studyPlan.time_slot))
       .all();
+    // 日程展示仍以「未完成」任务为主（与原逻辑一致）；统计则在含已完成的完整数据上计算
+    const plans = allPlans.filter((p) => p.status === "pending");
 
     // Group by date
     const dayMap = new Map<string, { day: string; date: string; sessions: any[] }>();
@@ -83,8 +84,8 @@ export async function GET(request: NextRequest) {
         schedules: schedules || [],
         exams: exams || [],
         generatedAt: plans[0]?.generated_at || null,
-        totalSessions: plans?.length || 0,
-        completedSessions: plans?.filter((p) => p.status === "completed").length || 0,
+        totalSessions: allPlans?.length || 0,
+        completedSessions: allPlans?.filter((p) => p.status === "completed").length || 0,
       },
     });
   } catch (error: unknown) {

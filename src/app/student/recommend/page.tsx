@@ -1,11 +1,10 @@
 "use client";
 
-import { toast } from 'sonner';
-
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { apiFetch } from "@/lib/api-fetch";
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as echarts from "echarts";
+import { StudyPlanPanel } from "@/components/study-plan-panel";
 import {
   BookOpen, Brain, Target, Calendar, Sparkles, TrendingUp,
   AlertTriangle, Lightbulb, ChevronRight, Loader2, CheckCircle2,
@@ -37,10 +36,6 @@ interface WeakPoint {
   relatedKnowledge: Array<{ nodeName: string; mastery: number }>;
   aiSuggestion: string; priority: "P0" | "P1" | "P2";
 }
-interface ScheduleItem {
-  id: number; day_of_week: string; start_time: string; end_time: string;
-  title: string; schedule_type: string;
-}
 interface StudyPlanItem {
   id?: number; plan_date: string; time_slot: string; subject: string;
   content: string; duration_minutes: number; plan_type: string; status: string; is_ai_generated: boolean;
@@ -60,11 +55,9 @@ interface RecommendData {
   upcomingExams: UpcomingExam[]; aiInsights: AiInsight[]; courses: Array<{ id: number; name: string; short_name: string }>;
 }
 
-const DAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-const TIME_SLOTS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
-
 export default function RecommendPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [studentId, setStudentId] = useState<number>(() => {
     if (typeof window === "undefined") return 3;
     const stored = localStorage.getItem("current_user");
@@ -72,10 +65,10 @@ export default function RecommendPage() {
   });
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<RecommendData | null>(null);
-  const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
-  const [showAddSchedule, setShowAddSchedule] = useState(false);
-  const [newSchedule, setNewSchedule] = useState({ day_of_week: "周一", start_time: "14:00", end_time: "15:30", title: "", schedule_type: "personal" });
-  const [activeTab, setActiveTab] = useState<"overview" | "mastery" | "weak">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "mastery" | "weak" | "plan">(() => {
+    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "plan") return "plan";
+    return "overview";
+  });
 
   const radarRef = useRef<HTMLDivElement>(null);
   const trendRef = useRef<HTMLDivElement>(null);
@@ -94,16 +87,11 @@ export default function RecommendPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [recRes, schRes] = await Promise.all([
-        apiFetch(`/api/student/recommend?student_id=${studentId}`),
-        apiFetch(`/api/student/schedule?student_id=${studentId}`),
-      ]);
+      const recRes = await apiFetch(`/api/student/recommend?student_id=${studentId}`);
       const rec = await recRes.json();
-      const sch = await schRes.json();
       if (rec.success) {
         setData(rec.data);
       }
-      if (sch.success) setSchedules(Array.isArray(sch.data?.schedules) ? sch.data.schedules : []);
     } catch { /* */ }
     setLoading(false);
   }, [studentId]);
@@ -182,21 +170,6 @@ export default function RecommendPage() {
     return () => { ro.disconnect(); chart.dispose(); };
   }, [activeTab, courseComparison]);
 
-  const addSchedule = async () => {
-    if (!studentId) { toast.error("请先登录"); return; }
-    if (!newSchedule.title.trim()) { toast.error("请输入安排标题"); return; }
-    try {
-      const res = await apiFetch("/api/student/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...newSchedule, student_id: studentId }) });
-      const result = await res.json();
-      if (result.success) { setSchedules(prev => [...prev, result.data]); setNewSchedule({ day_of_week: "周一", start_time: "14:00", end_time: "15:30", title: "", schedule_type: "personal" }); setShowAddSchedule(false); toast.success("添加成功"); }
-      else { toast.error(result.error || "添加失败"); }
-    } catch { toast.error("网络错误"); }
-  };
-
-  const deleteSchedule = async (id: number) => {
-    try { await apiFetch(`/api/student/schedule?id=${id}&student_id=${studentId}`, { method: "DELETE" }); setSchedules(prev => prev.filter(s => s.id !== id)); } catch { /* */ }
-  };
-
   const getPriorityStyle = (p: string) => {
     if (p === "P0") return "bg-red-50 text-red-700 border-red-200";
     if (p === "P1") return "bg-amber-50 text-amber-700 border-amber-200";
@@ -219,7 +192,7 @@ export default function RecommendPage() {
     return "bg-blue-50 border-blue-200 text-blue-800";
   };
 
-  if (loading) return <div className="flex items-center justify-center h-96"><Loader2 className="w-8 h-8 animate-spin text-slate-400" /></div>;
+  if (loading && activeTab !== "plan") return <div className="flex items-center justify-center h-96"><Loader2 className="w-8 h-8 animate-spin text-slate-400" /></div>;
 
   return (
     <div className="space-y-6">
@@ -234,8 +207,15 @@ export default function RecommendPage() {
 
       {/* Tab 导航 */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit">
-        {([["overview", "总览"], ["mastery", "知识掌握"], ["weak", "薄弱分析"]] as const).map(([key, label]) => (
-          <button key={key} onClick={() => setActiveTab(key)} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>{label}</button>
+        {([["overview", "总览"], ["mastery", "知识掌握"], ["weak", "薄弱分析"], ["plan", "学习规划"]] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => {
+              setActiveTab(key);
+              router.replace(`${pathname}?tab=${key}`);
+            }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+          >{label}</button>
         ))}
       </div>
 
@@ -419,7 +399,7 @@ export default function RecommendPage() {
                     className="text-xs py-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors"
                   >去错题本复习</button>
                   <button
-                    onClick={() => router.push('/student/study-plan')}
+                    onClick={() => setActiveTab('plan')}
                     className="text-xs py-2 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors"
                   >加入学习规划</button>
                   <button
@@ -431,6 +411,11 @@ export default function RecommendPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* ===== 学习规划 Tab ===== */}
+      {activeTab === "plan" && (
+        <StudyPlanPanel />
       )}
 
     </div>

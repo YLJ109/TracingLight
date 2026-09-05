@@ -165,3 +165,8 @@ Desktop.ini
 .codegraph/
 data/
 .workbuddy/
+
+# Playwright E2E artifacts
+playwright-report/
+test-results/
+blob-report/

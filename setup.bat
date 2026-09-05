@@ -1,93 +1,70 @@
 @echo off
-setlocal EnableExtensions EnableDelayedExpansion
-title TracingLight Setup
+setlocal enabledelayedexpansion
 cd /d "%~dp0"
+title 溯光TracingLight - 一键部署(Setup)
 
-echo.
-echo  ============================================
-echo    TracingLight - One Click Setup
-echo  ============================================
-echo.
+echo ====================================================
+echo   溯光 TracingLight  一键部署 / 初始化
+echo ====================================================
 
-REM ---------- 1. Check Node.js ----------
+REM ---------- 1. 检查 Node.js ----------
 where node >nul 2>nul
 if errorlevel 1 (
-    echo  [ERROR] Node.js is not installed.
-    echo          Please download and install the LTS version from:
-    echo          https://nodejs.org
+    echo.
+    echo  [错误] 未检测到 Node.js，请先安装 Node.js 18+ 后重新运行。
+    echo         下载地址: https://nodejs.org/
     echo.
     pause
     exit /b 1
 )
-for /f "delims=" %%v in ('node -v') do set "NODE_VER=%%v"
-echo  [1/4] Node.js found: !NODE_VER!
-echo.
+for /f "delims=" %%v in ('node -v') do set NODE_VER=%%v
+echo [1/4] Node.js 已就绪: !NODE_VER!
 
-REM ---------- 2. Install dependencies ----------
-if not exist "node_modules" (
-    echo  [2/4] Installing dependencies, please wait a few minutes...
-    call npm install --no-audit --no-fund
+REM ---------- 2. 安装依赖（未安装时才装） ----------
+if exist "node_modules\.bin" (
+    echo [2/4] 依赖已存在，跳过安装。
+) else (
+    echo [2/4] 正在安装依赖，首次可能需要几分钟，请耐心等待...
+    call npx --yes pnpm install
     if errorlevel 1 (
         echo.
-        echo  [ERROR] npm install failed.
-        echo          Check your network connection and run setup.bat again.
+        echo  [错误] 依赖安装失败，请检查网络后重试。
         echo.
         pause
         exit /b 1
     )
-    echo  [2/4] Dependencies installed.
-) else (
-    echo  [2/4] Dependencies already installed - skipping.
 )
-echo.
 
-REM ---------- 3. Prepare .env (no API key needed here) ----------
+REM ---------- 3. 数据目录 & 首次播种（仅空库时） ----------
 if not exist "data" mkdir data
-if not exist ".env" (
-    echo  [3/4] Creating .env ...
-    set "SECRET="
-    for /f "delims=" %%i in ('node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"') do set "SECRET=%%i"
-    >  ".env" echo # TracingLight environment
-    >> ".env" echo JWT_SECRET=!SECRET!
-    >> ".env" echo DATABASE_PATH=./data/tracinglight.db
-    >> ".env" echo NODE_ENV=development
-    >> ".env" echo PORT=5000
-    echo  [3/4] .env created.
-    echo.
-    echo  --------------------------------------------------
-    echo   NOTE: AI features need an API key.
-    echo   After the server starts, login as admin (pwd: 123456)
-    echo   then go to: Admin - System Settings - AI Service Config
-    echo   and fill in your API URL and Key there.
-    echo  --------------------------------------------------
+if exist "data\tracinglight.db" (
+    echo [3/4] 数据库已存在，保留现有数据。
 ) else (
-    echo  [3/4] .env already exists - skipping.
-)
-echo.
-
-REM ---------- 4. Seed database (first run only) ----------
-if not exist "data\tracinglight.db" (
-    echo  [4/4] Seeding database, please wait...
-    call npx tsx src/storage/database/seed.ts
+    echo [3/4] 首次运行，正在生成演示数据...
+    call "%~dp0node_modules\.bin\tsx.cmd" src/storage/database/seed.ts
     if errorlevel 1 (
         echo.
-        echo  [ERROR] Database seed failed.
+        echo  [错误] 演示数据生成失败。
         echo.
         pause
         exit /b 1
     )
-    echo  [4/4] Database ready.
-) else (
-    echo  [4/4] Database already exists - skipping. (Run init-db.bat to reset)
 )
+
+REM ---------- 4. 生产构建 ----------
+echo [4/4] 正在构建生产版本，请稍候...
+call "%~dp0node_modules\.bin\next.cmd" build
+if errorlevel 1 (
+    echo.
+    echo  [错误] 构建失败。
+    echo.
+    pause
+    exit /b 1
+)
+
 echo.
-echo  ============================================
-echo    Setup complete!
-echo    Next: run start.bat to start the server.
-echo    http://localhost:5000
-echo    Accounts: teacher_wang / stu_zhang / admin
-echo    AI config: Admin - System Settings
-echo  ============================================
-echo.
+echo ====================================================
+echo   部署完成！请运行  start.bat  启动服务
+echo   访问地址:  http://localhost:5000
+echo ====================================================
 pause
-endlocal

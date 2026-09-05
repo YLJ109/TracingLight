@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { apiFetch } from '@/lib/api-fetch';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, BookOpen, FolderOpen, Network, MessageCircle, Loader2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, FolderOpen, Network, MessageCircle, MessagesSquare, Loader2 } from 'lucide-react';
 
 /**
  * P2-3：课程学习聚合页（重设计）
@@ -46,6 +46,7 @@ export default function StudentCoursePage() {
     { href: `/student/materials?course_id=${courseId}`, label: '学习材料', desc: `${materialCount} 份资料`, icon: FolderOpen, tone: 'from-violet-500 to-fuchsia-500' },
     { href: `/student/assignments`, label: '本课作业', desc: `${assignmentCount} 项作业`, icon: BookOpen, tone: 'from-fuchsia-500 to-pink-500' },
     { href: `/student/knowledge-graph?course_id=${courseId}`, label: '知识图谱', desc: '掌握度诊断', icon: Network, tone: 'from-indigo-500 to-violet-500' },
+    { href: `/student/discussion?course_id=${courseId}`, label: '课程讨论', desc: '发帖提问、交流讨论', icon: MessagesSquare, tone: 'from-amber-500 to-orange-500' },
     { href: `/student/assistant`, label: '问 AI 老师', desc: '本课疑问随时问', icon: MessageCircle, tone: 'from-pink-500 to-rose-500' },
   ];
 

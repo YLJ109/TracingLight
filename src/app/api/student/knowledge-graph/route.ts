@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
-import { course, knowledgePoint, gradingTask } from '@/storage/database/shared/schema';
+import { course, knowledgePoint, gradingTask, knowledgeMasteryLog } from '@/storage/database/shared/schema';
 import { eq, and, inArray } from 'drizzle-orm';
 
 // ─── Simple in-memory cache with TTL ───
@@ -232,12 +232,38 @@ export async function GET(req: NextRequest) {
   if (!kps || kps.length === 0) return NextResponse.json({ success: false, error: '知识点数据为空' }, { status: 500 });
 
   const kpMap = new Map(kps.map((k) => [k.id, k]));
-
-  // ─── Load mastery (from grading_task or simulate) ───
   const kpIds = kps.map((k) => k.id);
-  let realMasteries: Record<number, number> = {};
+
+  // ─── 真实掌握度来源优先级：knowledgeMasteryLog（练习回写/掌握度流水）> grading_task > 模拟 ───
+  // 与 practice/submit 的回写保持一致——练习/掌握度更新写入 knowledgeMasteryLog，图谱据此展示，
+  // 避免"图谱"与"练习"两台口径互为独立、互不同步。
+  const realMasteries: Record<number, number> = {};
+  const logMasteries: Record<number, number> = {};
 
   if (studentId) {
+    const logs = db.select({
+      knowledge_point_id: knowledgeMasteryLog.knowledge_point_id,
+      mastery_rate: knowledgeMasteryLog.mastery_rate,
+      recorded_at: knowledgeMasteryLog.recorded_at,
+    })
+      .from(knowledgeMasteryLog)
+      .where(and(
+        eq(knowledgeMasteryLog.student_id, studentId),
+        inArray(knowledgeMasteryLog.knowledge_point_id, kpIds)
+      ))
+      .all();
+
+    if (logs && logs.length > 0) {
+      const best: Record<number, { rate: number; date: string }> = {};
+      for (const log of logs) {
+        const k = log.knowledge_point_id;
+        const d = log.recorded_at || '';
+        const cur = best[k];
+        if (!cur || d >= cur.date) best[k] = { rate: Number(log.mastery_rate), date: d };
+      }
+      for (const [k, v] of Object.entries(best)) logMasteries[Number(k)] = v.rate;
+    }
+
     const grades = db.select({
       knowledge_point_id: gradingTask.knowledge_point_id,
       total_score: gradingTask.total_score,
@@ -265,6 +291,7 @@ export async function GET(req: NextRequest) {
 
   const getMastery = (kpId: number): number | null => {
     if (!studentId) return null;
+    if (logMasteries[kpId] !== undefined) return logMasteries[kpId];
     if (realMasteries[kpId] !== undefined) return realMasteries[kpId];
     return simulateMastery(studentId, kpId);
   };

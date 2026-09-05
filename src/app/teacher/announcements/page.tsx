@@ -61,7 +61,6 @@ export default function TeacherAnnouncementsPage() {
         body: JSON.stringify({
           title, content,
           course_id: courseId || null,
-          teacher_id: user.id,
         }),
       });
       if (res.ok) {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, saveDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
-import { assignment, answer, notification } from '@/storage/database/shared/schema';
+import { assignment, answer, notification, gradingTask } from '@/storage/database/shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { isAssignmentInTeacherScope, isStudentInTeacherScope } from '@/lib/teacher-scope';
 
@@ -19,6 +19,11 @@ export async function POST(request: NextRequest) {
     const { assignment_id, student_id, comment } = body;
     if (!assignment_id || !student_id) {
       return NextResponse.json({ error: '缺少必要参数' }, { status: 400 });
+    }
+    // 退回理由必填：让学生明确知道需要修改什么（C2 学习通式闭环）
+    const reason = cleanReturnComment(comment);
+    if (!reason) {
+      return NextResponse.json({ error: '请填写退回理由，学生需据此改进' }, { status: 400 });
     }
 
     // 跨租户校验
@@ -47,10 +52,20 @@ export async function POST(request: NextRequest) {
       .set({
         returned: true,
         returned_at: now,
-        return_comment: comment ? String(comment).slice(0, 200) : null,
+        return_comment: reason,
         is_submitted: false,
       })
       .where(and(eq(answer.assignment_id, Number(assignment_id)), eq(answer.student_id, Number(student_id))))
+      .run();
+
+    // 作废该生该作业已批改的 gradingTask（置 superseded），退回重做后旧成绩不再计入总分/题数，
+    // 待学生重新提交后由统一批改管线生成新的 completed 记录。
+    db.update(gradingTask)
+      .set({ status: 'superseded' })
+      .where(and(
+        eq(gradingTask.assignment_id, Number(assignment_id)),
+        eq(gradingTask.student_id, Number(student_id)),
+      ))
       .run();
 
     // 通知学生（复用通知机制）
@@ -58,7 +73,7 @@ export async function POST(request: NextRequest) {
       user_id: Number(student_id),
       type: 'assignment',
       title: '作业被退回',
-      content: `《${asgn.title}》被老师退回${comment ? `：${String(comment).slice(0, 80)}` : ''}，请修改后重新提交`,
+      content: `《${asgn.title}》被老师退回：${reason.slice(0, 80)}，请修改后重新提交`,
       link: `/student/assignments/${assignment_id}`,
     }).run();
     try { saveDb(); } catch { /* 定时持久化兜底 */ }
@@ -68,4 +83,17 @@ export async function POST(request: NextRequest) {
     console.error('Return assignment error:', e);
     return NextResponse.json({ error: '退回失败' }, { status: 500 });
   }
+}
+
+/**
+ * 退回理由：剥 HTML → 截断 → 去空白后非空校验
+ * 落库统一走白名单清洗（复用富文本工具），兼顾 XSS 防护与显示安全。
+ */
+function cleanReturnComment(comment: unknown): string {
+  const raw = typeof comment === 'string' ? comment : '';
+  const text = raw
+    .replace(/<[^>]*>/g, '')          // 剥标签
+    .replace(/\s+/g, ' ')             // 压缩空白
+    .trim();
+  return text.slice(0, 200);
 }

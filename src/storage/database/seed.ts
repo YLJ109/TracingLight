@@ -33,7 +33,7 @@ async function seed() {
   // ===================== 1. 基础数据 =====================
   console.log('📚 插入学校/学院/专业/班级...');
   db.insert(school).values({
-    id: 1, name: '福州大学', short_name: 'FZU'
+    id: 1, name: '福州理工学院', short_name: 'FIT'
   }).run();
   db.insert(college).values({
     id: 1, school_id: 1, name: '计算机与大数据学院', short_name: 'CS'
@@ -884,9 +884,9 @@ async function seed() {
     { id: 1, course_id: 1, teacher_id: 1, title: '变量与数据类型', type: 'document', content: 'Python 中的变量是对象的引用，无需显式声明类型。核心数据类型包括 int、float、str、bool，以及序列类型 list、tuple 和映射类型 dict。理解可变与不可变类型是掌握 Python 的关键。', url: '', duration_minutes: 20, knowledge_point_ids: [1, 2] },
     { id: 2, course_id: 1, teacher_id: 1, title: '流程控制：if / else', type: 'slide', content: '条件判断是程序分支的基础。掌握 if / elif / else 的语法、缩进规则与逻辑运算（and / or / not），并注意比较运算符的优先级。', url: '', duration_minutes: 15, knowledge_point_ids: [3] },
     { id: 3, course_id: 1, teacher_id: 1, title: '循环结构 for / while', type: 'document', content: '循环用于重复执行代码块。for 遍历序列，while 按条件循环。重点掌握 break / continue 与 else 子句，以及嵌套循环的时间复杂度意识。', url: '', duration_minutes: 25, knowledge_point_ids: [4] },
-    { id: 4, course_id: 1, teacher_id: 1, title: '函数定义与调用', type: 'video', content: '函数是代码复用的基本单元。掌握 def 定义、参数传递（位置/关键字/默认/可变参数）、返回值，以及作用域规则（LEGB）。', url: '', duration_minutes: 30, knowledge_point_ids: [5] },
+    { id: 4, course_id: 1, teacher_id: 1, title: '函数定义与调用', type: 'video', content: '函数是代码复用的基本单元。掌握 def 定义、参数传递（位置/关键字/默认/可变参数）、返回值，以及作用域规则（LEGB）。', url: 'https://www.bilibili.com/video/BV1yVKo6HEoq', duration_minutes: 26, knowledge_point_ids: [5] },
     { id: 5, course_id: 1, teacher_id: 1, title: '列表与元组', type: 'document', content: '列表是可变的序列类型，元组是不可变的。掌握切片、列表推导式、常用方法（append/extend/pop/sort），以及元组的打包与解包。', url: '', duration_minutes: 20, knowledge_point_ids: [6] },
-    { id: 6, course_id: 2, teacher_id: 1, title: '查找算法：二分查找', type: 'video', content: '二分查找在有序序列中每次折半缩小范围，时间复杂度 O(log n)。重点理解边界条件（left/right 的更新）与终止条件。', url: '', duration_minutes: 20, knowledge_point_ids: [20] },
+    { id: 6, course_id: 2, teacher_id: 1, title: '查找算法：二分查找', type: 'video', content: '二分查找在有序序列中每次折半缩小范围，时间复杂度 O(log n)。重点理解边界条件（left/right 的更新）与终止条件。', url: 'https://www.bilibili.com/video/BV11A411R7BK', duration_minutes: 20, knowledge_point_ids: [20] },
     { id: 7, course_id: 2, teacher_id: 1, title: '二叉排序树', type: 'slide', content: '二叉排序树（BST）左小右大，中序遍历得到有序序列。掌握插入、查找、删除三大操作，理解退化为链表的最坏情况。', url: '', duration_minutes: 25, knowledge_point_ids: [21] },
   ];
   db.insert(learningMaterial).values(materials).run();

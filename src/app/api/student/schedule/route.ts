@@ -81,6 +81,9 @@ export async function POST(request: NextRequest) {
 
     const data = result[0] || null;
 
+    // 关键写路径即时落盘
+    try { saveDb(); } catch { /* 定时持久化兜底 */ }
+
     return NextResponse.json({ success: true, data });
   } catch (error: unknown) {
     if (error && typeof (error as { status?: number }).status === "number") return error as NextResponse;
@@ -157,6 +160,9 @@ export async function DELETE(request: NextRequest) {
     db.delete(studentSchedule)
       .where(eq(studentSchedule.id, parseInt(id)))
       .run();
+
+    // 关键写路径即时落盘
+    try { saveDb(); } catch { /* 定时持久化兜底 */ }
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {

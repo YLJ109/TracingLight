@@ -7,8 +7,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { renderRichContent } from '@/lib/rich-text';
-import { ArrowLeft, CheckCircle, XCircle, AlertTriangle, Loader2, Sparkles } from 'lucide-react';
+import { ArrowLeft, CheckCircle, XCircle, AlertTriangle, Loader2, Sparkles, CheckCircle2, Clock } from 'lucide-react';
 import { getCurrentUser } from '@/lib/auth-helper';
+import { toast } from 'sonner';
 
 interface QuestionDetail {
   question: {
@@ -85,7 +86,6 @@ export default function TeacherGradeDetailPage() {
   const [data, setData] = useState<GradingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [grading, setGrading] = useState(false);
-  const [message, setMessage] = useState('');
 
   // Get studentId from query params or localStorage
   useEffect(() => {
@@ -114,9 +114,28 @@ export default function TeacherGradeDetailPage() {
     fetchData();
   }, [fetchData]);
 
+  // 教师提交覆盖分/评语（成功后刷新）
+  const submitOverride = useCallback(async (gradingTaskId: number, payload: Record<string, unknown>, successMsg: string) => {
+    try {
+      const res = await apiFetch('/api/teacher/assignments/grade/override', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success(successMsg);
+        fetchData();
+      } else {
+        toast.error('保存失败：' + (json.error || '未知错误'));
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('保存请求失败');
+    }
+  }, [fetchData]);
+
   const handleBatchGrade = async () => {
     setGrading(true);
-    setMessage('');
     try {
       const res = await apiFetch('/api/ai/grade/batch', {
         method: 'POST',
@@ -125,13 +144,19 @@ export default function TeacherGradeDetailPage() {
       });
       const json = await res.json();
       if (json.success) {
-        setMessage(`批改完成！共批改 ${json.data.graded_count} 题，${json.data.error_count} 题已自动归档错题本`);
+        const failedCount = json.data.failed_count ?? 0;
+        if (failedCount > 0) {
+          toast.success(`批改完成！共批改 ${json.data.graded_count} 题，${failedCount} 题批改失败`);
+        } else {
+          toast.success(`批改完成！共批改 ${json.data.graded_count} 题`);
+        }
         fetchData();
       } else {
-        setMessage('批改失败：' + (json.error || '未知错误'));
+        toast.error('批改失败：' + (json.error || '未知错误'));
       }
     } catch (e) {
-      setMessage('批改请求失败');
+      console.error(e);
+      toast.error('批改请求失败');
     } finally {
       setGrading(false);
     }
@@ -142,6 +167,10 @@ export default function TeacherGradeDetailPage() {
   const [returnComment, setReturnComment] = useState('');
   const [returning, setReturning] = useState(false);
   const handleReturn = async () => {
+    if (!returnComment.trim()) {
+      toast.error('请填写退回理由，学生需据此改进');
+      return;
+    }
     setReturning(true);
     try {
       const res = await apiFetch('/api/teacher/assignments/return', {
@@ -151,19 +180,51 @@ export default function TeacherGradeDetailPage() {
       });
       const json = await res.json();
       if (json.success) {
-        setMessage('已退回该学生的作业，学生可修改后重新提交');
+        toast.success('已退回该学生的作业，学生可修改后重新提交');
         setReturnOpen(false);
         setReturnComment('');
         fetchData();
       } else {
-        setMessage('退回失败：' + (json.error || '未知错误'));
+        toast.error('退回失败：' + (json.error || '未知错误'));
       }
     } catch {
-      setMessage('退回请求失败');
+      toast.error('退回请求失败');
     } finally {
       setReturning(false);
     }
   };
+
+  // 一键确认全部：以 AI 分为准，批量确认该学生所有「已批但未确认」的题目
+  const [confirmAllLoading, setConfirmAllLoading] = useState(false);
+  const handleConfirmAll = useCallback(async () => {
+    const unconfirmed = (data?.details || []).filter(
+      (d) => d.grading?.status === 'completed' && d.grading.teacher_override_score == null
+    );
+    if (unconfirmed.length === 0) {
+      toast.info('当前没有待确认的 AI 评分');
+      return;
+    }
+    setConfirmAllLoading(true);
+    let ok = 0;
+    try {
+      for (const d of unconfirmed) {
+        const g = d.grading!;
+        const res = await apiFetch('/api/teacher/assignments/grade/override', {
+          method: 'POST',
+          body: JSON.stringify({ grading_task_id: g.id, override_score: g.total_score }),
+        });
+        const json = await res.json();
+        if (json.success) ok += 1;
+      }
+      toast.success(`已批量确认 ${ok}/${unconfirmed.length} 题为 AI 评分`);
+    } catch (e) {
+      console.error(e);
+      toast.error('部分确认失败，请重试');
+    } finally {
+      setConfirmAllLoading(false);
+      fetchData();
+    }
+  }, [data, fetchData]);
 
   if (loading) {
     return (
@@ -264,22 +325,36 @@ export default function TeacherGradeDetailPage() {
         </Card>
       </div>
 
-      {message && (
-        <div className="p-3 rounded-lg bg-emerald-50 text-emerald-700 text-sm border border-emerald-200">
-          {message}
-        </div>
-      )}
-
       {/* 确认状态提示：AI 批改后需教师确认分数 */}
       {(() => {
         const graded = details.filter((d) => d.grading?.status === 'completed');
         const confirmed = graded.filter((d) => d.grading?.teacher_override_score != null).length;
         if (graded.length === 0) return null;
+        const allConfirmed = confirmed === graded.length;
         return (
-          <div className={`p-3 rounded-lg text-sm border ${confirmed === graded.length ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
-            {confirmed === graded.length
-              ? `✅ 已全部确认（${confirmed}/${graded.length} 题）——学生端成绩以你的确认分为准`
-              : `⏳ AI 已批改 ${graded.length} 题，其中 ${confirmed} 题经你确认、${graded.length - confirmed} 题暂按 AI 评分生效——逐题修改分数即视为确认`}
+          <div className={`flex flex-wrap items-center gap-3 p-3 rounded-lg text-sm border ${allConfirmed ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+            <div className="flex items-start gap-2 min-w-0 flex-1">
+              {allConfirmed
+                ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+                : <Clock className="w-4 h-4 mt-0.5 shrink-0" />}
+              <span>
+                {allConfirmed
+                  ? `已全部确认（${confirmed}/${graded.length} 题）——学生端成绩以你的确认分为准`
+                  : `AI 已批改 ${graded.length} 题，其中 ${confirmed} 题经你确认、${graded.length - confirmed} 题暂按 AI 评分生效——逐题修改分数即视为确认`}
+              </span>
+            </div>
+            {!allConfirmed && (
+              <Button
+                size="sm"
+                variant={allConfirmed ? 'ghost' : 'outline'}
+                className="shrink-0 border-amber-300 text-amber-700 hover:bg-amber-100"
+                onClick={handleConfirmAll}
+                disabled={confirmAllLoading}
+              >
+                {confirmAllLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                一键确认全部
+              </Button>
+            )}
           </div>
         );
       })()}
@@ -302,7 +377,7 @@ export default function TeacherGradeDetailPage() {
               <textarea
                 value={returnComment}
                 onChange={(e) => setReturnComment(e.target.value)}
-                placeholder="退回理由（可选，将通知给学生）"
+                placeholder="请填写退回理由（必填，将通知给学生）"
                 className="w-full text-sm border border-amber-200 rounded-lg p-2 outline-none focus:ring-2 focus:ring-amber-200 min-h-[60px]"
               />
               <div className="flex gap-2 justify-end">
@@ -372,7 +447,7 @@ export default function TeacherGradeDetailPage() {
                 <div className="grid grid-cols-2 gap-4 mt-4 p-3 bg-slate-50 rounded-lg">
                   <div className={`rounded-lg p-2 border ${!a?.student_answer ? 'border-red-200 bg-red-50' : isCorrect ? 'border-emerald-300 bg-emerald-50' : 'border-red-300 bg-red-50'}`}>
                     <p className="text-xs text-muted-foreground mb-1">学生作答</p>
-                    {a?.student_answer && /<(img|table|p|div|pre|ul|ol|h\d|br)[\s>]/i.test(a.student_answer) ? (
+                    {a?.student_answer && /<(img|table|p|div|pre|ul|ol|h\d|br)[\s>]|<span[^>]*white-space:\s*pre[^>]*>/i.test(a.student_answer) ? (
                       <div className="text-sm font-medium rich-view" dangerouslySetInnerHTML={{ __html: renderRichContent(a.student_answer) }} />
                     ) : (
                       <p className={`text-sm font-medium ${!a?.student_answer ? 'text-red-400 italic' : isCorrect ? 'text-emerald-700' : 'text-red-600'}`}>
@@ -422,14 +497,21 @@ export default function TeacherGradeDetailPage() {
                         placeholder={String(fmt(g.total_score))}
                         min={0}
                         max={g.full_score}
-                        onChange={e => {
+                        step="any"
+                        onBlur={e => {
                           const val = Number(e.target.value);
-                          if (!isNaN(val) && val >= 0 && val <= g.full_score) {
-                            apiFetch('/api/teacher/assignments/grade/override', {
-                              method: 'POST',
-                              body: JSON.stringify({ grading_task_id: g.id, override_score: val }),
-                            });
+                          // 空值/非法值不发请求（留空按 AI 评分生效）
+                          if (e.target.value.trim() === '' || !Number.isFinite(val)) return;
+                          if (val < 0 || val > g.full_score) {
+                            toast.error(`分值需在 0 ~ ${fmt(g.full_score)} 之间`);
+                            fetchData();
+                            return;
                           }
+                          submitOverride(
+                            g.id,
+                            { grading_task_id: g.id, override_score: val },
+                            `已确认第 ${idx + 1} 题分数为 ${fmt(val)} 分`
+                          );
                         }}
                       />
                       <span className="text-muted-foreground">/ {fmt(g.full_score)}</span>
@@ -441,10 +523,12 @@ export default function TeacherGradeDetailPage() {
                       placeholder="教师评语（可选）"
                       defaultValue={g.teacher_override_comment || ''}
                       onBlur={e => {
-                        apiFetch('/api/teacher/assignments/grade/override', {
-                          method: 'POST',
-                          body: JSON.stringify({ grading_task_id: g.id, override_comment: e.target.value }),
-                        });
+                        if (!e.target.value.trim()) return;
+                        submitOverride(
+                          g.id,
+                          { grading_task_id: g.id, override_comment: e.target.value },
+                          '评语已保存'
+                        );
                       }}
                     />
                   </div>

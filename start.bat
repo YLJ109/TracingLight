@@ -1,70 +1,50 @@
 @echo off
-setlocal EnableExtensions EnableDelayedExpansion
-title TracingLight Server
+setlocal
 cd /d "%~dp0"
+title 溯光TracingLight - 启动
 
-echo.
-echo  ============================================
-echo    TracingLight Server
-echo    http://localhost:5000
-echo    Press Ctrl+C to stop
-echo  ============================================
-echo.
+set MODE=%~1
+set PORT_DEFAULT=5000
 
-REM ---------- 1. Check Node.js ----------
-where node >nul 2>nul
-if errorlevel 1 (
-    echo  [ERROR] Node.js is not installed.
-    echo          Download the LTS version from: https://nodejs.org
+REM ---------- 检查依赖已安装 ----------
+if not exist "%~dp0node_modules\.bin\tsx.cmd" (
+    echo.
+    echo  [提示] 依赖未安装，请先运行  setup.bat  完成部署后再启动。
     echo.
     pause
     exit /b 1
 )
 
-REM ---------- 2. Check dependencies ----------
-if not exist "node_modules" (
-    echo  [ERROR] Dependencies not installed.
-    echo          Please run setup.bat first.
+REM ---------- 模式判定：默认生产，传 dev 走开发热更新 ----------
+if /i "%MODE%"=="dev" goto dev
+
+REM ---------- 生产模式 ----------
+if not exist ".next\BUILD_ID" (
+    echo.
+    echo  [提示] 未找到生产构建，请先运行  setup.bat  完成部署。
+    echo         或运行  start.bat dev  以开发模式启动。
     echo.
     pause
     exit /b 1
 )
-
-REM ---------- 3. Check database ----------
-if not exist "data\tracinglight.db" (
-    echo  [WARN] Database not found. It will be created on first start.
-    echo         (For demo data run init-db.bat or setup.bat first)
-    echo.
-)
-
-REM ---------- 4. Clean stale dev locks ----------
-if exist ".next\dev\lock" (
-    echo  Cleaning stale lock file...
-    del /q ".next\dev\lock" 2>nul
-)
-
-REM ---------- 5. Check port 5000 ----------
-netstat -ano | findstr /R /C:":5000 .*LISTENING" >nul 2>nul
-if not errorlevel 1 (
-    echo  [WARN] Port 5000 is already in use.
-    echo.
-    echo  Possible reasons:
-    echo    1. The server is already running - just open http://localhost:5000
-    echo    2. Another program occupies port 5000.
-    echo.
-    echo  To find it:  netstat -ano ^| findstr :5000
-    echo  To stop it:  taskkill /PID ^<number^> /F
-    echo.
-    pause
-    exit /b 1
-)
-
-echo  Starting server...
+if not defined PORT set "PORT=%PORT_DEFAULT%"
+set "NODE_ENV=production"
 echo.
-set PORT=5000
-call npx tsx src/server.ts
-
+echo  启动服务(生产模式):  http://localhost:%PORT%
+echo  按 Ctrl+C 停止。关闭本窗口即停止服务。
 echo.
-echo  Server stopped.
-pause
+call "%~dp0node_modules\.bin\tsx.cmd" src/server.ts
+goto end
+
+:dev
+if not defined PORT set "PORT=%PORT_DEFAULT%"
+set "NODE_ENV=development"
+echo.
+echo  启动服务(开发模式):  http://localhost:%PORT%
+echo  支持热更新。按 Ctrl+C 停止。关闭本窗口即停止服务。
+echo.
+call "%~dp0node_modules\.bin\tsx.cmd" watch src/server.ts
+goto end
+
+:end
 endlocal

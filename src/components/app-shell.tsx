@@ -1,0 +1,158 @@
+'use client';
+
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { cn } from '@/lib/utils';
+import type { LucideIcon } from 'lucide-react';
+import { ChevronRight, LogOut } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ErrorBoundary } from '@/components/error-boundary';
+import MobileTabBar from '@/components/mobile-tab-bar';
+
+export interface AppShellNavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  badge?: number; // 数字角标（未读数等）
+}
+
+interface AppShellProps {
+  /** 端侧标识：决定右侧行动区与移动端底栏 */
+  role: 'student' | 'teacher' | 'admin';
+  /** 侧栏品牌副标题 */
+  tagline: string;
+  /** 顶级面包屑名称与地址 */
+  rootLabel: string;
+  rootHref: string;
+  navItems: AppShellNavItem[];
+  /** 顶栏右侧自定义区域（护眼/铃铛/班级等） */
+  topRight?: React.ReactNode;
+  /** 当前用户头像首字 */
+  avatarChar: string;
+  userName: string;
+  userMeta?: React.ReactNode;
+  onLogout: () => void;
+  children: React.ReactNode;
+}
+
+export default function AppShell({
+  role,
+  tagline,
+  rootLabel,
+  rootHref,
+  navItems,
+  topRight,
+  avatarChar,
+  userName,
+  userMeta,
+  onLogout,
+  children,
+}: AppShellProps) {
+  const pathname = usePathname();
+
+  // 精确匹配 + 前缀匹配（详情子页仍高亮所属菜单）。
+  // 排除根入口（如 /admin /student /teacher）：避免它对所有子路由前缀误命中导致双高亮。
+  const match = (href: string) =>
+    pathname === href || (href !== rootHref && pathname.startsWith(href + '/'));
+  const currentLabel = navItems.find((n) => match(n.href))?.label || rootLabel;
+
+  return (
+    <div className="app-shell flex h-screen overflow-hidden">
+      {/* ─── Sidebar（桌面端 · 浅色玻璃） ─── */}
+      <aside className="hidden md:flex w-64 flex-col shrink-0 glass-sidebar border-r border-white/60">
+        <div className="px-5 pt-5 pb-4 flex items-center gap-3">
+          <img src="/logo.png" alt="溯光" className="w-10 h-10 rounded-xl object-contain" />
+          <div>
+            <h2 className="font-bold text-sm tracking-wide text-slate-800 leading-tight">
+              溯光 <span className="font-extrabold text-brand-gradient">TracingLight</span>
+            </h2>
+            <p className="text-[11px] text-slate-400 mt-0.5">{tagline}</p>
+          </div>
+        </div>
+
+        <div className="mx-3 mb-2 h-px bg-gradient-to-r from-transparent via-violet-200 to-transparent" />
+
+        <nav className="flex-1 px-3 space-y-1 overflow-y-auto pb-3">
+          {navItems.map((item) => {
+            const isActive = match(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  'group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all',
+                  isActive
+                    ? 'bg-white text-violet-800 shadow-soft'
+                    : 'text-slate-600 hover:bg-white/70 hover:text-violet-700'
+                )}
+              >
+                {isActive && (
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full brand-gradient" />
+                )}
+                <span
+                  className={cn(
+                    'flex items-center justify-center w-7 h-7 rounded-lg transition-colors',
+                    isActive
+                      ? 'brand-gradient text-white shadow-sm'
+                      : 'bg-slate-100/80 text-slate-500 group-hover:bg-violet-50 group-hover:text-violet-600'
+                  )}
+                >
+                  <item.icon className="w-4 h-4" />
+                </span>
+                <span className="flex-1 truncate">{item.label}</span>
+                {typeof item.badge === 'number' && item.badge > 0 && (
+                  <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                    {item.badge > 99 ? '99+' : item.badge}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="p-3 border-t border-white/60">
+          <div className="flex items-center gap-3 px-2 py-2 rounded-xl bg-white/50 hover:bg-white/80 transition-colors">
+            <div className="w-9 h-9 rounded-xl brand-gradient flex items-center justify-center text-white text-xs font-bold shadow-sm">
+              {avatarChar}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate text-slate-800">{userName}</p>
+              {userMeta}
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-slate-400 hover:text-red-500 hover:bg-red-50 h-7 w-7"
+              onClick={onLogout}
+              title="退出登录"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        </div>
+      </aside>
+
+      {/* ─── 主区域 ─── */}
+      <main className="flex-1 flex flex-col min-w-0">
+        {/* 顶栏 · 毛玻璃 */}
+        <header className="relative z-40 h-16 flex items-center justify-between px-4 md:px-6 shrink-0 glass-strong border-b border-white/50">
+          <div className="flex items-center gap-1.5 text-sm text-muted-foreground min-w-0">
+            <Link href={rootHref} className="hover:text-foreground transition-colors shrink-0">
+              {rootLabel}
+            </Link>
+            <ChevronRight className="w-3 h-3 shrink-0" />
+            <span className="text-foreground font-semibold truncate">{currentLabel}</span>
+          </div>
+          <div className="flex items-center gap-2">{topRight}</div>
+        </header>
+
+        <div className="page-surface p-3 md:p-6 pb-24 md:pb-6 flex-1 min-h-0 overflow-y-auto">
+          <ErrorBoundary>{children}</ErrorBoundary>
+        </div>
+      </main>
+
+      {/* 移动端底栏（学生/教师） */}
+      {role !== 'admin' && <MobileTabBar role={role} />}
+    </div>
+  );
+}

@@ -95,17 +95,26 @@ export async function GET(
       ))
       .all();
 
-    // Get grading tasks
+    // Get grading tasks（仅取最新完成的批改；退回/重批的旧行 status=superseded 不计入）
     const gradings = db.select().from(gradingTask)
       .where(and(
         eq(gradingTask.assignment_id, assignmentId),
         eq(gradingTask.student_id, studentIdNum),
+        eq(gradingTask.status, 'completed'),
       ))
       .all();
 
+    // 按 question_id 去重取最新一条，防止旧行残留导致题数/总分膨胀
+    const gradingsByQuestion = new Map<number, typeof gradings[number]>();
+    for (const g of gradings) {
+      const prev = gradingsByQuestion.get(g.question_id);
+      if (!prev || (g.completed_at || '') >= (prev.completed_at || '')) gradingsByQuestion.set(g.question_id, g);
+    }
+    const latestGradings = [...gradingsByQuestion.values()];
+
     // Merge questions with answers and gradings
     const answerMap = new Map(answers.map((a) => [a.question_id, a]));
-    const gradingMap = new Map(gradings.map((g) => [g.question_id, g]));
+    const gradingMap = new Map(latestGradings.map((g) => [g.question_id, g]));
 
     const details = questions.map((q) => {
       const qId = q.id as number;
@@ -123,14 +132,12 @@ export async function GET(
       };
     });
 
-    // Calculate total
-    const totalScore = gradings.reduce(
-      (sum, g) => sum + (g.total_score || 0),
+    // Calculate total（与学生端口径一致：优先使用教师覆盖分 teacher_override_score ?? total_score）
+    const totalScore = latestGradings.reduce(
+      (sum, g) => sum + (g.teacher_override_score ?? (g.total_score || 0)),
       0
     );
-    const gradedCount = gradings.filter(
-      (g) => g.status === 'completed'
-    ).length;
+    const gradedCount = latestGradings.length;
 
     return NextResponse.json({
       success: true,

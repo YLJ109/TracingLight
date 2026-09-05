@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/storage/database/db';
+import { getDb, saveDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
 import { eq, desc } from 'drizzle-orm';
 import { notification } from '@/storage/database/shared/schema';
@@ -62,6 +62,8 @@ export async function POST(request: NextRequest) {
       db.update(notification).set({ is_read: true })
         .where(eq(notification.id, Number(id))).run();
     }
+
+    saveDb();
 
     return NextResponse.json({ success: true });
   } catch (e) {

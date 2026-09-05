@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAIClient } from "@/lib/ai/client";
 import { requireAuth } from "@/lib/server-auth";
-import { getDb, saveDb } from "@/storage/database/db";
+import { getDb, saveDb, ensureColumn } from "@/storage/database/db";
 import { qaSession, qaMessage } from "@/storage/database/shared/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { buildUserContent, VISION_MODEL, type IncomingAttachment } from "@/lib/ai/attachments";
 
 const SYSTEM_PROMPT = `你是「溯光 TracingLight」智慧教育平台的 AI 学习助手，面向高校学生提供学习答疑服务。
 
@@ -41,16 +42,23 @@ export async function POST(request: NextRequest) {
   const authUser = await requireAuth(request);
   if (!authUser) return NextResponse.json({ error: "未登录" }, { status: 401 });
 
-  let body: { message?: string; session_id?: number };
+  let body: { message?: string; session_id?: number; attachments?: IncomingAttachment[] };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "参数错误" }, { status: 400 });
   }
   const message = (body.message || '').trim();
-  if (!message) return NextResponse.json({ error: "消息不能为空" }, { status: 400 });
+  const rawAttachments = Array.isArray(body.attachments) ? body.attachments : [];
+  if (!message && rawAttachments.length === 0) return NextResponse.json({ error: "消息不能为空" }, { status: 400 });
+
+  // 构造本轮 user content：图片多模态 + 文件文本注入；并产出持久化元数据
+  const build = buildUserContent(message, rawAttachments);
+  const titleFallback = (rawAttachments[0]?.name || message || '').slice(0, 20);
 
   const db = getDb();
+  // 运行兜底：确保已有进程的 qa_message 具备 attachment 列（缺列则补）
+  ensureColumn('qa_message', 'attachment', 'ALTER TABLE qa_message ADD COLUMN attachment TEXT');
 
   // 会话归属：只能续写本人会话（与非流式接口一致）
   let sessionId = body.session_id ? Number(body.session_id) : null;
@@ -63,7 +71,7 @@ export async function POST(request: NextRequest) {
   if (!sessionId) {
     const created = db.insert(qaSession).values({
       user_id: authUser.userId,
-      title: message.slice(0, 20),
+      title: message.slice(0, 20) || titleFallback,
     }).returning().all();
     sessionId = created[0]?.id;
   }
@@ -74,7 +82,7 @@ export async function POST(request: NextRequest) {
     .orderBy(qaMessage.id)
     .limit(30)
     .all();
-  db.insert(qaMessage).values({ session_id: sessionId!, role: 'user', content: message }).run();
+  db.insert(qaMessage).values({ session_id: sessionId!, role: 'user', content: message, attachment: build.persist ? JSON.stringify(build.persist) : null }).run();
   try { saveDb(); } catch { /* 定时持久化兜底 */ }
 
   const messages = [
@@ -82,8 +90,10 @@ export async function POST(request: NextRequest) {
     ...historyMsgs
       .filter((m) => m.role && m.content)
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-    { role: "user" as const, content: message },
+    { role: "user" as const, content: build.content },
   ];
+  // 含图片 → 本轮切换视觉模型；否则沿用默认（纯文本）
+  const model = build.hasImage ? VISION_MODEL : undefined;
 
   const encoder = new TextEncoder();
   const sid = sessionId!;
@@ -102,11 +112,11 @@ export async function POST(request: NextRequest) {
         try {
           const sess = db.select().from(qaSession).where(eq(qaSession.id, sid)).get();
           if (sess && (!sess.title || sess.title === '新的对话')) {
-            db.update(qaSession).set({ title: message.slice(0, 20) }).where(eq(qaSession.id, sid)).run();
+            db.update(qaSession).set({ title: message.slice(0, 20) || titleFallback }).where(eq(qaSession.id, sid)).run();
           }
         } catch { /* 标题更新失败不影响主流程 */ }
         const client = createAIClient();
-        for await (const chunk of client.stream(messages, { temperature: 0.5, max_tokens: 1024 })) {
+        for await (const chunk of client.stream(messages, { model, temperature: 0.5, max_tokens: 1024 })) {
           if (chunk.content) {
             fullContent += chunk.content;
             send({ delta: chunk.content });

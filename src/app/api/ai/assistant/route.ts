@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAIClient , aiErrorResponse } from "@/lib/ai/client";
 import { requireAuth } from "@/lib/server-auth";
-import { getDb } from "@/storage/database/db";
+import { getDb, saveDb, ensureColumn } from "@/storage/database/db";
 import { qaSession, qaMessage, user, course, knowledgePoint, errorBook } from "@/storage/database/shared/schema";
 import { inArray } from "drizzle-orm";
 import { eq, and, desc } from "drizzle-orm";
+import { buildUserContent, VISION_MODEL, type IncomingAttachment } from "@/lib/ai/attachments";
 
 const SYSTEM_PROMPT = `你是「溯光 TracingLight」智慧教育平台的 AI 学习助手，面向高校学生提供学习答疑服务。
 
@@ -69,12 +70,18 @@ export async function POST(request: NextRequest) {
     const authUser = await requireAuth(request);
     if (!authUser) return NextResponse.json({ error: "未登录" }, { status: 401 });
     const db = getDb();
-
+    // 运行兜底：确保已有进程的 qa_message 具备 attachment 列（缺列则补）
+    ensureColumn('qa_message', 'attachment', 'ALTER TABLE qa_message ADD COLUMN attachment TEXT');
     const body = await request.json();
-    const message: string = body.message;
-    if (!message || !message.trim()) {
+    const message: string = (body.message || '').trim();
+    const rawAttachments = Array.isArray(body.attachments) ? body.attachments as IncomingAttachment[] : [];
+    if (!message && rawAttachments.length === 0) {
       return NextResponse.json({ error: "消息不能为空" }, { status: 400 });
     }
+
+    // 构造本轮 user content：图片多模态 + 文件文本注入；并产出持久化元数据
+    const build = buildUserContent(message, rawAttachments);
+    const titleFallback = (rawAttachments[0]?.name || message || '').slice(0, 20);
 
     // 获取或创建会话
     let sessionId = body.session_id ? Number(body.session_id) : null;
@@ -87,7 +94,7 @@ export async function POST(request: NextRequest) {
     if (!sessionId) {
       const created = db.insert(qaSession).values({
         user_id: authUser.userId,
-        title: message.slice(0, 20),
+        title: message.slice(0, 20) || titleFallback,
       }).returning().all();
       sessionId = created[0]?.id;
     }
@@ -100,7 +107,7 @@ export async function POST(request: NextRequest) {
       .all();
 
     // 保存用户消息
-    db.insert(qaMessage).values({ session_id: sessionId!, role: 'user', content: message }).run();
+    db.insert(qaMessage).values({ session_id: sessionId!, role: 'user', content: message, attachment: build.persist ? JSON.stringify(build.persist) : null }).run();
 
     // ── 轻量 RAG：检索该学生的课程知识点、错题薄弱点，注入上下文让答疑贴合学情 ──
     let contextBlock = '';
@@ -146,15 +153,16 @@ export async function POST(request: NextRequest) {
       ...historyMsgs
         .filter((m) => m.role && m.content)
         .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-      { role: "user" as const, content: message },
+      { role: "user" as const, content: build.content },
     ];
-
-    const result = await client.invoke(messages, { temperature: 0.5, max_tokens: 1024 });
+    // 含图片 → 本轮切换视觉模型
+    const result = await client.invoke(messages, { model: build.hasImage ? VISION_MODEL : undefined, temperature: 0.5, max_tokens: 1024 });
 
     // 保存 AI 回复
     db.insert(qaMessage).values({ session_id: sessionId!, role: 'assistant', content: result.content }).run();
     db.update(qaSession).set({ updated_at: new Date().toISOString() })
       .where(eq(qaSession.id, sessionId!)).run();
+    saveDb();
 
     return NextResponse.json({ success: true, data: { reply: result.content, session_id: sessionId } });
   } catch (error) {

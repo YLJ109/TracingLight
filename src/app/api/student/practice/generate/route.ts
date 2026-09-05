@@ -23,7 +23,7 @@ interface PracticeQuestion {
 }
 
 // 内存练习仓库（单进程演示环境够用；重启丢失仅影响未提交的练习）
-const g = globalThis as unknown as { __TL_PRACTICE_STORE?: Map<string, { studentId: number; questions: PracticeQuestion[]; createdAt: number }> };
+const g = globalThis as unknown as { __TL_PRACTICE_STORE?: Map<string, { studentId: number; knowledge_point_id: number; questions: PracticeQuestion[]; createdAt: number }> };
 if (!g.__TL_PRACTICE_STORE) g.__TL_PRACTICE_STORE = new Map();
 const practiceStore = g.__TL_PRACTICE_STORE;
 
@@ -78,9 +78,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'AI 出题失败，请稍后重试' }, { status: 502 });
     }
 
-    // 服务端保存答案，返回脱敏题目（剥离 answer/analysis）
+    // 服务端保存答案与知识点绑定，返回脱敏题目（剥离 answer/analysis）
+    // knowledge_point_id 由服务端从错题归属写入，供 /submit 回写掌握度，杜绝前端伪造
     const practiceId = `p_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    practiceStore.set(practiceId, { studentId: authUser.userId, questions, createdAt: Date.now() });
+    practiceStore.set(practiceId, { studentId: authUser.userId, knowledge_point_id: kp.id, questions, createdAt: Date.now() });
     // 清理 30 分钟前的过期练习
     for (const [k, v] of practiceStore) {
       if (Date.now() - v.createdAt > 30 * 60 * 1000) practiceStore.delete(k);

@@ -11,8 +11,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
-  Calendar, CheckCircle2, Clock, BookOpen, Sparkles, ArrowRight, RotateCcw, Loader2,
-  Brain, Target, AlertTriangle, GraduationCap, Zap, Play, ExternalLink,
+  Calendar, CheckCircle2, Clock, BookOpen, Sparkles, RotateCcw, Loader2,
+  Brain, Target, AlertTriangle, Zap, Play, ExternalLink,
   Plus, Pencil, Trash2,
 } from 'lucide-react';
 
@@ -59,7 +59,8 @@ function saveProgress(progress: Record<string, SessionStatus>) {
 
 function sessionKey(dayIdx: number, sessionIdx: number) { return `${dayIdx}_${sessionIdx}`; }
 
-export default function StudyPlanPage() {
+/** 学习规划面板：作为「个性化推荐」薄弱分析右侧的 Tab 渲染 */
+export function StudyPlanPanel() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -81,8 +82,6 @@ export default function StudyPlanPage() {
       sum + dp.sessions.filter(s => s.status === 'completed').length, 0);
     return { ...data, plans, completedSessions };
   }, []);
-
-  useEffect(() => { getCurrentUser().then((user) => { loadPlan(user?.id || 3); }); }, []);
 
   const loadPlan = async (studentId: number) => {
     setLoading(true);
@@ -145,7 +144,6 @@ export default function StudyPlanPage() {
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleSaving, setScheduleSaving] = useState(false);
   const [scheduleForm, setScheduleForm] = useState<ScheduleForm>({ title: '', day_of_week: 1, start_time: '19:00', end_time: '21:00' });
-  const dayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
   const refreshSchedules = async () => {
     const user = await getCurrentUser();
@@ -235,13 +233,14 @@ export default function StudyPlanPage() {
   };
 
   const handleNavigate = (session: StudySession) => {
-    // P2-4：review→学习材料（复习内容），practice→错题本（重做错题），diagnose→知识图谱
     if (session.type === 'review') router.push('/student/materials');
     else if (session.type === 'practice') router.push('/student/errors');
     else if (session.type === 'diagnose') router.push('/student/knowledge-graph');
   };
 
   useEffect(() => { return () => { Object.values(timerRefs.current).forEach(clearInterval); }; }, []);
+
+  useEffect(() => { getCurrentUser().then((user) => { loadPlan(user?.id || 3); }); }, []);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60); const s = seconds % 60;
@@ -269,16 +268,16 @@ export default function StudyPlanPage() {
 
   const progress = planData.totalSessions > 0 ? (planData.completedSessions / planData.totalSessions) * 100 : 0;
   const generatedDate = planData.generatedAt ? new Date(planData.generatedAt) : null;
+  // eslint-disable-next-line react-hooks/purity -- 渲染期只读当前时间换算"几天前"，无副作用，客户端展示可接受
   const daysAgo = generatedDate ? Math.floor((Date.now() - generatedDate.getTime()) / 86400000) : null;
 
-  // ─── JSX returned below ───
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Tab 内标题 + AI 状态/操作 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="page-title">学习规划</h1>
-          <p className="text-slate-500 mt-1">基于学情数据的个性化学习方案</p>
+          <h2 className="text-base font-semibold text-slate-800">学习规划</h2>
+          <p className="text-xs text-slate-500 mt-0.5">基于学情数据的个性化学习方案</p>
         </div>
         <div className="flex items-center gap-3">
           {source === 'ai' && (
@@ -298,7 +297,7 @@ export default function StudyPlanPage() {
         <Card className="border-teal-100 bg-gradient-to-br from-teal-50/50 to-white">
           <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base"><Brain className="h-5 w-5 text-teal-600" />AI 智能分析依据<Badge variant="outline" className="text-xs font-normal ml-2">数据来源</Badge></CardTitle></CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm font-medium text-slate-700"><Target className="h-4 w-4 text-red-500" />薄弱知识点<Badge variant="outline" className="text-xs">{planData.weakKnowledgePoints.length}个</Badge></div>
                 {planData.weakKnowledgePoints.length > 0 ? (
@@ -327,13 +326,6 @@ export default function StudyPlanPage() {
                       </span>
                     </div>
                   ))}</div>) : <p className="text-xs text-slate-400">暂无课表，点击「添加安排」创建你的固定时间安排</p>}
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm font-medium text-slate-700"><GraduationCap className="h-4 w-4 text-amber-500" />近期考试<Badge variant="outline" className="text-xs">{planData.exams.length}场</Badge></div>
-                {planData.exams.length > 0 ? (
-                  <div className="space-y-1">{planData.exams.slice(0, 3).map((e, i) => (
-                    <div key={i} className="text-xs text-slate-600 flex items-center gap-1.5"><AlertTriangle className="h-3 w-3 text-amber-400" /><span>{e.exam_date} {e.exam_time}</span><span className="text-slate-400 truncate">{e.subject}</span></div>
-                  ))}</div>) : <p className="text-xs text-slate-400">暂无考试安排</p>}
               </div>
             </div>
           </CardContent>
@@ -494,3 +486,5 @@ export default function StudyPlanPage() {
     </div>
   );
 }
+
+export default StudyPlanPanel;
