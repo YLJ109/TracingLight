@@ -1,62 +1,62 @@
 @echo off
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
-title 溯光TracingLight - 一键部署(Setup)
+title TracingLight - One-click Setup
 
 echo ====================================================
-echo   溯光 TracingLight  一键部署 / 初始化
+echo   TracingLight - One-click Setup / Init
 echo ====================================================
 
-REM ---------- 1. 检查 Node.js ----------
+REM ---------- 1. check Node.js ----------
 where node >nul 2>nul
 if errorlevel 1 (
     echo.
-    echo  [错误] 未检测到 Node.js，请先安装 Node.js 18+ 后重新运行。
-    echo         下载地址: https://nodejs.org/
+    echo  [ERROR] Node.js not found. Install Node.js 18+ and re-run.
+    echo          Download: https://nodejs.org/
     echo.
     pause
     exit /b 1
 )
 for /f "delims=" %%v in ('node -v') do set NODE_VER=%%v
-echo [1/4] Node.js 已就绪: !NODE_VER!
+echo [1/4] Node.js ready: !NODE_VER!
 
-REM ---------- 2. 安装依赖（未安装时才装） ----------
+REM ---------- 2. install dependencies (skip if present) ----------
 if exist "node_modules\.bin" (
-    echo [2/4] 依赖已存在，跳过安装。
+    echo [2/4] Dependencies already present, skipping install.
 ) else (
-    echo [2/4] 正在安装依赖，首次可能需要几分钟，请耐心等待...
+    echo [2/4] Installing dependencies, first run may take a few minutes...
     call npx --yes pnpm install
     if errorlevel 1 (
         echo.
-        echo  [错误] 依赖安装失败，请检查网络后重试。
+        echo  [ERROR] Dependency install failed. Check network and retry.
         echo.
         pause
         exit /b 1
     )
 )
 
-REM ---------- 3. 数据目录 & 首次播种（仅空库时） ----------
+REM ---------- 3. data dir & first-time seed (only if empty db) ----------
 if not exist "data" mkdir data
 if exist "data\tracinglight.db" (
-    echo [3/4] 数据库已存在，保留现有数据。
+    echo [3/4] Database already exists, keeping existing data.
 ) else (
-    echo [3/4] 首次运行，正在生成演示数据...
+    echo [3/4] First run, generating demo data...
     call "%~dp0node_modules\.bin\tsx.cmd" src/storage/database/seed.ts
     if errorlevel 1 (
         echo.
-        echo  [错误] 演示数据生成失败。
+        echo  [ERROR] Seed data generation failed.
         echo.
         pause
         exit /b 1
     )
 )
 
-REM ---------- 4. 生产构建 ----------
-echo [4/4] 正在构建生产版本，请稍候...
+REM ---------- 4. production build ----------
+echo [4/4] Building production bundle, please wait...
 call "%~dp0node_modules\.bin\next.cmd" build
 if errorlevel 1 (
     echo.
-    echo  [错误] 构建失败。
+    echo  [ERROR] Build failed.
     echo.
     pause
     exit /b 1
@@ -64,7 +64,7 @@ if errorlevel 1 (
 
 echo.
 echo ====================================================
-echo   部署完成！请运行  start.bat  启动服务
-echo   访问地址:  http://localhost:5000
+echo   Setup complete! Run  start.bat  to start the server
+echo   Access:  http://localhost:5000
 echo ====================================================
 pause
