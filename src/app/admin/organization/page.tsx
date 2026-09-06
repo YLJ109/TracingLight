@@ -26,16 +26,6 @@ export default function AdminOrganization() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center">
-          <Building2 className="w-5 h-5 text-white" />
-        </div>
-        <div>
-          <h1 className="page-title">组织架构</h1>
-          <p className="text-sm text-muted-foreground">学校 → 学院 → 专业 → 班级</p>
-        </div>
-      </div>
-
       {loading ? (
         <div className="h-40 rounded-xl bg-muted skeleton-shimmer" />
       ) : org ? (

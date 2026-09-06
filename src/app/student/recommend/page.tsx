@@ -196,15 +196,6 @@ export default function RecommendPage() {
 
   return (
     <div className="space-y-6">
-      {/* 页面标题 + 操作 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="page-title">个性化推荐</h1>
-          <p className="text-sm text-slate-500 mt-1">基于真实学情数据的 AI 智能分析与学习规划</p>
-        </div>
-
-      </div>
-
       {/* Tab 导航 */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit">
         {([["overview", "总览"], ["mastery", "知识掌握"], ["weak", "薄弱分析"], ["plan", "学习规划"]] as const).map(([key, label]) => (

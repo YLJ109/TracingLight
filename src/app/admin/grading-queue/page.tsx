@@ -144,15 +144,6 @@ export default function AdminGradingQueue() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500 to-emerald-500 flex items-center justify-center">
-            <Activity className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="page-title">批改队列</h1>
-            <p className="text-sm text-muted-foreground">AI 批改任务排队与运行状态，异常的排队任务可在此重试或强制完成</p>
-          </div>
-        </div>
         <Button size="sm" variant="outline" onClick={() => load(page, status)} disabled={fetching}>
           {fetching ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
           刷新

@@ -28,16 +28,6 @@ export default function AdminCourses() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center">
-          <BookOpen className="w-5 h-5 text-white" />
-        </div>
-        <div>
-          <h1 className="page-title">课程管理</h1>
-          <p className="text-sm text-muted-foreground">共 {courses.length} 门课程</p>
-        </div>
-      </div>
-
       {loading ? (
         <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-12 rounded-lg bg-muted skeleton-shimmer" />)}</div>
       ) : (

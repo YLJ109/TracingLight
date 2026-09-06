@@ -63,16 +63,6 @@ export default function AdminSettings() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center">
-          <Settings className="w-5 h-5 text-white" />
-        </div>
-        <div>
-          <h1 className="page-title">系统设置</h1>
-          <p className="text-sm text-muted-foreground">平台参数与 AI 配置</p>
-        </div>
-      </div>
-
       {message && <div className="p-3 rounded-lg bg-emerald-50 text-emerald-700 text-sm border border-emerald-200">{message}</div>}
 
       {/* AI 服务配置：支持在线切换 API/模型，立即生效 */}

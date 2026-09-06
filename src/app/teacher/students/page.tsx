@@ -66,14 +66,6 @@ export default function TeacherStudents() {
 
   return (
     <div className="space-y-6 animate-fade-in-up">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="page-title">学生管理</h1>
-          <p className="text-sm text-slate-500">
-            共{students.length}名学生 · 学霸{topCount}人 · 中等{mediumCount}人 · 提升{weakCount}人
-          </p>
-        </div>
-      </div>
 
       <Card>
         <CardHeader className="pb-3">

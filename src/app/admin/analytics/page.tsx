@@ -33,16 +33,6 @@ export default function AdminAnalytics() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center">
-          <BarChart3 className="w-5 h-5 text-white" />
-        </div>
-        <div>
-          <h1 className="page-title">数据统计</h1>
-          <p className="text-sm text-muted-foreground">平台运行数据概览</p>
-        </div>
-      </div>
-
       {loading ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-24 rounded-xl bg-muted skeleton-shimmer" />)}

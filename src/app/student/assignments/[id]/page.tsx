@@ -617,12 +617,14 @@ export default function StudentAssignmentDetailPage() {
                         <div className="mb-3 space-y-1.5">
                           <div className={`p-2 rounded-lg border text-sm ${existingAnswer!.grading && existingAnswer!.grading.total_score >= existingAnswer!.grading.full_score ? 'border-green-300 bg-green-50 text-green-700' : 'border-red-300 bg-red-50 text-red-600'}`}>
                             <span className="text-xs opacity-70 mr-1">你的答案：</span>
-                            {existingAnswer!.student_answer || '未作答'}
+                            <span className="whitespace-pre-wrap break-words font-mono text-xs">
+                              {existingAnswer!.student_answer ? htmlToPlainText(existingAnswer!.student_answer) : '未作答'}
+                            </span>
                           </div>
                           {(q as any).answer && existingAnswer!.grading!.total_score < existingAnswer!.grading!.full_score && (
                             <div className="p-2 rounded-lg border border-green-300 bg-green-50 text-sm text-green-700">
                               <span className="text-xs opacity-70 mr-1">正确答案：</span>
-                              {(q as any).answer}
+                              <span className="whitespace-pre-wrap break-words font-mono text-xs">{(q as any).answer}</span>
                             </div>
                           )}
                         </div>
@@ -789,12 +791,16 @@ export default function StudentAssignmentDetailPage() {
                               ? (ans.grading.total_score === ans.grading.full_score ? 'text-green-600 font-medium' : 'text-red-500 font-medium')
                               : 'text-slate-400'
                           }>
-                            {ans?.student_answer || '未作答'}
+                            <span className="whitespace-pre-wrap break-words font-mono text-xs block mt-1">
+                              {ans?.student_answer ? htmlToPlainText(ans.student_answer) : '未作答'}
+                            </span>
                           </span>
                         </div>
                         <div className="p-2 bg-green-50 rounded-lg">
                           <span className="text-slate-500">正确答案：</span>
-                          <span className="text-green-600 font-semibold font-mono">{q.answer || '—'}</span>
+                          <span className="text-green-600 font-semibold font-mono">
+                            <span className="whitespace-pre-wrap break-words font-mono text-xs block mt-1">{q.answer || '—'}</span>
+                          </span>
                         </div>
                       </div>
                       {q.analysis && (

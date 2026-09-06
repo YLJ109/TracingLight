@@ -131,14 +131,6 @@ export default function StudentMaterials() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">学习材料</h1>
-          <p className="text-sm text-muted-foreground mt-1">视频与课件学习，系统会记录你的停留时长，辅助分析薄弱点</p>
-        </div>
-      </div>
-
       {/* 学习投入统计 */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card className="border-slate-200/60 shadow-sm py-0">

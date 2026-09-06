@@ -257,12 +257,6 @@ export default function TeacherGradeDetailPage() {
           <Button variant="ghost" size="icon" onClick={() => router.back()}>
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <div>
-            <h1 className="page-title">批改详情</h1>
-            <p className="text-sm text-muted-foreground">
-              {assignment.title} · {assignment.course.name}
-            </p>
-          </div>
         </div>
       </div>
 

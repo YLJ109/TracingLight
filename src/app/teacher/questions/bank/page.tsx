@@ -369,18 +369,6 @@ export default function QuestionBankPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="page-title">题库管理</h1>
-          <p className="text-sm text-slate-500 mt-1">共 {total} 道题目</p>
-        </div>
-        <Button onClick={openCreate} className="gap-2">
-          <Plus className="w-4 h-4" />
-          新增题目
-        </Button>
-      </div>
-
       {/* Filters */}
       <div className="bg-white rounded-xl border p-4">
         <div className="flex flex-wrap items-center gap-3">
@@ -437,6 +425,10 @@ export default function QuestionBankPage() {
               ))}
             </SelectContent>
           </Select>
+          <Button onClick={openCreate} className="gap-2 ml-auto shrink-0">
+            <Plus className="w-4 h-4" />
+            新增题目
+          </Button>
         </div>
       </div>
 

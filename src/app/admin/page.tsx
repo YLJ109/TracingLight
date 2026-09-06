@@ -79,8 +79,6 @@ export default function AdminPage() {
           <Sparkles className="w-4 h-4" />
           溯光智慧教育平台 · 管理后台
         </div>
-        <h1 className="text-2xl font-bold">欢迎回来，管理员</h1>
-        <p className="text-violet-100 mt-1 text-sm">管理平台组织、用户、课程与系统配置，掌握全平台运行状态。</p>
       </div>
 
       {/* 统计卡片 */}
