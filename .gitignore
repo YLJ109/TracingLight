@@ -167,6 +167,7 @@ Desktop.ini
 .codegraph/
 data/
 .workbuddy/
+.trae/
 
 # Playwright E2E artifacts
 playwright-report/
