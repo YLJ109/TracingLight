@@ -1,4 +1,4 @@
-# 溯光 TracingLight V3.0 — 高校智慧教育 AI 平台
+# 溯光 TracingLight — 高校智慧教育 AI 平台
 
 <div align="center">
 
@@ -29,24 +29,26 @@
 
 ## 项目简介
 
-**溯光 TracingLight** 是一套面向高校师生的智慧教育平台，利用 AI 大模型实现从智能出题、作业批改、错题分析到个性化学习推荐的完整教学闭环。
+**溯光 TracingLight** 是一套面向高校师生的智慧教育平台，利用 AI 大模型实现从智能出题、作业批改、错题分析到个性化学习推荐的完整教学闭环。覆盖学生端、教师端、管理端三端。
 
 ### 核心能力
 
 | 能力 | 说明 |
 |------|------|
-| **AI 智能出题** | 根据知识点自动生成多种题型的题目，支持难度控制 |
+| **AI 智能出题** | 根据知识点自动生成多种题型，支持难度控制与批量（1–20 题） |
 | **AI 自动批改** | 四维度量化评分（准确性 / 逻辑 / 表达 / 拓展），支持流式批改 |
-| **错题智能归档** | 自动归集错题，AI 分析错因，推送相关知识点解析 |
-| **学情分析看板** | 六维能力雷达图、知识掌握热力图、成绩趋势分析 |
+| **错题智能归档** | 自动归集错题，AI 分析错因，关联知识点解析与间隔复习 |
+| **学情分析看板** | 六维能力雷达图、知识掌握热力图、成绩趋势与班级排名 |
 | **知识图谱** | 课程→模块→知识点的层级可视化，掌握度一目了然 |
 | **个性化推荐** | 基于薄弱知识点的 AI 学习计划生成，结合课表智能排期 |
+| **个人中心** | 资料/姓名/头像（裁剪）编辑、安全改密、指导导师、学习概况 |
 
 ### 适用场景
 
-- 高校计算机类课程的作业管理
+- 高校计算机类课程的作业管理与批改
 - 教师日常出题、批改、学情追踪
 - 学生自主学习、错题复习、知识体系构建
+- 管理员对学校 / 学院 / 专业 / 班级与平台的统一管理
 
 ---
 
@@ -57,115 +59,88 @@
 #### 教学总览 Dashboard
 
 - 班级学生统计（总人数、分层分布）
-- 近期作业发布记录与完成率
-- 学情趋势概览
-- 快捷功能入口
+- 近期作业发布记录与完成率、学情趋势概览、快捷功能入口
 
 #### 学生管理
 
-- 学生列表，支持按分层筛选（全优 / 学霸 / 中等 / 提升）
-- 学生学情详情页：
-  - **六维能力雷达图**：知识准确性 / 逻辑完整性 / 表达条理性 / 拓展能力 / 完成率 / 错题解决率
-  - **成绩趋势折线图**：历次作业得分变化
-  - **错题类型分布**：饼图展示错因占比
-  - **知识点掌握柱状图**：各知识点得分率
+- 学生列表，支持按分层筛选、搜索
+- 学生学情详情页：六维能力雷达图、成绩趋势折线图、错题类型分布、知识点掌握柱状图，一键导出 **AI 学情报告**（Word / PDF）
 
 #### 作业管理
 
-- 作业列表（支持按课程、状态筛选）
-- 新建作业：AI 智能出题 + 题库选题，设置难度、分值、截止时间
+- 作业列表（按课程、状态筛选），新建作业支持 AI 智能出题 + 题库选题
 - 作业详情：学生提交列表、AI 批量批改进度、单题批改详情
 - 支持题型：单选题 / 多选题 / 判断题 / 填空题 / 简答题 / 编程题
+- **批改确认机制**：AI 批改后教师逐题确认分数，学生端成绩以教师确认为准，并展示「AI 原评 → 老师确认」对比
+- **批改规则配置**：评分标准 / 扣分规则 / 评语风格 / 成绩等级四项自定义，按课程、题型差异化，一键复制复用
 
 #### 题库管理
 
-- 题目列表（按题型、难度、课程筛选）
-- 题目详情：题干、选项、答案、解析、关联知识点
-- 增删改查 + AI 生成题目一键入库
+- 题目列表（按题型、难度、课程筛选），增删改查 + AI 生成题目一键入库
 
 #### 学情看板
 
-- **成绩概览 Tab**：班级成绩分布、平均分、最高/最低分
-- **知识热力图 Tab**：各知识点掌握度可视化
-- **能力雷达 Tab**：六维能力综合分析
-- **成绩趋势 Tab**：历次作业成绩变化曲线
+- 成绩概览 / 知识热力图 / 能力雷达 / 成绩趋势 多 Tab，含「讨论区」与「针对薄弱点 AI 布置作业」
 
-#### AI 批改规则配置（自定义）
+#### AI 智能出题
 
-- **评分标准 / 扣分规则 / 评语风格 / 成绩等级**四项自定义，支持按**课程、题型**差异化设置
-- 规则的创建、编辑、启用/停用、删除，**一键复制**即可在不同作业间复用
-- 匹配优先级：课程+题型 > 课程 > 题型 > 通用，保存后**下一次批改立即生效**
-- 批改评语自动携带成绩等级（如「【良好】…」）
-
-#### AI 批改确认机制
-
-- AI 批改后教师逐题确认：填入分数并失焦即提交，**学生端成绩以教师确认分为准**
-- 教师未改分的题目自动按 AI 评分生效；页面显示「已确认 / 待确认」进度
-- 学生端查看批改时展示「AI 原评 X 分 · 老师已确认」对比
-
-#### AI 学情报告导出
-
-- 学生学情详情页一键生成 AI 学情报告
-- 支持**导出 Word** 与**打印 / 另存 PDF**，可直接归档发给学生
+- 顶部出题配置（课程 / 知识点 / 题型 / 难度 / 数量 1–20），支持图片内容出题
+- 下方通栏生成结果：质量自检、勾选入库、重新生成，带生成动画
 
 ### 学生端
 
 #### 我的学情
 
-- 个人学习数据概览
-- 各科成绩统计与排名
-- 能力雷达图对比
-- 学习趋势分析
+- 个人学习总览、各科成绩统计与**班级排名**、能力雷达图、学习趋势
 
 #### 我的作业
 
-- 作业列表（待完成 / 已完成 / 已批改）
-- 在线作答，支持提交和修改
-- 查看批改结果与详细评语
-- 简答题 / 编程题支持 **Word 式富文本作答**：加粗、代码块、LaTeX 公式、表格、图片上传
-- AI 批改后教师确认分数，学生可见「AI 原评 → 老师确认」对比
+- 作业列表（待完成 / 已完成 / 已批改），在线作答与修改
+- 简答题 / 编程题支持 **Word 式富文本作答**：加粗、代码块高亮、LaTeX 公式、表格、图片上传
+- 查看批改结果、详细评语与教师确认分数
 
 #### 错题本
 
-- 错题自动归档（AI 批改后按知识点分类）
-- **AI 深度解析**：溯源错因 + 关联知识点讲解
-- **举一反三即时练习**：AI 生成 3 道变式题，完成即更新掌握度
-- **间隔复习（艾宾浩斯）**：1/3/7 天自动排期，完成复习自动推进，三次后自动掌握
-- 富内容渲染：代码块语法高亮、LaTeX 公式、图片、表格完整显示
+- 错题自动归档，**AI 深度解析**（溯源错因 + 关联知识点讲解）
+- **举一反三**：AI 生成变式题即时练习，完成即更新掌握度
+- **间隔复习（艾宾浩斯）**：1/3/7 天自动排期，三次自动掌握
+- 从这里进入**知识图谱**，并可一键返回
 
 #### 知识图谱
 
-- **环图布局**：课程 → 分类 → 知识点三层结构
-- **三 Tab 切换**：知识谱图 / 能力谱图 / 课程思政谱图
-- **节点交互**：点击节点查看详情弹窗
-- **颜色区分**：绿色熟练 → 黄色一般 → 红色薄弱
+- 课程 → 分类 → 知识点三层结构，环图 / 树图两种布局
+- 节点交互：点击查看掌握度详情；颜色区分：绿熟练 / 黄一般 / 红薄弱
+- 支持课程切换、层级过滤、搜索定位、导出
 
 #### 个性化推荐
 
-- **总览 Tab**：六维能力雷达图、学习趋势、AI 智能洞察
-- **知识掌握 Tab**：各课程知识点掌握度、薄弱点列表
-- **薄弱分析 Tab**：薄弱知识点深度分析、前置知识点推荐、AI 学习建议
-- **学习规划 Tab**：AI 周学习计划（按天展示）、课表管理
+- 总览（能力雷达、趋势、AI 洞察）/ 知识掌握 / 薄弱分析 / 学习规划 多 Tab
+- AI 周学习计划（按天展示），自动避开课表时段，课表可添加 / 编辑 / 删除
+
 #### AI 答疑（多会话）
 
-- 豆包式多会话对话，流式输出
-- 结合你的课程知识点与错题薄弱点给出针对性回答（学情上下文注入）
+- 多会话对话，流式输出，结合课程知识点与错题薄弱点给出针对性回答
 - 富渲染：LaTeX 公式、代码语法高亮、mermaid 流程图
 
-#### 公告通知
+#### 消息中心
 
-- 教师发布公告自动通知班级学生
-- 学生端「公告通知」页汇总查看（置顶优先）
+- 顶部铃铛统一入口，通知与公告双标签，班级 / 全校公告自动推送
 
-#### 学习规划
+#### 个人中心
 
-- AI 生成一周学习计划，自动避开课表固定时段
-- 课表安排支持添加 / 编辑 / 删除（多天时段）
+- 用户资料展示与编辑（姓名 / 头像裁剪上传 / 学生层级）
+- 安全修改密码（改密后自动重新登录）
+- 班级、指导导师与学习概况一览，支持头像即时同步至侧栏
 
 #### 护眼模式
 
-- 暖米绿低蓝光配色一键切换，暖度可调
-- CSS 变量换肤实现，不影响布局与性能
+- 暖米绿低蓝光配色一键切换，暖度可调，CSS 变量换肤实现
+
+### 管理端
+
+- 数据看板、机构管理（学校 / 学院 / 专业 / 班级）、用户管理、课程管理
+- AI 批改队列复核、公告发布、系统设置（**AI 服务在线配置**，保存同步 `.env`）、数据备份 / 委托管理
+- 系统日志与操作审计
 
 ---
 
@@ -175,16 +150,16 @@
 ┌──────────────────────────────────────────────────────────────────┐
 │                     前端层 (Frontend)                             │
 │  ┌──────────┐  ┌──────────┐  ┌──────────────────────────────┐   │
-│  │  教师端    │  │  学生端    │  │  ECharts 可视化               │   │
-│  │  Next.js  │  │  Next.js  │  │  (雷达图/热力图/趋势图/饼图)     │   │
+│  │  教师端    │  │  学生端    │  │  ECharts / d3.js 可视化       │   │
+│  │  Next.js  │  │  Next.js  │  │  (雷达/热力/趋势/图谱/饼图)     │   │
 │  └─────┬─────┘  └─────┬─────┘  └──────────────┬───────────────┘   │
 └────────┼───────────────┼───────────────────────┼───────────────────┘
          │               │                       │
          ▼               ▼                       ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                   API 层 (Next.js API Routes)                     │
+│                   API 层 (Next.js App Router)                     │
 │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌──────────────┐   │
-│  │ 登录 API│ │ 作业 API│ │ 题库 API│ │ 错题 API│ │ 学情统计 API  │   │
+│  │ 认证 API│ │ 账号 API│ │ 作业 API│ │ AI 服务 │ │ 学情统计 API  │   │
 │  └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘ └──────┬───────┘   │
 └──────┼──────────┼──────────┼──────────┼─────────────┼────────────┘
        │          │          │          │             │
@@ -200,16 +175,15 @@
 ┌──────────────────────────────────────────────────────────────────┐
 │                    智谱 GLM-4-Flash 大模型                         │
 │  https://open.bigmodel.cn                                       │
-│  文本生成 · JSON 结构化输出 · 流式响应                               │
+│  文本生成 · JSON 结构化输出 · 流式响应 · 图片内容理解                │
 └──────────────────────────────────────────────────────────────────┘
          │
          ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                    数据持久层 (Database)                          │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │  SQLite (sql.js) + Drizzle ORM                            │   │
-│  │  - 23 张业务表                                              │   │
-│  │  - 纯 JavaScript 实现，零系统依赖，跨平台兼容                    │   │
+│  │  SQLite (better-sqlite3) + Drizzle ORM                    │   │
+│  │  - 23+ 张业务表，每次写事务实时落盘，天然并发安全              │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -218,17 +192,16 @@
 
 | 层级 | 技术 | 版本 | 说明 |
 |------|------|------|------|
-| **前端框架** | Next.js | 16 | App Router, Turbopack |
-| **UI 库** | React | 19 | Server Components, Actions |
+| **前端框架** | Next.js | 16 | App Router, Server Components |
+| **UI 层** | React | 19 | Server Components, Actions |
 | **类型系统** | TypeScript | 5 | 严格类型检查 |
-| **UI 组件** | shadcn/ui | latest | Radix UI + Tailwind |
-| **样式方案** | Tailwind CSS | 4 | 原子化 CSS, 暗色模式 |
-| **数据可视化** | ECharts | 5 / 6 | 雷达图, 热力图, 趋势图 |
-| **辅助可视化** | Recharts, d3.js | 2.x / 7.x | 自定义图表 |
-| **数据库** | SQLite (sql.js) | 1.x | 纯 JS, 零系统依赖 |
+| **UI 组件** | shadcn/ui | latest | Radix UI + Tailwind CSS 4 |
+| **数据可视化** | ECharts / d3.js | 6.x / 7.x | 雷达图、热力图、趋势图、知识图谱 |
+| **数据库** | SQLite (better-sqlite3) | 13.x | 实时落盘、零系统依赖、并发安全 |
 | **ORM** | Drizzle ORM | 0.45 | 类型安全的查询构建器 |
-| **AI 模型** | 智谱 GLM-4-Flash | — | 免费额度, HTTP API |
-| **认证** | JWT (jsonwebtoken) | 9.x | 自建 Token 认证 |
+| **AI 模型** | 智谱 GLM-4-Flash | — | 免费额度, HTTP / SSE 流式 |
+| **认证** | JWT (jsonwebtoken) | 9.x | 自建 Token，改密后失效 |
+| **密码安全** | bcryptjs | 2.x | 慢哈希 + 旧 sha256 兼容迁移 |
 | **表单** | react-hook-form + zod | 7.x / 4.x | 类型安全表单验证 |
 | **包管理器** | pnpm | 9.x | 高效磁盘使用 |
 
@@ -240,8 +213,8 @@
 
 | 依赖 | 版本要求 | 安装方式 |
 |------|---------|---------|
-| Node.js | ≥ 20.x | [nodejs.org](https://nodejs.org) 下载安装 LTS 版 |
-| npm | 随 Node.js 自带 | 无需单独安装 |
+| Node.js | ≥ 20.x | [nodejs.org](https://nodejs.org) 下载 LTS 版 |
+| pnpm | ≥ 9.x | `npm install -g pnpm` |
 | 智谱 API Key | — | [open.bigmodel.cn](https://open.bigmodel.cn) 免费注册获取（启动后在管理端配置即可） |
 
 ---
@@ -249,108 +222,64 @@
 ### 方式一：Windows 一键部署（推荐）
 
 ```bash
-# 第一步：双击 setup.bat
-#   自动完成以下所有步骤：
-#   ① 检测 Node.js 环境
-#   ② npm install 安装依赖
-#   ③ 生成 .env（随机 JWT 密钥，自动持久化）
-#   ④ 首次运行自动建表 + 导入种子数据
-#   （不在此处配置 AI Key —— 启动后在管理端配置，见下）
-
-# 第二步：双击 start.bat 启动 → http://localhost:5000
-
-# 第三步：配置 AI 功能（管理员登录）
-#   管理端 → 系统设置 → AI 服务配置
-#   填入 API 地址与 Key（智谱开放平台免费获取），保存后立即生效
-#   日常启动：双击 start.bat
-#   重置数据：双击 init-db.bat
+# 1) 双击 setup.bat  —— 自动完成：环境检查 → pnpm 安装依赖 → 生成 .env
+#    首次自动建表 + 导入种子数据
+# 2) 双击 start.bat  —— 启动开发服务器 → http://localhost:5000
+#    start.bat dev  —— 开发模式（改代码自动热更新）
+# 3) 配置 AI：管理员登录 → 管理端 → 系统设置 → AI 服务配置
+#    填入 API 地址与 Key，保存后立即生效，并自动同步写入 .env
 ```
 
 | 脚本 | 干什么 | 什么时候用 |
 |------|--------|-----------|
-| `setup.bat` | 环境检查 → 安装依赖 → 生成 .env → 建库 | 首次部署 |
-| `start.bat` | 启动开发服务器（改代码自动热更新） | 每次开发 |
-| `init-db.bat` | 清空数据库 → 重新建表 → 重新导入种子数据 | 数据乱了想重置 |
+| `setup.bat` | 环境检查 → 安装依赖 → 生成 .env → 建库 | 首次部署 / 重新部署 |
+| `start.bat` | 启动服务器（默认生产模式；`start.bat dev` 热更新） | 每次启动 |
+| `init-db.bat` | 只删数据库 → 重新建表 → 重新导入种子数据 | 重置数据 |
 
 ---
 
 ### 方式二：命令行手动部署
 
 ```bash
-# 1. 克隆项目后进入目录
-cd suguang_projects
+# 1. 安装依赖
+pnpm install
 
-# 2. 安装依赖
-npm install
+# 2. 初始化 .env（也可跳过，首次启动 server.ts 会自动生成）
+cp .env.example .env   # 然后按需修改 ZHIPU_API_KEY / JWT_SECRET
 
-# 3. 初始化 .env（JWT 密钥等；也可跳过，首次启动自动生成）
-node -e "const fs=require('fs');const c=require('crypto');fs.writeFileSync('.env',['# TracingLight environment','JWT_SECRET='+c.randomBytes(24).toString('hex'),'DATABASE_PATH=./data/tracinglight.db','NODE_ENV=development','PORT=5000'].join('\n'))"
-
-# 4. 初始化数据库（建表 + 导入种子数据）
+# 3. 初始化数据库（建表 + 导入种子数据）
 npx tsx src/storage/database/seed.ts
 
-# 5. 启动（开发模式，端口 5000）
+# 4. 启动（开发模式，端口 5000）
 npx tsx src/server.ts
-
-# 6. 配置 AI（启动后）：管理员登录 → 管理端 → 系统设置 → AI 服务配置
-#    填入 API 地址与 Key，保存后立即生效；也可在 .env 中设置 ZHIPU_API_KEY
+# 或生产：pnpm build && set NODE_ENV=production && set PORT=5000 && npx tsx src/server.ts
 ```
 
 ---
 
-### 方式三：生产部署
-
-```bash
-# 构建
-pnpm build
-
-# 启动生产服务
-set NODE_ENV=production
-set PORT=5000
-node dist/server.js
-```
-
----
-
-### 重新部署（清空一切重来）
-
-```bash
-# 删除以下 5 个目录/文件：
-node_modules\          # 依赖包
-pnpm-lock.yaml         # 锁文件
-data\tracinglight.db   # 数据库
-.next\                 # Next.js 构建缓存
-dist\                  # tsup 构建产物
-
-# .env 不要删！里面是你的 API Key
-
-# 然后重新双击 setup.bat
-```
-
----
-
-### 验证部署成功
+### 验证部署 & 测试账号
 
 浏览器访问 `http://localhost:5000`，看到登录页即部署成功。
 
-### 测试账号
+**登录需密码**（大小写敏感）：默认密码 = 用户名；管理员固定 `123456`。
 
-| 角色 | 用户名 | 姓名 | 层级 |
-|------|--------|------|------|
-| 教师 | `teacher_wang` | 王老师 | — |
-| 教师 | `teacher_li` | 李老师 | — |
-| 学生 | `stu_zhang` | 张同学 | 全优层 |
-| 学生 | `stu_li` | 李同学 | 全优层 |
-| 学生 | `stu_wang` | 王同学 | 学霸层 |
-| 学生 | `stu_zhao` | 赵同学 | 学霸层 |
-| 学生 | `stu_chen` | 陈同学 | 中等层 |
-| 学生 | `stu_liu` | 刘同学 | 中等层 |
-| 学生 | `stu_zhou` | 周同学 | 中等层 |
-| 学生 | `stu_wu` | 吴同学 | 提升层 |
-| 学生 | `stu_sun` | 孙同学 | 提升层 |
-| 学生 | `stu_ma` | 马同学 | 提升层 |
+| 角色 | 用户名 | 密码 |
+|------|--------|------|
+| 管理员 | `admin` | `123456` |
+| 教师 | `teacher_wang` | `teacher_wang` |
+| 教师 | `teacher_li` | `teacher_li` |
+| 学生 | `stu_zhang` | `stu_zhang` |
+| 学生 | `stu_li` | `stu_li` |
+| 学生 | `stu_wang` | `stu_wang` |
+| 学生 | `stu_zhao` | `stu_zhao` |
+| 学生 | `stu_chen` | `stu_chen` |
+| 学生 | `stu_liu` | `stu_liu` |
+| 学生 | `stu_zhou` | `stu_zhou` |
+| 学生 | `stu_wu` | `stu_wu` |
+| 学生 | `stu_sun` | `stu_sun` |
+| 学生 | `stu_ma` | `stu_ma` |
 
-> **无需密码**，输入用户名即可登录。教师和学生看到不同的界面。
+> 不同角色登录后进入各自界面。重置数据后账号恢复为默认密码。
 
 ---
 
@@ -360,194 +289,82 @@ dist\                  # tsup 构建产物
 suguang_projects/
 ├── data/                             # SQLite 数据库文件（自动生成）
 │   └── tracinglight.db
-├── public/                           # 静态资源
-│   ├── logo.png
-│   └── favicon.ico
+├── public/                           # 静态资源 + 上传头像 uploads/avatars
 ├── src/
-│   ├── server.ts                     # HTTP 服务入口（端口 5000）
-│   ├── proxy.ts                      # Next.js 中间件
+│   ├── server.ts                     # HTTP 服务入口（端口 5000，含 uploads 静态转发）
 │   │
-│   ├── app/                          # Next.js App Router
+│   ├── app/                          # Next.js App Router（44 个页面路由）
 │   │   ├── page.tsx                  # 登录页
-│   │   ├── layout.tsx                # 根布局
-│   │   ├── globals.css               # 全局样式
-│   │   │
+│   │   ├── layout.tsx / globals.css  # 根布局 / 全局样式
 │   │   ├── teacher/                  # 教师端
-│   │   │   ├── page.tsx              # 教学总览
-│   │   │   ├── students/             # 学生管理 + 学情详情
-│   │   │   ├── assignments/          # 作业管理 + 新建 + 批改
-│   │   │   ├── questions/bank/       # 题库管理
-│   │   │   ├── analytics/            # 学情看板
-│   │   │   └── ai-generate/          # AI 出题
-│   │   │
-│   │   ├── student/                  # 学生端
-│   │   │   ├── page.tsx              # 我的学情
-│   │   │   ├── assignments/          # 我的作业 + 作答
-│   │   │   ├── errors/               # 错题本
-│   │   │   ├── knowledge-graph/      # 知识图谱
-│   │   │   ├── recommend/            # 个性化推荐
-│   │   │   └── study-plan/           # 学习计划
-│   │   │
-│   │   └── api/                      # API 路由（25 个端点）
-│   │       ├── auth/login/           # 登录认证
-│   │       ├── ai/                   # AI 服务（出题/批改/分析）
-│   │       ├── teacher/              # 教师端 API
-│   │       └── student/              # 学生端 API
+│   │   ├── student/                  # 学生端（overview/assignments/errors/materials/recommend/assistant/notifications/knowledge-graph/profile …）
+│   │   ├── admin/                    # 管理端（看板/机构/用户/课程/审计/设置/备份…）
+│   │   └── api/                      # API 路由（66 个端点）
 │   │
-│   ├── components/ui/                # shadcn/ui 组件（50+）
+│   ├── components/                   # 组件层
+│   │   ├── ui/                       # shadcn/ui / Radix 基础组件
+│   │   ├── app-shell.tsx             # 侧栏 + 顶栏 + 移动端底栏壳
+│   │   ├── mobile-tab-bar.tsx        # 移动端底部导航
+│   │   ├── notification-bell.tsx     # 顶部消息铃铛（通知/公告）
+│   │   └── profile-panel.tsx         # 个人中心面板
 │   │
-│   ├── lib/                          # 核心业务逻辑
-│   │   ├── ai/                       # AI 服务层
-│   │   │   ├── client.ts             # 智谱 GLM 客户端
-│   │   │   └── prompts/              # Prompt 模板
-│   │   │       ├── grading.ts        # 批改
-│   │   │       ├── question-gen.ts   # 出题
-│   │   │       ├── error-analysis.ts # 错因分析
-│   │   │       └── profiler.ts       # 学情分析
-│   │   ├── server-auth.ts            # JWT 服务端认证
-│   │   ├── auth-helper.ts            # 客户端认证工具
+│   ├── lib/                          # 核心逻辑
+│   │   ├── ai/                       # AI 服务层（client.ts + prompts）
+│   │   ├── server-auth.ts            # JWT 服务端鉴权
+│   │   ├── auth-helper.ts            # 客户端认证/头像同步
 │   │   ├── api-fetch.ts              # HTTP 请求封装
-│   │   ├── logger.ts                 # 日志工具
-│   │   ├── labels.ts                 # 中文标签映射
-│   │   ├── validation.ts             # 参数校验
-│   │   ├── export-utils.ts           # 导出工具（CSV/JSON/Print）
-│   │   └── utils.ts                  # 通用工具
+│   │   ├── password.ts               # bcrypt 密码哈希（兼容 sha256）
+│   │   └── ...（label/validation/export 等工具）
 │   │
-│   ├── storage/database/             # 数据库层
-│   │   ├── db.ts                     # SQLite 客户端（sql.js + Drizzle）
-│   │   ├── seed.ts                   # 种子数据（30题 + 6作业 + 10学生）
-│   │   └── shared/
-│   │       ├── schema.ts             # 23 张表 Drizzle Schema
-│   │       └── relations.ts          # 表关系定义
+│   ├── storage/database/             # 数据层
+│   │   ├── db.ts                     # better-sqlite3 + Drizzle 客户端（实时落盘）
+│   │   ├── seed.ts                   # 种子数据（2教师+10学生+1管理员+1助教，276题，24作业，152知识点）
+│   │   └── shared/schema.ts          # Drizzle 表结构
 │   │
 │   └── types/                        # 类型声明
-│       └── sql.js.d.ts               # sql.js TypeScript 类型
 │
-├── .env                              # 环境变量（不提交）
+├── .env                              # 环境变量（setup.bat 自动生成，不提交）
 ├── .env.example                      # 环境变量模板
-├── package.json                      # 依赖配置
-├── tsconfig.json                     # TypeScript 配置
-├── next.config.ts                    # Next.js 配置
-├── tailwind.config  (via postcss)    # Tailwind CSS 4
-│
-├── setup.bat                         # 一键部署脚本
-├── start.bat                         # 启动脚本
-├── dev.bat                           # 开发模式
-└── init-db.bat                       # 数据库初始化
+├── setup.bat / start.bat / init-db.bat  # 一键部署 / 启动 / 重置
+├── package.json / tsconfig.json / next.config.ts
+└── docs/                             # 项目设计 / 审查 / 测试文档
 ```
 
 ---
 
 ## 数据库设计
 
-### 数据表（23 张）
+SQLite + Drizzle ORM，共 23+ 张业务表，分四层：基础数据（学校/学院/专业/班级/用户/课程）→ 教学资源（知识点/知识图谱/题目）→ 业务流转（作业/作答/批改/错题本/掌握日志）→ 互动管理（问答/公告）与学习规划（课表/考试/计划/会话）。
 
-#### 基础数据层
-
-| 表名 | 说明 | 关键字段 |
-|------|------|---------|
-| `school` | 学校 | name, short_name |
-| `college` | 学院 | name, school_id |
-| `major` | 专业 | name, college_id |
-| `class` | 班级 | name, grade, major_id |
-| `user` | 用户（教师/学生）| username, real_name, role, student_level |
-| `course` | 课程 | name, teacher_id, class_id, semester |
-
-#### 教学资源层
-
-| 表名 | 说明 | 关键字段 |
-|------|------|---------|
-| `knowledge_point` | 知识点 | name, course_id, difficulty, parent_id |
-| `knowledge_graph_node` | 知识图谱节点 | node_name, node_level, knowledge_point_id |
-| `knowledge_graph_edge` | 知识图谱边 | from_node_id, to_node_id, relation_type |
-| `question` | 题目 | content, question_type, difficulty, answer, options |
-
-#### 业务流转层
-
-| 表名 | 说明 | 关键字段 |
-|------|------|---------|
-| `assignment` | 作业 | title, course_id, question_ids, start/end_time |
-| `answer` | 学生作答 | assignment_id, student_id, question_id, student_answer |
-| `grading_task` | 批改任务 | answer_id, total_score, dimension_scores, annotations |
-| `error_book` | 错题本 | student_id, question_id, error_type, error_analysis |
-| `knowledge_mastery_log` | 知识点掌握日志 | student_id, knowledge_point_id, mastery_rate |
-
-#### 互动管理层
-
-| 表名 | 说明 | 关键字段 |
-|------|------|---------|
-| `question_record` | 问答记录 | student_id, teacher_id, question_text, answer_text |
-| `announcement` | 公告 | teacher_id, title, content, target_type |
-| `announcement_read` | 公告已读 | announcement_id, student_id |
-
-#### 学习规划层
-
-| 表名 | 说明 | 关键字段 |
-|------|------|---------|
-| `student_schedule` | 学生日程 | student_id, category, day_of_week, start/end_time |
-| `class_schedule` | 课表 | course_id, class_id, day_of_week |
-| `exam_schedule` | 考试安排 | course_id, exam_date, knowledge_scope |
-| `study_plan` | 学习计划 | student_id, plan_type, focus_knowledge_ids |
-| `study_session` | 学习会话 | plan_id, knowledge_point_id, session_type |
-
-### 学生分层逻辑
-
-```
-全优层   → 所有课程平均分 ≥ 90
-学霸层   → 平均分 ≥ 80 且 < 90
-中等层   → 平均分 ≥ 60 且 < 80
-提升层   → 平均分 < 60
-```
+> 学生分层：全优(≥90) / 学霸(≥80) / 中等(≥60) / 提升(<60)，由平均分实时计算。
 
 ---
 
 ## API 接口
 
-### 认证
+### 认证与账号
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/auth/login` | 用户登录，返回 JWT Token |
+| POST | `/api/auth/login` | 登录，校验 bcrypt 密码，返回 JWT |
+| GET/PATCH | `/api/account` | 个人资料查询 / 修改（姓名、层级、头像） |
+| POST | `/api/account/change-password` | 修改密码（校验原密码，改后 token 失效） |
+| POST | `/api/account/upload-avatar` | 头像上传（multipart，限图片类型/大小） |
 
 ### AI 服务
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/ai/generate-questions` | AI 智能出题 |
+| POST | `/api/ai/generate-questions` | AI 智能出题（数量 1–20） |
 | POST | `/api/ai/grade` | AI 单题批改（同步） |
 | POST | `/api/ai/grade/batch` | AI 批量批改 |
 | POST | `/api/ai/grade-stream` | AI 批改（SSE 流式输出） |
 | POST | `/api/ai/analyze-error` | AI 错因分析 |
 | GET | `/api/ai/profile` | AI 学情分析 |
 
-### 教师端
+### 教师端 / 学生端 / 管理端
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/teacher/students` | 学生列表（支持分层筛选） |
-| GET | `/api/teacher/students/[id]` | 学生学情详情 |
-| GET | `/api/teacher/assignments` | 作业列表（支持课程/状态筛选） |
-| POST | `/api/teacher/assignments` | 创建作业 |
-| GET | `/api/teacher/assignments/[id]/questions` | 作业题目详情 |
-| GET | `/api/teacher/assignments/[id]/students/[studentId]` | 学生作业详情 |
-| GET/POST | `/api/teacher/questions/bank` | 题库管理 |
-| PUT/DELETE | `/api/teacher/questions/bank` | 题目更新/删除 |
-| GET | `/api/teacher/analytics` | 学情统计数据 |
-
-### 学生端
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/student/profile` | 个人学情数据 |
-| GET | `/api/student/assignments` | 我的作业列表 |
-| GET | `/api/student/assignments/[id]` | 作业详情 |
-| POST | `/api/student/assignments/submit` | 提交作业 |
-| GET | `/api/student/errors` | 错题本 |
-| GET | `/api/student/knowledge-graph` | 知识图谱数据 |
-| GET | `/api/student/recommend` | 个性化推荐数据 |
-| GET/POST/DELETE | `/api/student/schedule` | 课表管理 |
-| GET/POST | `/api/student/study-plan` | 学习计划 |
-| POST | `/api/student/study-plan/generate` | AI 生成学习计划 |
+覆盖作业、题库、学生学情、学情看板、错题本、知识图谱、推荐、学习计划、公告、批改确认、机构管理、系统配置等，共 66 个端点。详见 `src/app/api/` 目录，每个端点自带注释与鉴权（`requireAuth`）。
 
 ---
 
@@ -555,34 +372,41 @@ suguang_projects/
 
 | 变量 | 必填 | 说明 | 默认值 |
 |------|:--:|------|------|
-| `ZHIPU_API_KEY` | ✓ | 智谱开放平台 API Key | — |
+| `ZHIPU_API_KEY` | ✓ | 智谱开放平台 API Key（也可在管理端在线配置并同步 .env） | — |
+| `ZHIPU_BASE_URL` | ✗ | 智谱 API 地址 | 官方默认 |
 | `ZHIPU_MODEL` | ✗ | 模型名称（免费：`glm-4-flash`，付费：`glm-4-plus`） | `glm-4-flash` |
 | `JWT_SECRET` | ✗ | JWT 签名密钥（`setup.bat` 自动生成） | 随机生成 |
 | `DATABASE_PATH` | ✗ | SQLite 数据库文件路径 | `./data/tracinglight.db` |
 | `PORT` | ✗ | HTTP 服务端口 | `5000` |
-| `NODE_ENV` | ✗ | 运行环境（`development` / `production`） | `development` |
+| `NODE_ENV` | ✗ | `development` / `production` | `development` |
+
+> 管理端「系统设置」保存 AI 配置时，会自动同步 `{ai_api_key→ZHIPU_API_KEY, ai_base_url→ZHIPU_BASE_URL, ai_model→ZHIPU_MODEL}` 写入 `.env`，重启/重置数据库后依然生效。
+
+---
 
 ## 常见问题
 
 | 问题 | 原因 | 解决 |
 |------|------|------|
-| 登录提示"用户不存在" | 数据库未播种 | 运行 `init-db.bat` 后重启 |
-| AI 功能报错 | API Key 未配置或无效 | 检查 `.env` 中 `ZHIPU_API_KEY` |
-| 端口 5000 被占用 | 其他服务占用了端口 | 关掉占用进程或改 `.env` 中 `PORT` |
-| `sql.js` 相关报错 | 依赖未正确安装 | 删除 `node_modules` 重装 |
-| 页面空白 | 构建产物损坏 | 删除 `.next` 和 `dist`，重新 `pnpm build` |
+| 登录提示"用户不存在/密码错误" | 账号密码未按默认值输入 | 参照测试账号表（默认密码=用户名，admin=123456） |
+| AI 功能报错 | Key 未配置 / 是占位符 / 无效 | 管理端→系统设置配置真实 Key；或 `.env` 设 `ZHIPU_API_KEY` |
+| 头像上传后 404 | 未重启 / 旧上传目录 | 重启项目（server.ts 现已按需转发 uploads） |
+| 端口 5000 被占用 | 其他服务占用 | 关掉占用进程或改 `.env` 中 `PORT` |
+| better-sqlite3 报错 | 依赖未正确安装 | 删除 `node_modules` 重装（本地编译需对应 Node 版本） |
+| 页面空白 | 构建产物损坏 | 删除 `.next`，重新 `pnpm build` |
+
+---
 
 ## 数据备份
 
 SQLite 是单文件数据库，备份只需复制一个文件：
 
 ```bash
-# 备份
-copy data\tracinglight.db data\tracinglight_backup.db
-
-# 恢复
-copy data\tracinglight_backup.db data\tracinglight.db
+copy data\tracinglight.db data\tracinglight_backup.db    # 备份
+copy data\tracinglight_backup.db data\tracinglight.db    # 恢复
 ```
+
+> 重置数据：仅删除 `data\tracinglight.db` 后运行 `init-db.bat` 即可，其余文件无需删除。
 
 ---
 

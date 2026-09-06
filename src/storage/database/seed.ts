@@ -1,5 +1,5 @@
 /**
- * 溯光 TracingLight V3.0 种子数据脚本 (Drizzle ORM)
+ * 溯光 TracingLight — 种子数据脚本 (Drizzle ORM)
  * 运行: npx tsx src/storage/database/seed.ts
  */
 import { initDb, getDb, saveDb } from './db';
