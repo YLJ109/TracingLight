@@ -84,17 +84,8 @@ export default function StudentNotifications() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center">
-            <Bell className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="page-title">消息中心</h1>
-            <p className="page-subtitle">公告、作业、成绩、AI 批改等消息都会汇总在这里</p>
-          </div>
-        </div>
         {tab === 'notification' && unreadCount > 0 && (
-          <Button variant="outline" size="sm" onClick={markAllRead} className="gap-1.5">
+          <Button variant="outline" size="sm" onClick={markAllRead} className="gap-1.5 ml-auto">
             <CheckCheck className="w-4 h-4" /> 全部已读
           </Button>
         )}

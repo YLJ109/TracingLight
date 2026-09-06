@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch, apiPost } from '@/lib/api-fetch';
+import { SetActiveNav } from '@/components/app-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -119,16 +120,13 @@ export default function StudentDiscussionPage() {
 
   return (
     <div className="space-y-6">
+      <SetActiveNav href="/student/overview" />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => router.push('/student')}>
             <X className="w-5 h-5" />
           </Button>
-          <div>
-            <h1 className="page-title">课程讨论</h1>
-            <p className="text-sm text-muted-foreground mt-1">发帖提问、交流心得，让疑问被看到、被解答</p>
-          </div>
         </div>
         <Button onClick={() => setComposerOpen(true)} className="gap-2 bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-200">
           <Plus className="w-4 h-4" /> 发帖

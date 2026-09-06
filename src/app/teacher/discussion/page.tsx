@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiFetch, apiPost } from '@/lib/api-fetch';
+import { SetActiveNav } from '@/components/app-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -118,16 +119,13 @@ export default function TeacherDiscussionPage() {
 
   return (
     <div className="space-y-6">
+      <SetActiveNav href="/teacher/analytics" />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => router.push('/teacher/analytics')}>
             <X className="w-5 h-5" />
           </Button>
-          <div>
-            <h1 className="page-title">课程讨论区</h1>
-            <p className="text-sm text-muted-foreground mt-1">发布讨论、置顶公告，引导学生互动</p>
-          </div>
         </div>
         <Button onClick={() => setComposerOpen(true)} className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200">
           <Plus className="w-4 h-4" /> 发布讨论

@@ -9,8 +9,8 @@ export async function apiFetch(
   options?: RequestInit
 ): Promise<Response> {
   const headers = new Headers(options?.headers);
-  // Default to JSON if no Content-Type set
-  if (!headers.has('Content-Type') && options?.method !== 'GET') {
+  // Default to JSON if no Content-Type set（FormData 除外：浏览器会自动设置 multipart boundary）
+  if (!headers.has('Content-Type') && options?.method !== 'GET' && !(options?.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
 

@@ -2,33 +2,30 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getCurrentUser, signOut, type CurrentUser } from '@/lib/auth-helper';
+import { getCurrentUser, signOut, setUserAvatar, type CurrentUser, USER_UPDATED_EVENT_NAME } from '@/lib/auth-helper';
+import { apiFetch } from '@/lib/api-fetch';
 import {
   BookOpen, BookMarked, BarChart3,
-  Network, Lightbulb, FolderOpen,
-  MessageCircle, Bell
+  Lightbulb, FolderOpen,
+  MessageCircle
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AppShell, { type AppShellNavItem } from '@/components/app-shell';
 import { NotificationBell } from '@/components/notification-bell';
 import { EyeCareToggle } from '@/components/eye-care-toggle';
-import { useNotifications } from '@/lib/notification-store';
 
 const navItems: AppShellNavItem[] = [
   { href: '/student/overview', label: '我的学情', icon: BarChart3 },
   { href: '/student/assignments', label: '我的作业', icon: BookOpen },
   { href: '/student/materials', label: '学习材料', icon: FolderOpen },
   { href: '/student/errors', label: '错题本', icon: BookMarked },
-  { href: '/student/knowledge-graph', label: '知识图谱', icon: Network },
   { href: '/student/recommend', label: '个性化推荐', icon: Lightbulb },
   { href: '/student/assistant', label: 'AI 答疑', icon: MessageCircle },
-  { href: '/student/notifications', label: '消息中心', icon: Bell },
 ];
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
-  const { unreadCount } = useNotifications();
 
   useEffect(() => {
     getCurrentUser().then((user) => {
@@ -37,8 +34,21 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
         return;
       }
       setCurrentUser(user);
+      // 会话无头像时，从服务端拉取权威头像并同步，保证侧栏头像正确
+      if (!user.avatar_url) {
+        apiFetch('/api/account').then((r) => r.json()).then((json) => {
+          if (json.success && json.data?.user?.avatar_url) setUserAvatar(json.data.user.avatar_url);
+        }).catch(() => {});
+      }
     });
   }, [router]);
+
+  // 头像/资料更新后无需刷新即可同步到侧栏（layout 不随路由重挂载）
+  useEffect(() => {
+    const handle = () => getCurrentUser().then((u) => { if (u) setCurrentUser(u); });
+    window.addEventListener(USER_UPDATED_EVENT_NAME, handle);
+    return () => window.removeEventListener(USER_UPDATED_EVENT_NAME, handle);
+  }, []);
 
   const handleLogout = () => {
     signOut();
@@ -62,12 +72,8 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
         ? 'level-weak'
         : '';
 
-  // 通知未读数挂到「消息中心」
-  const items = navItems.map((n) =>
-    n.href === '/student/notifications'
-      ? { ...n, badge: unreadCount }
-      : n
-  );
+  // 通知未读数由顶栏铃铛(NotificationBell)统一展示
+  const items = navItems;
 
   return (
     <AppShell
@@ -79,10 +85,11 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
       topRight={
         <>
           <EyeCareToggle />
-          <NotificationBell />
+          <NotificationBell role="student" />
         </>
       }
       avatarChar={currentUser.real_name[0]}
+      avatarUrl={currentUser.avatar_url}
       userName={currentUser.real_name}
       userMeta={
         levelLabel ? (
@@ -90,6 +97,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
         ) : undefined
       }
       onLogout={handleLogout}
+      profileHref="/student/profile"
     >
       {children}
     </AppShell>

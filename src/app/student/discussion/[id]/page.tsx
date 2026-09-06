@@ -2,11 +2,17 @@
 
 import { useParams, useSearchParams } from 'next/navigation';
 import DiscussionDetail from '@/components/discussion-detail';
+import { SetActiveNav } from '@/components/app-shell';
 
 export default function StudentDiscussionDetailPage() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const courseId = searchParams.get('course_id');
   const backHref = `/student/discussion${courseId ? `?course_id=${courseId}` : ''}`;
-  return <DiscussionDetail postId={String(params?.id ?? '')} backHref={backHref} />;
+  return (
+    <>
+      <SetActiveNav href="/student/overview" />
+      <DiscussionDetail postId={String(params?.id ?? '')} backHref={backHref} />
+    </>
+  );
 }

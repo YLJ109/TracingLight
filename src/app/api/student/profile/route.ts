@@ -110,6 +110,26 @@ export async function GET(request: NextRequest) {
       ? Math.round(submittedAnswers.filter((r) => r.submitted_at && r.submitted_at <= (r.end_time || '9999')).length / submittedAnswers.length * 100)
       : 0;
 
+    // 班级排名：同班已完成批改的平均分降序，第 1 名 = 班级第一
+    let classRank: number | null = null;
+    if (stuClassId) {
+      const classmates = db.select({ id: user.id }).from(user)
+        .where(and(eq(user.role, 'student'), eq(user.class_id, stuClassId)))
+        .all();
+      const scored = classmates.map((c) => {
+        const gs = db.select({ total_score: gradingTask.total_score, full_score: gradingTask.full_score })
+          .from(gradingTask)
+          .where(and(eq(gradingTask.student_id, c.id), eq(gradingTask.status, 'completed')))
+          .all();
+        const ts = gs.reduce((s, g) => s + (g.total_score || 0), 0);
+        const tf = gs.reduce((s, g) => s + (g.full_score || 0), 0);
+        return { id: c.id, avg: tf > 0 ? ts / tf : 0 };
+      });
+      scored.sort((a, b) => b.avg - a.avg);
+      const idx = scored.findIndex((r) => r.id === studentId);
+      if (idx >= 0) classRank = idx + 1;
+    }
+
     const indicators = [
       { key: 'completionRate', icon: 'completionRate', label: '作业完成率', value: completionRate, unit: '%', color: 'teal' },
       { key: 'onTimeRate', icon: 'onTimeRate', label: '按时提交率', value: onTimeRate, unit: '%', color: 'blue' },
@@ -260,7 +280,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        student,
+        student: { ...student, classRank },
         courses,
         selectedCourseId: courseId,
         // Core indicators (真实 avgScore 覆盖 mock)

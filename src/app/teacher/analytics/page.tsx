@@ -332,32 +332,8 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="page-title">学情看板</h1>
-          <p className="text-sm text-muted-foreground mt-1">班级整体学情数据可视化分析</p>
-        </div>
-        {/* P2-1：从"发现薄弱"到"采取行动"的一键出口 */}
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            className="gap-1.5"
-            onClick={() => router.push(`/teacher/discussion${courseId ? `?course_id=${courseId}` : ''}`)}
-          >
-            <MessagesSquare className="w-4 h-4" /> 讨论区
-          </Button>
-          <Button
-            className="bg-violet-600 hover:bg-violet-700 gap-1.5"
-            onClick={() => router.push(`/teacher/assignments/new?auto_ai=1${courseId ? `&course_id=${courseId}` : ''}`)}
-          >
-            <Zap className="w-4 h-4" /> 针对薄弱点 AI 布置作业
-          </Button>
-        </div>
-      </div>
-
-      {/* 筛选栏：全部 / 按课程 / 按班级 */}
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-3">
+      {/* 筛选栏：全部 / 按课程 / 按班级 + 右侧 讨论区/AI布置作业 */}
+      <div className="flex flex-wrap items-center gap-3 justify-between rounded-xl border border-border bg-card p-3">
         <span className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
           <Filter className="w-4 h-4" />筛选维度
         </span>
@@ -401,6 +377,22 @@ export default function AnalyticsPage() {
             </SelectContent>
           </Select>
         )}
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          {/* P2-1：从"发现薄弱"到"采取行动"的一键出口 */}
+          <Button
+            variant="outline"
+            className="gap-1.5 shrink-0"
+            onClick={() => router.push(`/teacher/discussion${courseId ? `?course_id=${courseId}` : ''}`)}
+          >
+            <MessagesSquare className="w-4 h-4" /> 讨论区
+          </Button>
+          <Button
+            className="bg-violet-600 hover:bg-violet-700 gap-1.5 shrink-0"
+            onClick={() => router.push(`/teacher/assignments/new?auto_ai=1${courseId ? `&course_id=${courseId}` : ''}`)}
+          >
+            <Zap className="w-4 h-4" /> 针对薄弱点 AI 布置作业
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -549,9 +541,9 @@ export default function AnalyticsPage() {
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="text-lg font-bold text-teal-600">{student.avgScore}</p>
-                          <p className="text-xs text-muted-foreground">
-                            完成 {student.completedAssignments} 次作业
+                          <p className="text-teal-600">
+                            <span className="text-lg font-bold">{student.avgScore}</span>
+                            <span className="text-xs text-muted-foreground ml-1">分 · 完成 {student.completedAssignments} 次作业</span>
                           </p>
                         </div>
                       </div>

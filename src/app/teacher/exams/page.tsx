@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { BookOpen, Plus, Calendar, Clock } from 'lucide-react';
 import { useCurrentUser } from '@/lib/auth-helper';
 import { apiFetch } from '@/lib/api-fetch';
+import { SetActiveNav } from '@/components/app-shell';
 
 interface Exam {
   id: number;
@@ -87,11 +88,8 @@ export default function TeacherExamsPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-fade-in-up">
+      <SetActiveNav href="/teacher/assignments" />
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <BookOpen className="w-7 h-7 text-teal-600" />
-          <h1 className="page-title">考试管理</h1>
-        </div>
         <Button onClick={() => setShowCreate(true)} className="bg-teal-600 hover:bg-teal-700">
           <Plus className="w-4 h-4 mr-2" />
           创建考试

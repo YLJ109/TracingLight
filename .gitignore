@@ -117,6 +117,8 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 # Runtime data
+# 运行时上传的头像/资源（接口会在运行时自动重建目录）
+public/uploads/
 pids
 *.pid
 *.seed

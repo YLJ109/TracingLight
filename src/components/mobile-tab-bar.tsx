@@ -6,7 +6,6 @@ import {
   LayoutDashboard,
   BookOpen,
   AlertCircle,
-  GitGraph,
   Users,
   FileText,
   Library,
@@ -19,7 +18,6 @@ const studentTabs = [
   { href: '/student/assignments', label: '作业', icon: BookOpen },
   { href: '/student/errors', label: '错题', icon: AlertCircle },
   { href: '/student/assistant', label: '答疑', icon: MessageCircle },
-  { href: '/student/knowledge-graph', label: '图谱', icon: GitGraph },
   { href: '/student/recommend', label: '推荐', icon: Sparkles },
 ];
 

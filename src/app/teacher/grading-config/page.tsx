@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { apiFetch } from '@/lib/api-fetch';
+import { SetActiveNav } from '@/components/app-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -168,16 +169,8 @@ export default function GradingConfigPage() {
 
   return (
     <div className="space-y-6">
+      <SetActiveNav href="/teacher/assignments" />
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center">
-            <SlidersHorizontal className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="page-title">批改规则</h1>
-            <p className="page-subtitle">自定义 AI 批改的评分标准、扣分规则、评语风格与成绩等级，修改后立即生效</p>
-          </div>
-        </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={() => router.push('/teacher/assignments')} className="text-slate-500 hover:text-slate-700">
             <ArrowLeft className="w-4 h-4 mr-1" /> 返回作业管理

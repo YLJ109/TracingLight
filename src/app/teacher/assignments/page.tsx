@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -239,22 +238,6 @@ export default function TeacherAssignments() {
 
   return (
     <div className="space-y-6 animate-fade-in-up">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="page-title">作业管理</h1>
-          <p className="text-sm text-slate-500">按课程/学生维度管理作业与批改</p>
-        </div>
-        <div className="flex gap-2">
-          <Button size="sm" variant="ghost" onClick={() => router.push('/teacher/grading-config')}>
-            <SlidersHorizontal className="w-4 h-4 mr-1" /> 批改规则
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => router.push('/teacher/assignments/new')}>
-            <Plus className="w-4 h-4 mr-1" /> 新建作业
-          </Button>
-        </div>
-      </div>
-
       {/* AI Grading Banner */}
       {aiGrading && (
         <Card className="border-teal-200 bg-teal-50/50 py-0">
@@ -302,6 +285,14 @@ export default function TeacherAssignments() {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+            <div className="flex items-center gap-2 border-l border-slate-200 pl-3 ml-2">
+              <Button size="sm" variant="outline" className="shrink-0" onClick={() => router.push('/teacher/grading-config')}>
+                <SlidersHorizontal className="w-4 h-4 mr-1" /> 批改规则
+              </Button>
+              <Button size="sm" className="shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm" onClick={() => router.push('/teacher/assignments/new')}>
+                <Plus className="w-4 h-4 mr-1" /> 新建作业
+              </Button>
+            </div>
           </div>
           <div className="flex gap-4 text-xs text-slate-500 border-t border-slate-100 pt-3">
             <span>共 <strong className="text-slate-700">{assignments.length}</strong> 份作业</span>
@@ -350,25 +341,26 @@ export default function TeacherAssignments() {
                                 <StatusIcon className="w-3 h-3 mr-1" /> {config.label}
                               </Badge>
                             </div>
-                            <div className="flex items-center gap-6 text-sm text-slate-500">
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
                               <span>截止: {new Date(asgn.end_time).toLocaleDateString('zh-CN')}</span>
                               <span>{asgn.question_count}题 · 满分{fmt(asgn.total_score)}</span>
-                              <span>提交: {asgn.submitted_count}/{asgn.total_students}</span>
-                              <span>已批: {asgn.graded_count}/{asgn.submitted_count}</span>
+                              {asgn.submitted_count > 0 ? (
+                                <span className="inline-flex items-center gap-2">
+                                  <span>已交 {asgn.submitted_count}/{asgn.total_students}</span>
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span>已批 {asgn.graded_count}/{asgn.submitted_count}</span>
+                                    <span className="relative inline-block w-16 h-1.5 rounded-full bg-slate-200 overflow-hidden align-middle">
+                                      <span className="absolute inset-y-0 left-0 bg-teal-500 rounded-full" style={{ width: `${(asgn.graded_count / Math.max(asgn.submitted_count, 1)) * 100}%` }} />
+                                    </span>
+                                  </span>
+                                </span>
+                              ) : (
+                                <span>提交 0 人</span>
+                              )}
                               {asgn.avg_score > 0 && (
                                 <span className="font-mono font-medium text-slate-700">均分 {asgn.avg_score}</span>
                               )}
                             </div>
-                            {/* Progress bar */}
-                            {asgn.submitted_count > 0 && (
-                              <div className="mt-3 max-w-md">
-                                <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                                  <span>批改进度</span>
-                                  <span>{asgn.graded_count}/{asgn.submitted_count}</span>
-                                </div>
-                                <Progress value={(asgn.graded_count / Math.max(asgn.submitted_count, 1)) * 100} className="h-1.5" />
-                              </div>
-                            )}
                             {/* Student stats expand */}
                             {expandedAsgn === asgn.id && asgn.student_stats && (
                               <div className="mt-4 border-t pt-3">

@@ -17,12 +17,30 @@ export interface CurrentUser {
   role: 'teacher' | 'student' | 'admin' | 'assistant';
   student_level: string | null;
   class_id: number | null;
+  avatar_url?: string;
   token?: string;
 }
 
 const AUTH_KEY = 'tracinglight_user';
+const USER_UPDATED_EVENT = 'tracinglight:user-updated';
 
 let cachedUser: CurrentUser | null = null;
+
+/**
+ * 更新当前用户头像：同步内存缓存 + localStorage，并广播「用户信息已更新」事件，
+ * 供侧栏/布局等跨页组件实时刷新（它们不会随路由重挂载）。
+ */
+export function setUserAvatar(url: string) {
+  if (typeof window === 'undefined' || !url) return;
+  const raw = localStorage.getItem(AUTH_KEY);
+  const stored = raw ? JSON.parse(raw) : {};
+  const updated = { ...stored, avatar_url: url };
+  localStorage.setItem(AUTH_KEY, JSON.stringify(updated));
+  cachedUser = { ...stored, avatar_url: url } as CurrentUser;
+  window.dispatchEvent(new CustomEvent(USER_UPDATED_EVENT, { detail: { avatarUrl: url } }));
+}
+
+export const USER_UPDATED_EVENT_NAME = USER_UPDATED_EVENT;
 
 export function clearUserCache() {
   cachedUser = null;

@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BookMarked, CheckCircle2, RotateCcw, Sparkles, Loader2, Brain, ChevronDown, ChevronUp, Download, ArrowLeft, Filter, X, ExternalLink, Dumbbell } from 'lucide-react';
+import { BookMarked, CheckCircle2, RotateCcw, Sparkles, Loader2, Brain, ChevronDown, ChevronUp, Download, Network, Filter, X, ExternalLink, Dumbbell } from 'lucide-react';
 import { getCurrentUser } from '@/lib/auth-helper';
 import { exportCsv } from '@/lib/export-utils';
 
@@ -449,11 +449,7 @@ export default function StudentErrors() {
           </div>
         </div>
       )}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="page-title">错题本</h1>
-          <p className="text-sm text-slate-500">共{errors.length}道错题 · {pending.filter((e) => isDue(e.next_review_at)).length}道今日待复习 · {pending.filter((e) => !isDue(e.next_review_at)).length}道间隔中 · {mastered.length}道已掌握</p>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           {kpIdFromQuery && kpFilterName && (
             <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg">
@@ -469,9 +465,9 @@ export default function StudentErrors() {
           )}
           <button
             onClick={() => router.push('/student/knowledge-graph')}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-violet-600 to-fuchsia-600 px-3 py-1.5 text-xs font-medium text-white hover:from-violet-700 hover:to-fuchsia-700 active:scale-95 transition-all shadow-md shadow-violet-200"
           >
-            <ArrowLeft className="h-3.5 w-3.5" />返回知识图谱
+            <Network className="h-3.5 w-3.5" />知识图谱
           </button>
           <button
             onClick={() => {
@@ -496,46 +492,47 @@ export default function StudentErrors() {
             <span className="text-xs text-teal-700 font-medium">AI 错题解析已接入</span>
           </div>
         </div>
+
+        {/* 统计并入顶栏 */}
+        <div className="flex items-center gap-4 text-xs text-slate-500 bg-slate-50 rounded-lg px-4 py-1.5">
+          <span>共 <strong className="text-slate-700">{errors.length}</strong> 道</span>
+          <span className="text-amber-600"><strong>{pending.length}</strong> 待复习</span>
+          <span className="text-teal-600"><strong>{mastered.length}</strong> 已掌握</span>
+          {filterCourse !== 'all' && <span className="hidden sm:inline">筛选: <strong>{filterCourse}</strong></span>}
+        </div>
       </div>
 
-      {/* Course filter pills */}
-      {courses.length > 1 && (
+      {/* 筛选：课程 + 题型 */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {courses.length > 1 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setFilterCourse('all')}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${filterCourse === 'all' ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            >全部课程</button>
+            {courses.map((c: string) => (
+              <button
+                key={c}
+                onClick={() => setFilterCourse(c)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${filterCourse === c ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+              >{c}</button>
+            ))}
+          </div>
+        )}
+        <div className="hidden sm:block h-5 w-px bg-slate-200" />
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => setFilterCourse('all')}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${filterCourse === 'all' ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-          >全部课程</button>
-          {courses.map((c: string) => (
+            onClick={() => setFilterType('all')}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${filterType === 'all' ? 'bg-teal-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+          >全部题型</button>
+          {ALL_QUESTION_TYPES.map((qt) => (
             <button
-              key={c}
-              onClick={() => setFilterCourse(c)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${filterCourse === c ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-            >{c}</button>
+              key={qt}
+              onClick={() => setFilterType(qt)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${filterType === qt ? 'bg-teal-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            >{questionTypeLabels[qt]}</button>
           ))}
         </div>
-      )}
-
-      {/* Question type filter pills */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <button
-          onClick={() => setFilterType('all')}
-          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${filterType === 'all' ? 'bg-teal-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-        >全部题型</button>
-        {ALL_QUESTION_TYPES.map((qt) => (
-          <button
-            key={qt}
-            onClick={() => setFilterType(qt)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${filterType === qt ? 'bg-teal-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-          >{questionTypeLabels[qt]}</button>
-        ))}
-      </div>
-
-      {/* Stats bar */}
-      <div className="flex gap-4 text-xs text-slate-500 bg-slate-50 rounded-lg p-3">
-        <span>共 <strong className="text-slate-700">{errors.length}</strong> 道错题</span>
-        <span className="text-amber-600"><strong>{pending.length}</strong> 待复习</span>
-        <span className="text-teal-600"><strong>{mastered.length}</strong> 已掌握</span>
-        {filterCourse !== 'all' && <span className="text-slate-400">筛选: <strong>{filterCourse}</strong></span>}
       </div>
 
       {errors.length === 0 ? (

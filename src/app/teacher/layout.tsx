@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { getCurrentUser, signOut, type CurrentUser } from '@/lib/auth-helper';
+import { getCurrentUser, signOut, setUserAvatar, type CurrentUser, USER_UPDATED_EVENT_NAME } from '@/lib/auth-helper';
+import { apiFetch } from '@/lib/api-fetch';
 import {
   Users, BookOpen, BarChart3, Library, Wand2, Megaphone,
 } from 'lucide-react';
@@ -30,8 +31,21 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
         return;
       }
       setCurrentUser(user);
+      // 会话无头像时，从服务端拉取权威头像并同步，保证侧栏头像正确
+      if (!user.avatar_url) {
+        apiFetch('/api/account').then((r) => r.json()).then((json) => {
+          if (json.success && json.data?.user?.avatar_url) setUserAvatar(json.data.user.avatar_url);
+        }).catch(() => {});
+      }
     });
   }, [router]);
+
+  // 头像/资料更新后无需刷新即可同步到侧栏
+  useEffect(() => {
+    const handle = () => getCurrentUser().then((u) => { if (u) setCurrentUser(u); });
+    window.addEventListener(USER_UPDATED_EVENT_NAME, handle);
+    return () => window.removeEventListener(USER_UPDATED_EVENT_NAME, handle);
+  }, []);
 
   const handleLogout = () => {
     signOut();
@@ -52,13 +66,15 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
             计科2401班
           </span>
           <EyeCareToggle />
-          <NotificationBell />
+          <NotificationBell role="teacher" />
         </>
       }
       avatarChar={currentUser.real_name[0]}
+      avatarUrl={currentUser.avatar_url}
       userName={currentUser.real_name}
       userMeta={<p className="text-xs text-slate-400">教师</p>}
       onLogout={handleLogout}
+      profileHref="/teacher/profile"
     >
       {children}
     </AppShell>

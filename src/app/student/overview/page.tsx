@@ -5,10 +5,10 @@ import { apiFetch } from '@/lib/api-fetch';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { DashboardSkeleton } from '@/components/ui/dashboard-skeleton';
 import * as echarts from 'echarts';
-import { BookOpen, Target, TrendingUp, FileText, ChevronRight, AlertCircle, CheckCircle2, Clock, Zap } from 'lucide-react';
+import { BookOpen, Target, TrendingUp, FileText, ChevronRight, AlertCircle, CheckCircle2, Clock, Zap, Trophy } from 'lucide-react';
 
 interface Indicator {
   label: string; value: number | string; unit?: string; color: string; icon?: string; trend?: string;
@@ -19,7 +19,7 @@ interface WeakItem { name: string; priority: string; masteryRate: number; detail
 interface CourseCompare { courseId: number; name: string; shortName: string; avgMastery: number; kpCount: number; errorCount: number; }
 
 interface StudentProfile {
-  student: { real_name: string; student_level: string; classRank?: number; student_no?: string };
+  student: { real_name: string; student_level: string; avatar_url?: string | null; classRank?: number; student_no?: string };
   indicators: Indicator[];
   radarData: RadarItem[];
   trendData: TrendPoint[];
@@ -138,13 +138,29 @@ export default function StudentDashboard() {
     <div className="space-y-6 animate-fade-in-up">
       {/* Header */}
       <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Avatar className="w-12 h-12 ring-2 ring-teal-100"><AvatarFallback className="bg-teal-600 text-white text-lg font-semibold">{student.real_name?.slice(0, 1)}</AvatarFallback></Avatar>
+        <div className="flex items-center gap-5">
+          <Avatar className="w-16 h-16 ring-2 ring-teal-100">
+            {student.avatar_url ? (
+              <AvatarImage src={student.avatar_url} alt={student.real_name} className="object-cover" />
+            ) : (
+              <AvatarFallback className="bg-gradient-to-br from-teal-500 to-emerald-600 text-white text-2xl font-bold">
+                {student.real_name?.slice(0, 1)}
+              </AvatarFallback>
+            )}
+          </Avatar>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-800">我的学情</h1>
-            <div className="flex items-center gap-2 mt-0.5">
-              <Badge variant="outline" className={levelBadgeMap[student.student_level] || 'border-slate-200'}>{levelLabelMap[student.student_level] || student.student_level}</Badge>
-              <span className="text-sm text-muted-foreground">{student.real_name} · 班级排名 <span className="font-semibold text-slate-700">{student.classRank}</span></span>
+            <div className="flex items-center gap-2.5 mb-1.5 flex-wrap">
+              <h1 className="text-2xl font-bold text-slate-900">{student.real_name}</h1>
+              <Badge variant="outline" className={levelBadgeMap[student.student_level] || 'border-slate-200'}>
+                {levelLabelMap[student.student_level] || student.student_level}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-1.5 text-sm text-slate-500">
+              <Trophy className="w-4 h-4 text-amber-500" />
+              <span>班级排名</span>
+              <span className="text-base font-bold text-slate-800">
+                {student.classRank ? `第 ${student.classRank} 名` : '暂无排名'}
+              </span>
             </div>
           </div>
         </div>
