@@ -43,7 +43,7 @@ const PLACEHOLDER_KEYS = [
   'changeme',
 ];
 
-function isPlaceholderKey(key: string): boolean {
+export function isPlaceholderKey(key: string): boolean {
   return PLACEHOLDER_KEYS.includes(key.trim().toLowerCase());
 }
 

@@ -10,7 +10,7 @@
     "lint": "eslint",
     "lint:build": "eslint . --quiet",
     "lint:style": "stylelint \"src/**/*.css\"",
-    "test": "tsx tests/objective-grading.test.ts && tsx tests/password.test.ts && tsx tests/permission.test.ts && tsx tests/mastery.test.ts",
+    "test": "tsx tests/objective-grading.test.ts && tsx tests/password.test.ts && tsx tests/permission.test.ts && tsx tests/mastery.test.ts && tsx tests/ai-config.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "ts-check": "tsc -p tsconfig.json",
