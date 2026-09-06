@@ -824,7 +824,8 @@ async function seed() {
     const baseMastery = baseMap[level];
     const spread = spreadMap[level];
     // 覆盖全部知识点（真实学生应掌握整门课程），用确定性噪声保证可复现
-    for (let kp = 1; kp <= 152; kp++) {
+    for (const kpRow of KPS) {
+      const kp = kpRow.id;
       let courseIdx: number;
       if (kp <= 10) courseIdx = 0; else if (kp <= 26) courseIdx = 1; else if (kp <= 44) courseIdx = 2; else courseIdx = 3;
       const dlBonus = courseIdx === 3 ? Math.floor((kp - 45) / 20) * 4 : 0;
@@ -1006,7 +1007,7 @@ async function seed() {
   console.log('================================');
   console.log('  学校: 1 | 学院: 1 | 专业: 1 | 班级: 2');
   console.log('  教师: 2 | 学生: 10');
-  console.log('  课程: 4 | 知识点: 152');
+  console.log('  课程: 4 | 知识点: ' + KPS.length);
   console.log('  知识图谱节点: ' + KGN.length + ' | 边: ' + KGE.length);
   console.log('  题目: 245 | 作业: 24');
   console.log('  作答记录: ' + answers.length + ' | 批改任务: ' + gradingTasks.length);
