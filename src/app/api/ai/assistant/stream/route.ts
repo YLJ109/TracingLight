@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAIClient } from "@/lib/ai/client";
+import { createAIClient, isAIConfigError } from "@/lib/ai/client";
 import { requireAuth } from "@/lib/server-auth";
 import { getDb, saveDb, ensureColumn } from "@/storage/database/db";
 import { qaSession, qaMessage } from "@/storage/database/shared/schema";
@@ -138,7 +138,9 @@ export async function POST(request: NextRequest) {
             try { saveDb(); } catch { /* 定时持久化兜底 */ }
           } catch { /* 忽略落库失败 */ }
         }
-        send({ error: 'AI 回复中断，请重试', partial: fullContent });
+        // AI 未配置时给出明确的引导提示，其余情况才提示重试
+        const isConfigErr = isAIConfigError(e);
+        send({ error: isConfigErr ? 'AI 服务未配置，请联系管理员前往「系统设置」配置 AI API Key' : 'AI 回复中断，请重试', partial: fullContent, code: isConfigErr ? 'AI_NOT_CONFIGURED' : 'ERROR' });
       } finally {
         try { controller.close(); } catch { /* already closed */ }
       }

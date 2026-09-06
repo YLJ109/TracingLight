@@ -2,7 +2,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb, saveDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
 import { eq } from 'drizzle-orm';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { resolve } from 'path';
 import { systemConfig, auditLog } from '@/storage/database/shared/schema';
+
+/** 管理端在线配置 → .env 的映射。AI 相关 key 保存时同步写回 .env，保证重启/重置 DB 后仍生效 */
+const ENV_SYNC_MAP: Record<string, string> = {
+  ai_api_key: 'ZHIPU_API_KEY',
+  ai_base_url: 'ZHIPU_BASE_URL',
+  ai_model: 'ZHIPU_MODEL',
+};
+
+function syncToEnv(key: string, value: string) {
+  const envKey = ENV_SYNC_MAP[key];
+  if (!envKey) return;
+  const envPath = resolve(process.cwd(), '.env');
+  try {
+    let content = existsSync(envPath) ? readFileSync(envPath, 'utf8') : '';
+    const re = new RegExp(`^${envKey}=.*$`, 'm');
+    if (re.test(content)) {
+      content = content.replace(re, `${envKey}=${value}`);
+    } else {
+      content = content.replace(/\n?$/, '') + `\n${envKey}=${value}\n`;
+    }
+    writeFileSync(envPath, content);
+  } catch { /* 无法写入 .env 时忽略，仅本次运行以 DB 配置生效 */ }
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -46,6 +71,9 @@ export async function POST(request: NextRequest) {
       detail: `更新配置 ${key}`,
     }).run();
     saveDb();
+
+    // AI 相关配置同步写回 .env（ai_api_key → ZHIPU_API_KEY 等），重启/重置 DB 后仍生效
+    syncToEnv(String(key), String(value));
 
     return NextResponse.json({ success: true });
   } catch (e) {

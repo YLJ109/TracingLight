@@ -51,6 +51,21 @@ if exist "data\tracinglight.db" (
     )
 )
 
+REM ---------- 3b. generate .env (if missing) with random JWT secret ----------
+if exist ".env" (
+    echo [3/4] .env already exists, keeping existing.
+) else (
+    echo [3/4] Generating .env with random JWT secret...
+    node -e "var f=require('fs'),c=require('crypto');var s=c.randomBytes(32).toString('hex');var env=['# TracingLight environment','','# ========== Zhipu AI ==========','# fill in your key from https://open.bigmodel.cn','ZHIPU_API_KEY=your_zhipu_api_key_here','ZHIPU_MODEL=glm-4-flash','','# ========== JWT Auth ==========','JWT_SECRET='+s,'','# ========== Database ==========','DATABASE_PATH=./data/tracinglight.db','','# ========== Server ==========','NODE_ENV=production','PORT=5000'].join('\n')+'\n';f.writeFileSync('.env',env.toString());"
+    if errorlevel 1 (
+        echo.
+        echo  [ERROR] Failed to generate .env file.
+        echo.
+        pause
+        exit /b 1
+    )
+)
+
 REM ---------- 4. production build ----------
 echo [4/4] Building production bundle, please wait...
 call "%~dp0node_modules\.bin\next.cmd" build

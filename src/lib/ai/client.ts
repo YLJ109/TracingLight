@@ -3,6 +3,8 @@
  * 基于智谱开放平台 API (https://open.bigmodel.cn)
  */
 import { NextResponse } from 'next/server';
+import { getDb } from '@/storage/database/db';
+import { systemConfig } from '@/storage/database/shared/schema';
 
 const ZHIPU_BASE_URL = process.env.ZHIPU_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4';
 const ZHIPU_MODEL = process.env.ZHIPU_MODEL || 'glm-4-flash';
@@ -30,6 +32,21 @@ export function isAIConfigError(e: unknown): e is AIConfigError {
   return typeof e === 'object' && e !== null && (e as { code?: string }).code === 'AI_NOT_CONFIGURED';
 }
 
+/** 形如占位符/示例的 Key，视为「未配置」，避免拿去调智谱返回 401 */
+const PLACEHOLDER_KEYS = [
+  'your_zhipu_api_key_here',
+  'your_api_key',
+  'your-zhipu-api-key',
+  'sk-your-key',
+  'placeholder',
+  'put_your_api_key_here',
+  'changeme',
+];
+
+function isPlaceholderKey(key: string): boolean {
+  return PLACEHOLDER_KEYS.includes(key.trim().toLowerCase());
+}
+
 /**
  * 从管理端 system_config 读取 AI 服务配置（DB 优先，env 兜底）
  * 支持管理后台「系统设置」在线切换 API 地址 / Key / 模型，立即生效无需重启。
@@ -40,19 +57,15 @@ function getRuntimeConfig(): { apiKey: string; baseUrl: string; model: string } 
   let model = ZHIPU_MODEL;
   let apiKey = process.env.ZHIPU_API_KEY || '';
   try {
-    // 惰性 require（相对路径，避免模块别名在运行时不可解析）；DB 未初始化时静默回退 env
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { getDb } = require('../../storage/database/db');
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { systemConfig } = require('../../storage/database/shared/schema');
-    const db = getDb();
-    const rows = db.select().from(systemConfig).all();
+    // 从管理端 system_config 读取（DB 优先，env 兜底）。静态导入经 Next 打包正确解析，生产亦生效。
+    const rows = getDb().select().from(systemConfig).all();
     const map = new Map(rows.map((r: { key: string; value: string | null }) => [r.key, r.value]));
     if (map.get('ai_base_url')) baseUrl = String(map.get('ai_base_url'));
     if (map.get('ai_model')) model = String(map.get('ai_model'));
     if (map.get('ai_api_key')) apiKey = String(map.get('ai_api_key'));
   } catch { /* DB 未就绪 → 用 env 兜底 */ }
-  if (!apiKey) throw new AIConfigError();
+  // 空值或占位符都视为「未配置」，给出可操作提示而非拿假 Key 调接口 401
+  if (!apiKey || isPlaceholderKey(apiKey)) throw new AIConfigError();
   return { apiKey, baseUrl, model };
 }
 

@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
       knowledgePointDescription: kp.description || "",
       questionType: typeMap[question_type] || question_type,
       difficulty,
-      count: Math.min(count, 5),
+      count: Math.min(count, 20),
     });
 
     const result = await invokeStructured<GeneratedQuestion[]>(

@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Wand2, Sparkles, Loader2, Zap, Save, RotateCcw, CheckCircle2, Trash2, BookOpen, ArrowRight, Copy , ImagePlus } from 'lucide-react';
+import { Wand2, Sparkles, Loader2, Save, RotateCcw, CheckCircle2, Trash2, BookOpen, ArrowRight, Copy, ImagePlus, Minus, Plus } from 'lucide-react';
 
 interface CourseItem {
   id: number;
@@ -297,307 +297,291 @@ const validateQuestion = (q: { question_type: string; content: string; options?:
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-200">
-              <Wand2 className="w-5 h-5 text-white" />
+
+      {/* ── 顶部：出题配置（通栏） ── */}
+      <Card className="relative overflow-hidden border-0 shadow-sm">
+        {/* 顶部渐变装饰线 */}
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-fuchsia-500" />
+        <CardHeader className="border-b border-slate-100 bg-white/70 backdrop-blur pb-4 pt-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center shadow-md shadow-indigo-200">
+                <Wand2 className="w-4 h-4" />
+              </div>
+              <div>
+                <CardTitle className="text-base font-semibold text-slate-800">出题配置</CardTitle>
+                <p className="text-xs text-slate-400">选择课程与知识点，AI 智能生成可审校的高质量题目</p>
+              </div>
             </div>
-            AI 智能出题
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">选择课程和知识点，AI 自动生成高质量题目并保存到题库</p>
-        </div>
-      </div>
+            <Button
+              onClick={handleGenerate}
+              disabled={generating || !kpId}
+              className="gap-2 h-10 px-5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-lg shadow-indigo-200"
+            >
+              {generating ? <><Loader2 className="w-4 h-4 animate-spin" /> 出题中…</> : <><Sparkles className="w-4 h-4" /> 生成题目</>}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-5 space-y-4">
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-slate-700">课程 <span className="text-red-500">*</span></Label>
+              <Select value={courseId} onValueChange={(v) => { setCourseId(v); setKpId(''); }}>
+                <SelectTrigger><SelectValue placeholder="选择课程" /></SelectTrigger>
+                <SelectContent>
+                  {courses.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
 
-      <div className="grid grid-cols-12 gap-6">
-        {/* 左侧配置面板 */}
-        <div className="col-span-4 space-y-4">
-          <Card className="border-0 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Zap className="w-4 h-4 text-amber-500" /> 出题配置
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label className="text-sm">课程 <span className="text-red-500">*</span></Label>
-                <Select value={courseId} onValueChange={(v) => { setCourseId(v); setKpId(''); }}>
-                  <SelectTrigger><SelectValue placeholder="选择课程" /></SelectTrigger>
-                  <SelectContent>
-                    {courses.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+            <div className="space-y-2 lg:col-span-2">
+              <Label className="text-sm font-medium text-slate-700">知识点 <span className="text-red-500">*</span></Label>
+              <Select value={kpId} onValueChange={setKpId} disabled={!courseId}>
+                <SelectTrigger><SelectValue placeholder={courseId ? '选择知识点' : '请先选择课程'} /></SelectTrigger>
+                <SelectContent>
+                  {knowledgePoints.map(kp => <SelectItem key={kp.id} value={String(kp.id)}>{kp.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <div className="flex items-center gap-2 pt-1">
+                {kpCreatingInput ? (
+                  <>
+                    <Input
+                      autoFocus
+                      value={newKpName}
+                      onChange={(e) => setNewKpName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') createKnowledgePoint(); }}
+                      placeholder="输入新知识点名称"
+                      className="flex-1 h-8 text-xs"
+                    />
+                    <Button size="sm" className="h-8 px-2.5 text-xs bg-violet-600 hover:bg-violet-700" disabled={kpCreating || !newKpName.trim() || !courseId} onClick={createKnowledgePoint}>
+                      {kpCreating ? <Loader2 className="w-3 h-3 animate-spin" /> : '创建'}
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={() => { setKpCreatingInput(false); setNewKpName(''); }}>取消</Button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setKpCreatingInput(true)}
+                    disabled={!courseId}
+                    className="text-xs text-violet-600 hover:text-violet-700 flex items-center gap-0.5 disabled:opacity-40"
+                  >+ 没有想要的知识点？新建一个</button>
+                )}
               </div>
+            </div>
 
-              <div className="space-y-2">
-                <Label className="text-sm">知识点 <span className="text-red-500">*</span></Label>
-                <Select value={kpId} onValueChange={setKpId} disabled={!courseId}>
-                  <SelectTrigger><SelectValue placeholder={courseId ? '选择知识点' : '请先选择课程'} /></SelectTrigger>
-                  <SelectContent>
-                    {knowledgePoints.map(kp => <SelectItem key={kp.id} value={String(kp.id)}>{kp.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                {/* 快捷新建知识点：下拉没有想要的选项时直接创建 */}
-                <div className="flex items-center gap-2 mt-1.5">
-                  {kpCreatingInput ? (
-                    <>
-                      <Input
-                        autoFocus
-                        value={newKpName}
-                        onChange={(e) => setNewKpName(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') createKnowledgePoint(); }}
-                        placeholder="输入新知识点名称"
-                        className="flex-1 h-8 text-xs"
-                      />
-                      <Button size="sm" className="h-8 px-2.5 text-xs bg-violet-600 hover:bg-violet-700" disabled={kpCreating || !newKpName.trim() || !courseId} onClick={createKnowledgePoint}>
-                        {kpCreating ? <Loader2 className="w-3 h-3 animate-spin" /> : '创建'}
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={() => { setKpCreatingInput(false); setNewKpName(''); }}>取消</Button>
-                    </>
-                  ) : (
-                    <button
-                      onClick={() => setKpCreatingInput(true)}
-                      disabled={!courseId}
-                      className="text-xs text-violet-600 hover:text-violet-700 flex items-center gap-0.5 disabled:opacity-40"
-                    >+ 没有想要的知识点？新建一个</button>
-                  )}
-                </div>
-              </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-slate-700">题型</Label>
+              <Select value={questionType} onValueChange={setQuestionType}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="single_choice">单选题</SelectItem>
+                  <SelectItem value="multiple_choice">多选题</SelectItem>
+                  <SelectItem value="judgment">判断题</SelectItem>
+                  <SelectItem value="fill_blank">填空题</SelectItem>
+                  <SelectItem value="short_answer">简答题</SelectItem>
+                  <SelectItem value="code">编程题</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-              <div className="space-y-2">
-                <Label className="text-sm">题型</Label>
-                <Select value={questionType} onValueChange={setQuestionType}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="single_choice">单选题</SelectItem>
-                    <SelectItem value="multiple_choice">多选题</SelectItem>
-                    <SelectItem value="judgment">判断题</SelectItem>
-                    <SelectItem value="fill_blank">填空题</SelectItem>
-                    <SelectItem value="short_answer">简答题</SelectItem>
-                    <SelectItem value="code">编程题</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-slate-700">难度</Label>
+              <Select value={difficulty} onValueChange={setDifficulty}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="easy">简单</SelectItem>
+                  <SelectItem value="medium">中等</SelectItem>
+                  <SelectItem value="hard">困难</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-              <div className="space-y-2">
-                <Label className="text-sm">难度</Label>
-                <Select value={difficulty} onValueChange={setDifficulty}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="easy">简单</SelectItem>
-                    <SelectItem value="medium">中等</SelectItem>
-                    <SelectItem value="hard">困难</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-sm">生成数量</Label>
-                <div className="flex items-center gap-2">
-                  {[1, 2, 3, 4, 5].map(n => (
-                    <button
-                      key={n}
-                      onClick={() => setCount(n)}
-                      className={`flex-1 h-9 rounded-lg text-sm font-medium transition-all ${count === n ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm">自定义要求（可选）</Label>
-                  <label
-                    className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors cursor-pointer ${ocrLoading ? 'bg-violet-100 text-violet-500' : 'bg-violet-50 text-violet-700 hover:bg-violet-100'}`}
-                    title="上传含题目的图片，AI 自动识别文字作为出题依据"
-                  >
-                    {ocrLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ImagePlus className="w-3 h-3" />}
-                    {ocrLoading ? '识别中…' : '图片出题'}
-                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={ocrLoading} />
-                  </label>
-                </div>
-                <Textarea
-                  placeholder="例如：结合生活实际场景出题、侧重代码理解...；也可上传题目图片自动识别填入"
-                  value={customPrompt}
-                  onChange={e => setCustomPrompt(e.target.value)}
-                  rows={3}
-                  className="text-sm"
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-slate-700">生成数量 <span className="text-slate-400 font-normal text-xs">(1~20)</span></Label>
+              <div className="flex items-center overflow-hidden rounded-lg border border-slate-200 bg-white h-9">
+                <button
+                  type="button"
+                  onClick={() => setCount(Math.max(1, count - 1))}
+                  disabled={count <= 1}
+                  className="w-9 shrink-0 flex items-center justify-center text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors"
+                ><Minus className="w-4 h-4" /></button>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={count}
+                  onChange={(e) => setCount(Math.min(20, Math.max(1, Number(e.target.value) || 1)))}
+                  className="flex-1 h-full min-w-0 text-center text-sm font-semibold text-slate-700 outline-none border-x border-slate-100 [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
+                <button
+                  type="button"
+                  onClick={() => setCount(Math.min(20, count + 1))}
+                  disabled={count >= 20}
+                  className="w-9 shrink-0 flex items-center justify-center text-slate-500 hover:bg-slate-50 disabled:opacity-40 transition-colors"
+                ><Plus className="w-4 h-4" /></button>
               </div>
+            </div>
+          </div>
 
-              <Button
-                onClick={handleGenerate}
-                disabled={generating || !kpId}
-                className="w-full gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200 h-10"
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm">自定义要求（可选）</Label>
+              <label
+                className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors cursor-pointer ${ocrLoading ? 'bg-violet-100 text-violet-500' : 'bg-violet-50 text-violet-700 hover:bg-violet-100'}`}
+                title="上传含题目的图片，AI 自动识别文字作为出题依据"
               >
-                {generating ? <><Loader2 className="w-4 h-4 animate-spin" /> AI 出题中...</> : <><Sparkles className="w-4 h-4" /> 生成题目</>}
+                {ocrLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ImagePlus className="w-3 h-3" />}
+                {ocrLoading ? '识别中…' : '图片出题'}
+                <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={ocrLoading} />
+              </label>
+            </div>
+            <Textarea
+              placeholder="例如：结合生活实际场景出题、侧重代码理解...；也可上传题目图片自动识别填入"
+              value={customPrompt}
+              onChange={e => setCustomPrompt(e.target.value)}
+              rows={3}
+              className="text-sm"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── 下方：生成结果（通栏，不再被挤压变窄） ── */}
+      {!generating && generated.length === 0 ? (
+        <Card className="border-0 shadow-sm flex items-center justify-center min-h-[320px]">
+          <CardContent className="text-center">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center mx-auto mb-4">
+              <Wand2 className="w-10 h-10 text-indigo-400" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-700">AI 智能出题</h3>
+            <p className="text-sm text-slate-500 mt-2 max-w-md mx-auto">在上方选择课程、知识点和题型，点击「生成题目」，AI 将自动生成高质量题目，审校后入库题库</p>
+            <div className="flex items-center justify-center gap-6 mt-6 text-xs text-slate-400">
+              <span className="flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> 6种题型</span>
+              <span className="flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> 3级难度</span>
+              <span className="flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> 生成后审校入库</span>
+            </div>
+          </CardContent>
+        </Card>
+      ) : generating ? (
+        <Card className="border-0 shadow-sm flex items-center justify-center min-h-[340px]">
+          <CardContent className="text-center py-10">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mx-auto mb-4 animate-pulse">
+              <Sparkles className="w-8 h-8 text-white" />
+            </div>
+            <h3 className="text-lg font-semibold text-slate-700">AI 正在出题…</h3>
+            <p className="text-sm text-slate-500 mt-2">正在根据知识点和难度生成 {count} 道{typeLabels[questionType] || '题目'}…</p>
+            <div className="flex items-center justify-center gap-1.5 mt-5">
+              {[0, 1, 2].map(i => (
+                <div key={i} className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          {/* 结果操作栏 */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-amber-500" />
+                生成结果
+              </h2>
+              <Badge variant="secondary" className="text-xs">{generated.length} 题</Badge>
+              {(() => {
+                const pass = generated.filter((q) => validateQuestion(q).length === 0).length;
+                return pass === generated.length
+                  ? <Badge className="text-xs bg-green-50 text-green-700 border-0">质量自检 {pass}/{generated.length} 通过</Badge>
+                  : <Badge className="text-xs bg-amber-50 text-amber-700 border-0">自检 {pass}/{generated.length} 通过</Badge>;
+              })()}
+              <Badge className="text-xs bg-indigo-50 text-indigo-700 border-0">已选 {selectedIdx.size} 题</Badge>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" className="gap-1 bg-indigo-600 hover:bg-indigo-700" disabled={saving || selectedIdx.size === 0} onClick={handleSaveAll}>
+                {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                {saving ? '入库中…' : '确认入库'}
               </Button>
-            </CardContent>
-          </Card>
+              <Button variant="outline" size="sm" className="gap-1" onClick={handleGenerate}>
+                <RotateCcw className="w-3 h-3" /> 重新生成
+              </Button>
+              <Button variant="outline" size="sm" className="gap-1" onClick={() => router.push('/teacher/questions/bank')}>
+                <BookOpen className="w-3 h-3" /> 查看题库
+              </Button>
+            </div>
+          </div>
 
-          {/* 统计卡片 */}
-          {generated.length > 0 && (
-            <Card className="border-0 shadow-sm bg-gradient-to-br from-indigo-50 to-purple-50">
-              <CardContent className="p-4">
-                <div className="text-center">
-                  <p className="text-3xl font-bold text-indigo-700">{generated.length}</p>
-                  <p className="text-sm text-slate-600 mt-1">道题目待审校</p>
-                  <p className="text-xs text-slate-500 mt-2">勾选需要的题目后入库（可编辑/删除）</p>
-                  <Button
-                    size="sm"
-                    className="mt-3 w-full gap-1 bg-indigo-600 hover:bg-indigo-700"
-                    disabled={saving || selectedIdx.size === 0}
-                    onClick={handleSaveAll}
-                  >
-                    {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                    {saving ? '入库中...' : `确认入库（已选 ${selectedIdx.size} 题）`}
-                  </Button>
-                  {savedCount !== null && (
-                    <p className="text-xs text-green-600 mt-2">已入库 {savedCount} 题，可在题库管理查看</p>
-                  )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-2 w-full gap-1"
-                    onClick={() => router.push('/teacher/questions/bank')}
-                  >
-                    <BookOpen className="w-3 h-3" /> 查看题库
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+          {savedCount !== null && (
+            <div className="p-3 rounded-xl bg-green-50 border border-green-200 text-sm text-green-700">已入库 {savedCount} 题，可在题库管理中查看</div>
           )}
-        </div>
 
-        {/* 右侧结果区域 */}
-        <div className="col-span-8">
-          {!generating && generated.length === 0 ? (
-            <Card className="border-0 shadow-sm h-full flex items-center justify-center min-h-[280px]">
-              <CardContent className="text-center">
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center mx-auto mb-4">
-                  <Wand2 className="w-10 h-10 text-indigo-400" />
-                </div>
-                <h3 className="text-lg font-semibold text-slate-700">AI 智能出题</h3>
-                <p className="text-sm text-slate-500 mt-2 max-w-xs">
-                  在左侧选择课程、知识点和题型，AI 将自动生成高质量题目并保存到题库
-                </p>
-                <div className="flex items-center gap-4 mt-6 text-xs text-slate-400">
-                  <span className="flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> 6种题型</span>
-                  <span className="flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> 3级难度</span>
-                  <span className="flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> 生成后审校入库</span>
-                </div>
-              </CardContent>
-            </Card>
-          ) : generating ? (
-            <Card className="border-0 shadow-sm flex items-center justify-center min-h-[260px]">
-              <CardContent className="text-center py-10">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mx-auto mb-4 animate-pulse">
-                  <Sparkles className="w-8 h-8 text-white" />
-                </div>
-                <h3 className="text-lg font-semibold text-slate-700">AI 正在出题...</h3>
-                <p className="text-sm text-slate-500 mt-2">正在根据知识点和难度生成高质量题目</p>
-                <div className="flex items-center justify-center gap-1 mt-4">
-                  {[0, 1, 2].map(i => (
-                    <div key={i} className="w-2 h-2 rounded-full bg-indigo-500 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-amber-500" />
-                  生成结果
-                  <Badge variant="secondary" className="text-xs">{generated.length} 题</Badge>
-                  {(() => {
-                    const pass = generated.filter((q) => validateQuestion(q).length === 0).length;
-                    return pass === generated.length
-                      ? <Badge className="text-xs bg-green-50 text-green-700 border-0">质量自检 {pass}/{generated.length} 通过</Badge>
-                      : <Badge className="text-xs bg-amber-50 text-amber-700 border-0">自检 {pass}/{generated.length} 通过</Badge>;
-                  })()}
-                </h2>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" className="gap-1" onClick={handleGenerate}>
-                    <RotateCcw className="w-3 h-3" /> 重新生成
-                  </Button>
-                </div>
-              </div>
+          {/* 题目列表（通栏） */}
+          <div className="space-y-3">
+            {generated.map((q, idx) => (
+              <Card key={idx} className={`border-0 shadow-sm hover:shadow-md transition-shadow ${selectedIdx.has(idx) ? '' : 'opacity-50'}`}>
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIdx.has(idx)}
+                      onChange={() => toggleSelect(idx)}
+                      className="mt-1 w-4 h-4 accent-indigo-600 shrink-0"
+                      title="勾选后才会入库"
+                    />
+                    <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">
+                      {idx + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Badge variant="secondary" className="text-xs">{typeLabels[q.question_type] || '其他题型'}</Badge>
+                        <Badge className={`text-xs ${difficultyConfig[q.difficulty]}`} variant="secondary">{difficultyLabels[q.difficulty] || '中等'}</Badge>
+                        <span className="text-xs text-slate-400">{q.default_score}分</span>
+                      </div>
+                      <p className="text-sm text-slate-700 leading-relaxed">{q.content}</p>
 
-              <div className="max-h-[calc(100vh-16rem)] overflow-y-auto pr-1 space-y-3">
-              {generated.map((q, idx) => (
-                <Card key={idx} className={`border-0 shadow-sm hover:shadow-md transition-shadow ${selectedIdx.has(idx) ? '' : 'opacity-50'}`}>
-                  <CardContent className="p-4">
-                    <div className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedIdx.has(idx)}
-                        onChange={() => toggleSelect(idx)}
-                        className="mt-1 w-4 h-4 accent-indigo-600 shrink-0"
-                        title="勾选后才会入库"
-                      />
-                      <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-xs flex items-center justify-center font-bold shrink-0 mt-0.5">
-                        {idx + 1}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Badge variant="secondary" className="text-xs">{typeLabels[q.question_type] || '其他题型'}</Badge>
-                          <Badge className={`text-xs ${difficultyConfig[q.difficulty]}`} variant="secondary">{difficultyLabels[q.difficulty] || '中等'}</Badge>
-                          <span className="text-xs text-slate-400">{q.default_score}分</span>
+                      {/* 质量自检提示 */}
+                      {validateQuestion(q).length > 0 && (
+                        <div className="mt-2 p-2 rounded-lg bg-amber-50 border border-amber-200">
+                          <p className="text-xs text-amber-700 font-medium">⚠ 质量自检提示：{validateQuestion(q).join('；')}</p>
                         </div>
-                        <p className="text-sm text-slate-700 leading-relaxed">{q.content}</p>
+                      )}
 
-                        {/* 质量自检提示 */}
-                        {validateQuestion(q).length > 0 && (
-                          <div className="mt-2 p-2 rounded-lg bg-amber-50 border border-amber-200">
-                            <p className="text-xs text-amber-700 font-medium">⚠ 质量自检提示：{validateQuestion(q).join('；')}</p>
+                      {/* 详情常显：选项/答案/解析（修复 options 对象渲染崩溃） */}
+                      <div className="mt-3 p-3 bg-slate-50 rounded-lg space-y-2">
+                        {optionLines(q.options).length > 0 && (
+                          <div>
+                            <span className="text-xs font-medium text-slate-500">选项：</span>
+                            <div className="mt-1 space-y-0.5">
+                              {optionLines(q.options).map(([k, v]) => (
+                                <p key={k} className="text-sm text-slate-600"><b className="text-slate-700">{k}.</b> {v}</p>
+                              ))}
+                            </div>
                           </div>
                         )}
-
-                        {/* 详情常显：选项/答案/解析（修复 options 对象渲染崩溃） */}
-                        <div className="mt-3 p-3 bg-slate-50 rounded-lg space-y-2">
-                          {optionLines(q.options).length > 0 && (
-                            <div>
-                              <span className="text-xs font-medium text-slate-500">选项：</span>
-                              <div className="mt-1 space-y-0.5">
-                                {optionLines(q.options).map(([k, v]) => (
-                                  <p key={k} className="text-sm text-slate-600"><b className="text-slate-700">{k}.</b> {v}</p>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          <div>
-                            <span className="text-xs font-medium text-slate-500">答案：</span>
-                            <p className="text-sm text-green-700 font-mono mt-0.5">{q.answer || '（AI 未提供，请补填后再入库）'}</p>
-                          </div>
-                          {q.analysis && (
-                            <div>
-                              <span className="text-xs font-medium text-slate-500">解析：</span>
-                              <p className="text-sm text-slate-600 mt-0.5">{q.analysis}</p>
-                            </div>
-                          )}
+                        <div>
+                          <span className="text-xs font-medium text-slate-500">答案：</span>
+                          <p className="text-sm text-green-700 font-mono mt-0.5">{q.answer || '（AI 未提供，请补填后再入库）'}</p>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button variant="ghost" size="icon" className="w-8 h-8" onClick={() => handleCopy(q)} title="复制">
-                          <Copy className="w-4 h-4 text-slate-400" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="w-8 h-8" onClick={() => handleDelete(idx)} title="删除">
-                          <Trash2 className="w-4 h-4 text-red-400" />
-                        </Button>
+                        {q.analysis && (
+                          <div>
+                            <span className="text-xs font-medium text-slate-500">解析：</span>
+                            <p className="text-sm text-slate-600 mt-0.5">{q.analysis}</p>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
-              </div>
-            </div>
-          )}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button variant="ghost" size="icon" className="w-8 h-8" onClick={() => handleCopy(q)} title="复制">
+                        <Copy className="w-4 h-4 text-slate-400" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="w-8 h-8" onClick={() => handleDelete(idx)} title="删除">
+                        <Trash2 className="w-4 h-4 text-red-400" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
