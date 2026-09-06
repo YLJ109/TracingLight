@@ -258,6 +258,7 @@ const validateQuestion = (q: { question_type: string; content: string; options?:
     if (!courseId) { toast.error('请先选择课程，用于题目归属'); return; }
     const chosen = generated.filter((_, i) => selectedIdx.has(i));
     if (chosen.length === 0) { toast.error('请至少勾选一道题目'); return; }
+    if (!kpId) { toast.error('请选择知识点'); return; }
     setSaving(true);
     let ok = 0;
     try {
@@ -267,6 +268,7 @@ const validateQuestion = (q: { question_type: string; content: string; options?:
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             course_id: parseInt(courseId),
+            knowledge_point_id: parseInt(kpId),
             question_type: q.question_type,
             difficulty: q.difficulty,
             content: q.content,

@@ -194,6 +194,10 @@ export async function POST(req: NextRequest) {
       max_select,
     } = body;
 
+    if (!knowledge_point_id) {
+      return NextResponse.json({ success: false, error: '请选择知识点' }, { status: 400 });
+    }
+
     const myCourseIds = getTeacherCourseIds(authUser.userId);
     // 归属：题目课程必须为本人课程；若未给课程则从知识点反查，仍须归属本人
     const targetCourseId: number | null = course_id ? Number(course_id) : kpCourseId(knowledge_point_id);
