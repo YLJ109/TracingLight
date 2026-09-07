@@ -81,7 +81,19 @@ app.prepare().then(async () => {
     }
   });
   server.once('error', err => {
-    console.error(err);
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EADDRINUSE') {
+      console.error(`\n====================================================`);
+      console.error(`端口 ${port} 已被占用，无法启动服务器（因此窗口会退出）。`);
+      console.error(`原因与处理：`);
+      console.error(`  1) 若本系统已在运行：直接访问 http://localhost:${port} 即可，无需重复启动；`);
+      console.error(`  2) 否则请先关闭占用 ${port} 端口的程序，再重新运行 start.bat；`);
+      console.error(`  3) 如仍冲突，可用  set PORT=5001  自定义端口后运行 start.bat。`);
+      console.error(`====================================================\n`);
+    } else {
+      console.error('服务器启动失败：');
+      console.error(err);
+    }
     process.exit(1);
   });
   server.listen(port, () => {
