@@ -42,18 +42,20 @@ test('知识图谱：知识点描边与归簇节点基础校验', async ({ page 
   await expectNoRuntimeErrors(errors);
 });
 
-test('知识图谱：从错题本进入并可返回', async ({ page }) => {
+test('知识图谱：从错题本进入且为独立高亮页', async ({ page }) => {
   const errors = watchPageErrors(page);
   await loginViaUI(page, 'student');
   await page.goto('/student/errors');
 
   // 错题本提供进入知识图谱的入口
   await page.click('a:has-text("知识图谱"), button:has-text("知识图谱")');
+  await expect(page).toHaveURL(/\/student\/knowledge-graph/);
   await expect(page.locator('svg .nodes g').first()).toBeAttached({ timeout: 20_000 });
 
-  // 知识图谱提供返回错题本按钮
-  await page.click('a:has-text("返回错题本")');
-  await expect(page).toHaveURL(/\/student\/errors/);
+  // 知识图谱是独立导航项：侧栏高亮「知识图谱」而非「错题本」，且不再有「返回错题本」按钮
+  const kg = page.locator('aside a', { hasText: '知识图谱' }).first();
+  await expect(kg).toHaveClass(/text-violet-800/);
+  await expect(page.getByText('返回错题本')).toHaveCount(0);
 
   await expectNoRuntimeErrors(errors);
 });

@@ -23,6 +23,7 @@ import {
   answer,
   assignment,
   course,
+  user,
   errorBook,
   discussionPost,
   discussionReply,
@@ -78,22 +79,28 @@ export function computeParticipationScore(studentId: number): ParticipationScore
   const signinDays = signins.length;
   const signinRate = Math.min(100, Math.round((signinDays / WINDOW) * 100));
 
-  // 2) 作业完成率：该学生班级被布置的作业总数 vs 已提交数
-  const stuClass = db.select({ class_id: course.class_id })
-    .from(course).all();
-  const classIds = new Set(stuClass.map((c) => c.class_id).filter((v): v is number => v != null));
-  // 该学生所在班级无法直接获取（需走 user 表），此处用其全部 answer 记录与全量作业做近似：
-  // 更准确做法：作业按班级筛选，学生 answer 按 assignment 关联去重。
+  // 2) 作业完成率：布置给该学生所在班级的作业数 vs 该生已提交数
+  // 口径：学生班级(经 user.class_id) → 该班课程(course.class_id) → 布置的作业(assignment.course_id)
+  const myClassId = db.select({ class_id: user.class_id })
+    .from(user).where(eq(user.id, studentId)).all()[0]?.class_id;
+  let assignedAll = 0;
+  if (myClassId != null) {
+    const classCourseIds = db.select({ id: course.id })
+      .from(course).where(eq(course.class_id, myClassId)).all().map((c) => c.id);
+    assignedAll = classCourseIds.length > 0
+      ? db.select({ id: assignment.id })
+          .from(assignment)
+          .where(and(
+            inArray(assignment.course_id, classCourseIds),
+            inArray(assignment.status, ['published', 'closed']),
+          )).all().length
+      : 0;
+  }
   const answered = db.select().from(answer)
     .where(and(eq(answer.student_id, studentId), eq(answer.is_submitted, true)))
     .all();
-  const submittedAssignments = new Set(answered.map((a) => a.assignment_id)).size;
-  const allAssignments = db.select().from(assignment).all();
-  const assignedCount = classIds.size > 0
-    ? allAssignments.filter((a) => a.status === 'published' || a.status === 'closed').length
-    : allAssignments.length;
-  const submittedCount = Math.min(submittedAssignments, assignedCount || submittedAssignments);
-  const homeworkRate = assignedCount > 0 ? Math.round((submittedCount / assignedCount) * 100) : 0;
+  const submittedCount = Math.min(new Set(answered.map((a) => a.assignment_id)).size, assignedAll || Number.MAX_SAFE_INTEGER);
+  const homeworkRate = assignedAll > 0 ? Math.round((submittedCount / assignedAll) * 100) : 0;
 
   // 3) 阅读投入：累计分钟数 → 每 60 分钟 10 分，封顶 25
   const readingLogs = db.select().from(learningBehaviorLog)
@@ -132,7 +139,7 @@ export function computeParticipationScore(studentId: number): ParticipationScore
     windowDays: WINDOW,
     homeworkRate,
     submittedCount,
-    assignedCount,
+    assignedCount: assignedAll,
     readingMinutes,
     readingScore,
     discussionContribution,

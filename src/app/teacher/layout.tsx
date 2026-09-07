@@ -12,12 +12,12 @@ import { NotificationBell } from '@/components/notification-bell';
 import { EyeCareToggle } from '@/components/eye-care-toggle';
 
 const navItems: AppShellNavItem[] = [
-  { href: '/teacher/analytics', label: '学情看板', icon: BarChart3 },
-  { href: '/teacher/students', label: '学生管理', icon: Users },
-  { href: '/teacher/assignments', label: '作业管理', icon: BookOpen },
-  { href: '/teacher/ai-generate', label: 'AI智能出题', icon: Wand2 },
-  { href: '/teacher/questions/bank', label: '题库管理', icon: Library },
-  { href: '/teacher/announcements', label: '公告发布', icon: Megaphone },
+  { group: '学情', href: '/teacher/analytics', label: '学情看板', icon: BarChart3 },
+  { group: '学情', href: '/teacher/students', label: '学生管理', icon: Users },
+  { group: '教学准备', href: '/teacher/questions/bank', label: '题库管理', icon: Library },
+  { group: '教学准备', href: '/teacher/ai-generate', label: 'AI智能出题', icon: Wand2 },
+  { group: '课堂执行', href: '/teacher/assignments', label: '作业管理', icon: BookOpen },
+  { group: '课堂执行', href: '/teacher/announcements', label: '公告发布', icon: Megaphone },
 ];
 
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {

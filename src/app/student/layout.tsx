@@ -7,20 +7,24 @@ import { apiFetch } from '@/lib/api-fetch';
 import {
   BookOpen, BookMarked, BarChart3,
   Lightbulb, FolderOpen,
-  MessageCircle
+  MessageCircle, CalendarCheck, Network
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AppShell, { type AppShellNavItem } from '@/components/app-shell';
 import { NotificationBell } from '@/components/notification-bell';
 import { EyeCareToggle } from '@/components/eye-care-toggle';
 
+// 侧边栏按「学情 → 学习 → 扩展」分组组织，形成清晰的学习闭环：
+// 先看清短板（学情/图谱/推荐），再按昨日任务→材料→作业→错题执行，最后进入 AI 答疑
 const navItems: AppShellNavItem[] = [
-  { href: '/student/overview', label: '我的学情', icon: BarChart3 },
-  { href: '/student/assignments', label: '我的作业', icon: BookOpen },
-  { href: '/student/materials', label: '学习材料', icon: FolderOpen },
-  { href: '/student/errors', label: '错题本', icon: BookMarked },
-  { href: '/student/recommend', label: '个性化推荐', icon: Lightbulb },
-  { href: '/student/assistant', label: 'AI 答疑', icon: MessageCircle },
+  { group: '学情', href: '/student/overview', label: '我的学情', icon: BarChart3 },
+  { group: '学情', href: '/student/knowledge-graph', label: '知识图谱', icon: Network },
+  { group: '学情', href: '/student/recommend', label: '个性化推荐', icon: Lightbulb },
+  { group: '学习', href: '/student/today', label: '今日任务', icon: CalendarCheck },
+  { group: '学习', href: '/student/materials', label: '学习材料', icon: FolderOpen },
+  { group: '学习', href: '/student/assignments', label: '我的作业', icon: BookOpen },
+  { group: '学习', href: '/student/errors', label: '错题本', icon: BookMarked },
+  { group: '扩展', href: '/student/assistant', label: 'AI 答疑', icon: MessageCircle },
 ];
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {

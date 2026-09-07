@@ -32,23 +32,30 @@ export async function POST(request: NextRequest) {
     const authUser = await requireAuth(request, 'student');
     if (!authUser) return NextResponse.json({ error: '未登录' }, { status: 401 });
     const body = await request.json();
-    const error_book_id = Number(body?.error_book_id);
-    if (!error_book_id) return NextResponse.json({ error: '缺少 error_book_id' }, { status: 400 });
+    const error_book_id = Number(body?.error_book_id) || null;
+    const kpIdFromBody = Number(body?.knowledge_point_id) || null;
+    if (!error_book_id && !kpIdFromBody) {
+      return NextResponse.json({ error: '缺少 error_book_id 或 knowledge_point_id' }, { status: 400 });
+    }
 
     const db = getDb();
-    // 归属校验：只能为自己错题生成练习
-    const err = db.select().from(errorBook).where(eq(errorBook.id, error_book_id)).limit(1).all()[0];
-    if (!err) return NextResponse.json({ error: '错题不存在' }, { status: 404 });
-    if (err.student_id !== authUser.userId) {
-      return NextResponse.json({ error: '无权操作该错题' }, { status: 403 });
+    let kpId = kpIdFromBody;
+    if (error_book_id) {
+      // 归属校验：只能为自己错题生成练习
+      const err = db.select().from(errorBook).where(eq(errorBook.id, error_book_id)).limit(1).all()[0];
+      if (!err) return NextResponse.json({ error: '错题不存在' }, { status: 404 });
+      if (err.student_id !== authUser.userId) {
+        return NextResponse.json({ error: '无权操作该错题' }, { status: 403 });
+      }
+      kpId = err.knowledge_point_id;
     }
 
     // 知识点与课程信息（AI 出题上下文）
-    const kp = err.knowledge_point_id
+    const kp = kpId
       ? db.select({ id: knowledgePoint.id, name: knowledgePoint.name, description: knowledgePoint.description, course_id: knowledgePoint.course_id })
-          .from(knowledgePoint).where(eq(knowledgePoint.id, err.knowledge_point_id)).limit(1).all()[0]
+          .from(knowledgePoint).where(eq(knowledgePoint.id, kpId)).limit(1).all()[0]
       : null;
-    if (!kp) return NextResponse.json({ error: '错题缺少知识点信息' }, { status: 400 });
+    if (!kp) return NextResponse.json({ error: '缺少知识点信息' }, { status: 400 });
     const courseData = db.select({ name: course.name }).from(course).where(eq(course.id, kp.course_id)).limit(1).all()[0];
 
     // 练习题型：单选/填空交替（避免主观题，保证即时判分）

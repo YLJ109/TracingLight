@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get question IDs
-    const questionIds = [...new Set(errors.map((e) => e.question_id))];
+    const questionIds = [...new Set(errors.map((e) => e.question_id).filter((id): id is number => !!id))];
     const kpIds = [...new Set(errors.map((e) => e.knowledge_point_id))];
 
     // Fetch questions
@@ -90,14 +90,14 @@ export async function GET(request: NextRequest) {
     const courseMap = new Map(courses.map((c) => [c.id, c]));
 
     const result = errors.map((e) => {
-      const q = questionMap.get(e.question_id);
+      const q = e.question_id ? questionMap.get(e.question_id) : undefined;
       const kp = kpMap.get(e.knowledge_point_id);
       const courseId = q?.course_id || kp?.course_id;
       const courseData = courseMap.get(courseId || 0);
 
       return {
         ...e,
-        question_content: q?.content || '题目加载中...',
+        question_content: q?.content || e.content || '题目加载中...',
         question_type: q?.question_type || '',
         question_options: q?.options || null,
         knowledge_point_name: kp?.name || '未知知识点',

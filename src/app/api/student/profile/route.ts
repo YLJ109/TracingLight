@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
-import { generateStudentData } from '@/lib/mock-data-generator';
-import { user, gradingTask, assignment, course, knowledgeMasteryLog, knowledgePoint, errorBook, answer } from '@/storage/database/shared/schema';
+import { user, gradingTask, assignment, course, knowledgeMasteryLog, knowledgePoint, errorBook, answer, examSchedule, abilityPoint, abilityKnowledge, learningBehaviorLog, qaSession, classInfo, major } from '@/storage/database/shared/schema';
 import { eq, and, sql, inArray } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
@@ -22,12 +21,22 @@ export async function GET(request: NextRequest) {
       .limit(1)
       .all();
     const student = studentRows[0] || null;
+    // 班级/专业名（供身份卡完整展示）
+    const stuClassId = student?.class_id ?? null;
+    let className = '';
+    let majorName = '';
+    if (stuClassId) {
+      const cl = db.select({ name: classInfo.name, major_id: classInfo.major_id }).from(classInfo)
+        .where(eq(classInfo.id, stuClassId)).limit(1).all()[0];
+      if (cl) {
+        className = cl.name || '';
+        const ma = db.select({ name: major.name }).from(major).where(eq(major.id, cl.major_id)).limit(1).all()[0];
+        majorName = ma?.name || '';
+      }
+    }
 
     // 课程列表（供筛选下拉）
     const courses = db.select({ id: course.id, name: course.name }).from(course).all();
-
-    // Generate rich mock data based on student profile
-    const mockData = generateStudentData(studentId);
 
     // ============ 真实数据覆盖（全部维度）：平均分 + 薄弱知识点 ============
     const allGradings = db.select({ total_score: gradingTask.total_score, full_score: gradingTask.full_score })
@@ -39,12 +48,18 @@ export async function GET(request: NextRequest) {
     const realAvgScore = realTotalFull > 0 ? Math.round((realTotalScore / realTotalFull) * 1000) / 10 : 0;
 
     // 真实薄弱知识点（每个知识点取最新掌握度，<70 视为薄弱）
-    const allMastery = db.select({ knowledge_point_id: knowledgeMasteryLog.knowledge_point_id, mastery_rate: knowledgeMasteryLog.mastery_rate })
+    const allMastery = db.select({ knowledge_point_id: knowledgeMasteryLog.knowledge_point_id, mastery_rate: knowledgeMasteryLog.mastery_rate, recorded_at: knowledgeMasteryLog.recorded_at })
       .from(knowledgeMasteryLog)
       .where(eq(knowledgeMasteryLog.student_id, studentId))
       .all();
     const kpMasteryMap = new Map<number, number>();
-    for (const m of allMastery) kpMasteryMap.set(m.knowledge_point_id, m.mastery_rate);
+    const kpMasteryDate = new Map<number, string>();
+    for (const m of allMastery) {
+      if (!kpMasteryMap.has(m.knowledge_point_id) || (m.recorded_at || '') >= (kpMasteryDate.get(m.knowledge_point_id) || '')) {
+        kpMasteryMap.set(m.knowledge_point_id, m.mastery_rate);
+        kpMasteryDate.set(m.knowledge_point_id, m.recorded_at || '');
+      }
+    }
     const weakEntries = [...kpMasteryMap.entries()]
       .filter(([, rate]) => rate < 70)
       .sort((a, b) => a[1] - b[1])
@@ -65,21 +80,19 @@ export async function GET(request: NextRequest) {
     }));
 
     // 用真实数据覆盖 indicators / weakTop10（杜绝 mock 死数据与「100%」假数）
-    const weakTop10 = realWeakKps.length > 0
-      ? realWeakKps.map((w) => ({ name: w.name, priority: '重点', masteryRate: w.masteryRate, lossWeight: 0 }))
-      : mockData.weakTop10;
+    const weakTop10 = realWeakKps.map((w) => ({ name: w.name, priority: '重点', masteryRate: w.masteryRate, lossWeight: 0 }));
 
     // ============ 真实核心指标（全部来自数据库） ============
     // 学生班级 → 所修课程 → 应提交作业数
-    const stuClassId = student?.class_id ?? null;
     const enrolledCourseIds = stuClassId
       ? db.select({ id: course.id }).from(course).where(eq(course.class_id, stuClassId)).all().map((c) => c.id)
       : [];
-    const completedAssignmentsResult = db.select({ count: sql<number>`count(*)` })
+    // 已完成作业数 = 有 ≥1 条完成批改的不同作业数（gradingTask 每道题一行，须按作业去重，避免多题作业虚增）
+    const completedAssignmentRows = db.select({ assignment_id: gradingTask.assignment_id })
       .from(gradingTask)
       .where(and(eq(gradingTask.student_id, studentId), eq(gradingTask.status, 'completed')))
       .all();
-    const completedAssignments = completedAssignmentsResult[0]?.count || 0;
+    const completedAssignments = new Set(completedAssignmentRows.map((g) => g.assignment_id).filter((x): x is number => !!x)).size;
     const totalAssignments = enrolledCourseIds.length > 0
       ? (db.select({ count: sql<number>`count(*)` }).from(assignment)
           .where(inArray(assignment.course_id, enrolledCourseIds)).all()[0]?.count || 0)
@@ -100,30 +113,53 @@ export async function GET(request: NextRequest) {
     const masteredErrors = errRows.filter((r) => r.review_status === 'mastered').length;
     const correctionRate = totalErrors > 0 ? Math.round((masteredErrors / totalErrors) * 100) : 0;
 
-    // 按时提交率：已提交作答中 submitted_at <= 作业截止时间的占比
+    // 按时提交率：已提交作答中 submitted_at <= 作业截止时间的占比（统一按时间戳比较，兼容 "T"/空格 两种日期格式）
     const submittedAnswers = db.select({
       submitted_at: answer.submitted_at,
       end_time: assignment.end_time,
     }).from(answer).innerJoin(assignment, eq(answer.assignment_id, assignment.id))
       .where(eq(answer.student_id, studentId)).all();
+    const onTimeRows = submittedAnswers.filter((r) => {
+      if (!r.submitted_at) return false;
+      const s = new Date(r.submitted_at).getTime();
+      const e = r.end_time ? new Date(r.end_time).getTime() : Number.MAX_SAFE_INTEGER;
+      return Number.isFinite(s) && (Number.isFinite(e) ? s <= e : true);
+    });
     const onTimeRate = submittedAnswers.length > 0
-      ? Math.round(submittedAnswers.filter((r) => r.submitted_at && r.submitted_at <= (r.end_time || '9999')).length / submittedAnswers.length * 100)
+      ? Math.round(onTimeRows.length / submittedAnswers.length * 100)
       : 0;
 
     // 班级排名：同班已完成批改的平均分降序，第 1 名 = 班级第一
+    // 优化：一次批量查询全班批改记录，内存聚合求平均，避免逐个同学 N+1 查询
     let classRank: number | null = null;
     if (stuClassId) {
       const classmates = db.select({ id: user.id }).from(user)
         .where(and(eq(user.role, 'student'), eq(user.class_id, stuClassId)))
         .all();
-      const scored = classmates.map((c) => {
-        const gs = db.select({ total_score: gradingTask.total_score, full_score: gradingTask.full_score })
+      const classmateIds = classmates.map((c) => c.id);
+      const classScoreMap: Record<number, { ts: number; tf: number }> = {};
+      if (classmateIds.length > 0) {
+        const allGrades = db.select({
+          student_id: gradingTask.student_id,
+          total_score: gradingTask.total_score,
+          full_score: gradingTask.full_score,
+        })
           .from(gradingTask)
-          .where(and(eq(gradingTask.student_id, c.id), eq(gradingTask.status, 'completed')))
+          .where(and(
+            inArray(gradingTask.student_id, classmateIds),
+            eq(gradingTask.status, 'completed'),
+          ))
           .all();
-        const ts = gs.reduce((s, g) => s + (g.total_score || 0), 0);
-        const tf = gs.reduce((s, g) => s + (g.full_score || 0), 0);
-        return { id: c.id, avg: tf > 0 ? ts / tf : 0 };
+        for (const g of allGrades) {
+          if (!classScoreMap[g.student_id]) classScoreMap[g.student_id] = { ts: 0, tf: 0 };
+          classScoreMap[g.student_id].ts += g.total_score || 0;
+          classScoreMap[g.student_id].tf += g.full_score || 0;
+        }
+      }
+      const scored = classmates.map((c) => {
+        const s = classScoreMap[c.id];
+        const tf = s?.tf || 0;
+        return { id: c.id, avg: tf > 0 ? s!.ts / tf : 0 };
       });
       scored.sort((a, b) => b.avg - a.avg);
       const idx = scored.findIndex((r) => r.id === studentId);
@@ -164,28 +200,23 @@ export async function GET(request: NextRequest) {
       const avgScore = totalFull > 0 ? Math.round((totalScore / totalFull) * 1000) / 10 : 0;
       const completedCount = new Set(courseGradings.map((g) => g.assignment_id)).size;
 
-      // 该课程的知识点掌握度
+      // 该课程的知识点掌握度（用全量最新掌握度 kpMasteryMap 按课程聚合，避免流水历史被重复平均）
       const courseKps = db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
         .from(knowledgePoint)
         .where(eq(knowledgePoint.course_id, courseId))
         .all();
       const courseKpIds = courseKps.map((k) => k.id);
-      let masteryList: any[] = [];
-      if (courseKpIds.length > 0) {
-        masteryList = db.select().from(knowledgeMasteryLog)
-          .where(and(
-            eq(knowledgeMasteryLog.student_id, studentId),
-            inArray(knowledgeMasteryLog.knowledge_point_id, courseKpIds),
-          ))
-          .all();
-      }
-      const avgMastery = masteryList.length > 0
-        ? Math.round(masteryList.reduce((s, m) => s + (m.mastery_rate || 0), 0) / masteryList.length)
+      const kpNameById = new Map(courseKps.map((k) => [k.id, k.name]));
+      const courseRates = courseKpIds
+        .map((id) => ({ rate: kpMasteryMap.get(id), name: kpNameById.get(id) || `知识点${id}` }))
+        .filter((x): x is { rate: number; name: string } => x.rate !== undefined);
+      const avgMastery = courseRates.length > 0
+        ? Math.round(courseRates.reduce((s, x) => s + x.rate, 0) / courseRates.length)
         : 0;
-      const weakKps = masteryList
-        .filter((m) => (m.mastery_rate || 0) < 70)
-        .map((m) => ({ name: courseKps.find((k) => k.id === m.knowledge_point_id)?.name || `知识点${m.knowledge_point_id}`, masteryRate: m.mastery_rate }))
-        .sort((a, b) => a.masteryRate - b.masteryRate)
+      const weakKps = courseRates
+        .filter((x) => x.rate < 70)
+        .sort((a, b) => a.rate - b.rate)
+        .map((x) => ({ name: x.name, masteryRate: x.rate }))
         .slice(0, 8);
 
       // 成绩趋势（该课程作业，按时间）
@@ -236,8 +267,6 @@ export async function GET(request: NextRequest) {
       .map((v) => ({
         week: (asgnMap.get(v.aid)?.title || '').slice(0, 8),
         avgScore: v.tf > 0 ? Math.round((v.ts / v.tf) * 100) : 0,
-        completionRate: 100,
-        errorCount: 0,
       }));
 
     // 课程对比：按课程聚合真实掌握度 + 平均分 + 错题数
@@ -277,35 +306,257 @@ export async function GET(request: NextRequest) {
       return { courseId: c.id, name: c.name, shortName: c.short_name || c.name, avgMastery, kpCount: cKpIds.length, errorCount };
     });
 
+    // ============ 能力雷达（8维，全部由真实掌握度 + 真实错题类型推算，杜绝随机数） ============
+    const radarDiff = db.select({ id: knowledgePoint.id, difficulty: knowledgePoint.difficulty }).from(knowledgePoint).all();
+    const diffMap = new Map(radarDiff.map((k) => [k.id, k.difficulty || 'medium']));
+    const scoreArr = [...kpMasteryMap.entries()].map(([id, s]) => ({ id, s, d: diffMap.get(id) || 'medium' }));
+    const overallAvg = scoreArr.length ? Math.round(scoreArr.reduce((a, b) => a + b.s, 0) / scoreArr.length) : 0;
+    const dimAvg = (pred: (x: { d: string }) => boolean) => {
+      const l = scoreArr.filter(pred);
+      return l.length ? Math.round(l.reduce((a, b) => a + b.s, 0) / l.length) : null;
+    };
+    const easyAvg = dimAvg((x) => x.d === 'easy');
+    const medAvg = dimAvg((x) => x.d === 'medium');
+    const hardAvg = dimAvg((x) => x.d === 'hard');
+    const base = (v: number | null) => v ?? overallAvg; // 无该类数据时以总体掌握度计，避免 0 分假象
+
+    // 真实错题类型 + 订正
+    const allErrRows = db.select({ error_type: errorBook.error_type, review_status: errorBook.review_status })
+      .from(errorBook).where(eq(errorBook.student_id, studentId)).all();
+    const errTypes = allErrRows.map((e) => e.error_type || '');
+    const errN = errTypes.length;
+    const typeRatio = (re: RegExp) => (errN ? Math.round(errTypes.filter((t) => re.test(t)).length / errN * 100) : 0);
+    const calcErrPct = typeRatio(/calculation|compute|careless/);
+    const logicErrPct = typeRatio(/logic|reason/);
+    const carelessPct = typeRatio(/careless|typo|empty/);
+    const methodErrPct = typeRatio(/method|step|expression|incomplete/);
+    const masteredErrN = allErrRows.filter((e) => e.review_status === 'mastered').length;
+    const correctionRateReal = errN ? Math.round(masteredErrN / errN * 100) : overallAvg;
+    const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
+    const compAvg = (() => {
+      const l = scoreArr.filter((x) => x.d === 'hard' || x.d === 'medium');
+      return l.length ? Math.round(l.reduce((a, b) => a + b.s, 0) / l.length) : overallAvg;
+    })();
+
+    // 知识掌握分层统计（真实）
+    const kpTotal = scoreArr.length;
+    const knowledgeStats = {
+      mastered: scoreArr.filter((x) => x.s >= 80).length,
+      total: kpTotal,
+      weak: scoreArr.filter((x) => x.s < 70).length,
+      basic: scoreArr.filter((x) => x.s < 60).length,
+    };
+
+    // 错题类型分布（真实 errorBook）
+    const errTypeDist = new Map<string, number>();
+    for (const t of errTypes) errTypeDist.set(t, (errTypeDist.get(t) || 0) + 1);
+    const errLabels: Record<string, string> = {
+      concept_confusion: '概念混淆', calculation_error: '计算错误', logic_error: '逻辑错误',
+      knowledge_missing: '知识缺失', careless: '粗心大意', empty: '未作答', wrong: '答案错误',
+      method_error: '方法错误', step_missing: '步骤缺失', expression: '表达问题', incomplete: '未答完整', other: '其他',
+    };
+    const errorTypeDistribution = [...errTypeDist.entries()].map(([t, c]) => ({
+      errorType: t, errorTypeLabel: errLabels[t] || t, count: c, percentage: errN ? Math.round(c / errN * 100) : 0,
+    }));
+    const errorData = { errors: errorTypeDistribution, errorTypeDistribution, totalErrors: errN };
+
+    // 考试安排（真实 exam_schedule，按学生班级）
+    let examScheduleReal: Array<{ id: number; title: string; courseName: string; examDate: string; location: string; daysUntil: number }> = [];
+    if (stuClassId) {
+      const examRows = db.select({
+        id: examSchedule.id, exam_name: examSchedule.exam_name, exam_date: examSchedule.exam_date,
+        course_id: examSchedule.course_id, start_time: examSchedule.start_time, end_time: examSchedule.end_time,
+      }).from(examSchedule).where(eq(examSchedule.class_id, stuClassId)).all();
+      const courseNameMap = new Map(courses.map((c) => [c.id, c.name]));
+      const todayMs = new Date().setHours(0, 0, 0, 0);
+      examScheduleReal = examRows
+        .map((e) => ({
+          id: e.id,
+          title: e.exam_name,
+          courseName: courseNameMap.get(e.course_id) || '',
+          examDate: (e.exam_date || '').split(' ')[0],
+          location: [e.start_time, e.end_time].filter(Boolean).join('~'),
+          daysUntil: Math.max(0, Math.round(((new Date(e.exam_date).getTime()) - todayMs) / 86400000)),
+        }))
+        .sort((a, b) => a.examDate.localeCompare(b.examDate));
+    }
+
+    // ============ 掌握率四段分层（真实） ============
+    const scopeKpRows = (courseId
+      ? db.select({ id: knowledgePoint.id }).from(knowledgePoint).where(eq(knowledgePoint.course_id, courseId)).all()
+      : db.select({ id: knowledgePoint.id }).from(knowledgePoint).all());
+    const masteryTiers = { total: 0, mastered: 0, good: 0, weak: 0, none: 0 };
+    for (const k of scopeKpRows) {
+      const r = kpMasteryMap.get(k.id);
+      if (r == null) masteryTiers.none += 1;
+      else if (r >= 80) masteryTiers.mastered += 1;
+      else if (r >= 60) masteryTiers.good += 1;
+      else if (r >= 30) masteryTiers.weak += 1;
+      else masteryTiers.none += 1;
+    }
+    masteryTiers.total = masteryTiers.mastered + masteryTiers.good + masteryTiers.weak + masteryTiers.none;
+    const scopeRates = scopeKpRows.map((k) => kpMasteryMap.get(k.id)).filter((r): r is number => r != null);
+    const avgMastery = scopeRates.length ? Math.round(scopeRates.reduce((a, b) => a + b, 0) / scopeRates.length) : 0;
+
+    // 全量知识点名映射（优势/薄弱通用）
+    const kpNameFull = new Map(
+      db.select({ id: knowledgePoint.id, name: knowledgePoint.name }).from(knowledgePoint).all().map((k) => [k.id, k.name])
+    );
+
+    // 优势知识点 TOP3（真实，掌握度≥80） + 顽固/待复习错题（真实 errorBook）
+    const strongTop3 = [...kpMasteryMap.entries()]
+      .filter(([, r]) => r >= 80)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([id, r]) => ({ name: kpNameFull.get(id) || `知识点${id}`, masteryRate: r }));
+    const stubbornRows = db.select({ review_count: errorBook.review_count, review_status: errorBook.review_status })
+      .from(errorBook).where(eq(errorBook.student_id, studentId)).all();
+    const stubbornErrors = stubbornRows.filter((r) => (r.review_count || 0) >= 2).length;
+    const pendingErrors = Math.max(0, totalErrors - masteredErrors);
+
+    // ============ 能力六维雷达（真实 ability_point 加权 + 记忆理解/综合应用 推导） ============
+    const abilityDefs = db.select().from(abilityPoint).all();
+    const akRows = db.select({
+      ability_id: abilityKnowledge.ability_id,
+      knowledge_id: abilityKnowledge.knowledge_id,
+      weight: abilityKnowledge.weight,
+    }).from(abilityKnowledge).all();
+    const abilityScoreOf = (abId: number): number | null => {
+      const links = akRows.filter((a) => a.ability_id === abId);
+      let wsum = 0; let msum = 0;
+      for (const l of links) {
+        const r = kpMasteryMap.get(l.knowledge_id);
+        if (r != null) { msum += r * (l.weight || 1); wsum += l.weight || 1; }
+      }
+      return wsum > 0 ? msum / wsum : null;
+    };
+    const radarData = [
+      ...abilityDefs.map((ab) => ({
+        key: `ab_${ab.id}`, label: ab.name, icon: 'Target', score: clamp(abilityScoreOf(ab.id) ?? overallAvg),
+      })),
+      { key: 'memory_understanding', label: '记忆理解', icon: 'Brain', score: clamp(base(easyAvg)) },
+      { key: 'comprehensive_apply', label: '综合应用', icon: 'Puzzle', score: clamp(compAvg) },
+    ];
+
+    // ============ 学习行为（近7天学习时长 + 材料平均进度，真实） ============
+    const behRows = db.select({
+      watch_duration: learningBehaviorLog.watch_duration,
+      progress: learningBehaviorLog.progress,
+      last_watched_at: learningBehaviorLog.last_watched_at,
+    })
+      .from(learningBehaviorLog)
+      .where(eq(learningBehaviorLog.student_id, studentId))
+      .all();
+    const daySecMap = new Map<string, number>();
+    for (let i = 6; i >= 0; i--) {
+      const dd = new Date(); dd.setDate(dd.getDate() - i);
+      daySecMap.set(dd.toISOString().slice(0, 10), 0);
+    }
+    for (const b of behRows) {
+      const dt = (b.last_watched_at || '').slice(0, 10);
+      if (daySecMap.has(dt)) daySecMap.set(dt, daySecMap.get(dt)! + (b.watch_duration || 0));
+    }
+    const weekSeconds = [...daySecMap.values()].reduce((a, b) => a + b, 0);
+    const avgMaterialProgress = behRows.length ? Math.round(behRows.reduce((s, b) => s + (b.progress || 0), 0) / behRows.length) : 0;
+    const learningBehavior = {
+      weekMinutes: Math.round(weekSeconds / 60),
+      weekHours: Math.round(weekSeconds / 3600 * 10) / 10,
+      materialProgress: avgMaterialProgress,
+      days: [...daySecMap.entries()].map(([date, seconds]) => ({ date, seconds })),
+      materialsStudied: behRows.length,
+    };
+
+    // ============ 学习稳定性（得分波动 + 粗心失分占比，真实） ============
+    const scoreList = [...byAssignment.entries()]
+      .map(([, v]) => v.tf > 0 ? (v.ts / v.tf) * 100 : 0)
+      .filter((x) => x > 0);
+    const meanS = scoreList.length ? scoreList.reduce((a, b) => a + b, 0) / scoreList.length : 0;
+    const variance = scoreList.length > 1 ? scoreList.reduce((a, b) => a + (b - meanS) ** 2, 0) / scoreList.length : 0;
+    const stdevScore = Math.sqrt(variance);
+    const stability = {
+      scoreStd: Math.round(stdevScore * 10) / 10,
+      level: stdevScore <= 10 ? '发挥稳定' : stdevScore <= 20 ? '较稳定' : '起伏较大',
+      carelessRatio: errN ? Math.round(errTypes.filter((t) => /careless|calculation|compute/.test(t)).length / errN * 100) : 0,
+      judgedAssignments: byAssignment.size,
+    };
+
+    // ============ 成长时间线（真实：AI评语 + AI答疑） ============
+    const gradeRows = db.select({
+      assignment_id: gradingTask.assignment_id,
+      total_score: gradingTask.total_score,
+      full_score: gradingTask.full_score,
+      overall_comment: gradingTask.overall_comment,
+      completed_at: gradingTask.completed_at,
+    })
+      .from(gradingTask)
+      .where(and(eq(gradingTask.student_id, studentId), eq(gradingTask.status, 'completed')))
+      .all();
+    const asgnTitleMap = new Map(allAssignments.map((a) => [a.id, a.title]));
+    const timeline: Array<{ type: string; title: string; desc: string; ts: string }> = [];
+    for (const g of gradeRows) {
+      if (!g.overall_comment || !g.completed_at) continue;
+      timeline.push({
+        type: 'grade',
+        title: `作业《${asgnTitleMap.get(g.assignment_id) || `作业${g.assignment_id}`}》AI 批改反馈`,
+        desc: g.overall_comment.length > 80 ? g.overall_comment.slice(0, 80) + '…' : g.overall_comment,
+        ts: g.completed_at,
+      });
+    }
+    const qaRows = db.select({ title: qaSession.title, created_at: qaSession.created_at })
+      .from(qaSession).where(eq(qaSession.user_id, studentId)).all();
+    for (const q of qaRows) {
+      if (!q.title || !q.created_at) continue;
+      timeline.push({ type: 'qa', title: `向 AI 提问「${q.title}」`, desc: 'AI 答疑已回复，可回看对话', ts: q.created_at });
+    }
+    timeline.sort((a, b) => b.ts.localeCompare(a.ts));
+    const growthTimeline = timeline.slice(0, 12);
+
     return NextResponse.json({
-      success: true,
-      data: {
-        student: { ...student, classRank },
-        courses,
-        selectedCourseId: courseId,
-        // Core indicators (真实 avgScore 覆盖 mock)
-        indicators,
-        // 8-dimension radar
-        radarData: mockData.radarData,
-        // Knowledge stats
-        knowledgeStats: mockData.knowledgeStats,
-        // Weak points TOP10（真实薄弱知识点覆盖）
-        weakTop10,
-        // Error data
-        errorData: mockData.errorData,
-        // Trend（真实成绩趋势）
-        trendData: realTrendData.length > 0 ? realTrendData : mockData.trendData,
-        // Course comparison（真实课程对比）
-        courseComparison: realCourseComparison.some((c) => c.avgMastery > 0 || c.errorCount > 0) ? realCourseComparison : mockData.courseComparison,
-        // Exam schedule
-        examSchedule: mockData.examSchedule,
-        // Assignment counts from DB
-        completedAssignments: completedAssignments || 0,
-        totalAssignments: totalAssignments || 0,
-        // 课程维度真实学情
-        courseData,
-      },
-    });
+        success: true,
+        data: {
+          student: { ...student, classRank, className, majorName, courseCount: courses.length },
+          courses,
+          selectedCourseId: courseId,
+          // 当前范围平均掌握率 + 综合掌握度
+          avgMastery,
+          totalScore: Math.round(realAvgScore),
+          // Core indicators（真实）
+          indicators,
+          // 能力雷达（六维：真实 ability_point 加权 + 记忆理解/综合应用 推导）
+          radarData,
+          // 知识掌握统计（真实）
+          knowledgeStats,
+          // 掌握率四段分层（真实）
+          masteryTiers,
+          // 薄弱知识点 TOP（真实）
+          weakTop10,
+          // 优势知识点 TOP3（真实，掌握度≥80）
+          strongTop3,
+          // 顽固错题数（真实，review_count≥2）
+          stubbornErrors,
+          // 待复习错题数（错题总数-已掌握）
+          pendingErrors,
+          // 错题数据（真实）
+          errorData,
+          // 成绩趋势（真实）
+          trendData: realTrendData,
+          // 课程对比（真实）
+          courseComparison: realCourseComparison,
+          // 学习行为（近7天学习时长 + 材料进度，真实）
+          learningBehavior,
+          // 学习稳定性（真实）
+          stability,
+          // 成长时间线（真实：AI评语 + 答疑）
+          growthTimeline,
+          // 考试安排（真实）
+          examSchedule: examScheduleReal,
+          // Assignment counts from DB
+          completedAssignments: completedAssignments || 0,
+          totalAssignments: totalAssignments || 0,
+          // 课程维度真实学情
+          courseData,
+        },
+      });
   } catch (e) {
     if (e && typeof (e as { status?: number }).status === "number") return e as NextResponse;
     console.error('Get student profile error:', e);

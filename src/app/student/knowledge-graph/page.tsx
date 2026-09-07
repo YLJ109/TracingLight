@@ -1,12 +1,11 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import * as d3 from 'd3';
 import { apiFetch } from '@/lib/api-fetch';
 import { getCurrentUser } from '@/lib/auth-helper';
-import { Search, Download, ZoomIn, ZoomOut, RotateCcw, Target, BookOpen, X, ArrowRight, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { Search, Download, ZoomIn, ZoomOut, RotateCcw, Target, BookOpen, X, ArrowRight, AlertTriangle, Sparkles } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { SetActiveNav } from '@/components/app-shell';
 
 // Safe color manipulation -- d3.color() returns null for invalid colors
@@ -17,7 +16,7 @@ function safeDarker(hex: string, amount: number): string {
 
 interface APINode {
   id: string; dbId: number; name: string; node_level: number;
-  is_leaf: boolean; symbolSize: number; color: string; itemStyle: any;
+  is_leaf: boolean; child_count: number; symbolSize: number; color: string; itemStyle: any;
   group_color: string; knowledge_point_id: number | null; course_id: number;
   mastery: number | null; mastery_color: string | null; mastery_label: string | null;
   mastery_detail: { avg: number; total: number; mastered: number; pending: number; level: string } | null;
@@ -151,13 +150,14 @@ export default function KnowledgeGraphPage() {
       .on('click',function(ev:any,d:any){
         ev.stopPropagation();
         const nd=d.data as APINode;
-        if(nd.is_leaf&&nd.mastery_detail){
-          setSelectedNode(nd);
+        // 点击任意节点均打开详情盒（含无掌握度记录的知识点，内容用真实 DB 字段填充）
+        setSelectedNode(nd);
+        if(nd.is_leaf){
           // Zoom-focus: center on this leaf node
-          if(viewMode==='radial'){
+          if (viewMode==='radial') {
             const tr=d3.zoomIdentity.translate(W/2,H/2).scale(1.6).translate(-d.x,-d.y);
             svg.transition().duration(500).call(zoomRef.current!.transform as any, tr);
-          }else{
+          } else {
             const tr=d3.zoomIdentity.translate(W/2-d.x, H/2-d.y).scale(1.6);
             svg.transition().duration(500).call(zoomRef.current!.transform as any, tr);
           }
@@ -176,6 +176,7 @@ export default function KnowledgeGraphPage() {
         let h=`<div class="flex items-center gap-2 pb-2 mb-2 border-b border-slate-100">`;
         h+=`<span class="text-[10px] px-1.5 py-0.5 rounded font-medium text-white" style="background:${nd.group_color}">${lvls[nd.node_level]||''}</span>`;
         h+=`<span class="font-semibold text-sm text-slate-800">${nd.name}</span></div>`;
+        if(nd.description){h+=`<div class="max-w-[260px] text-[11px] text-slate-500 leading-snug mb-2">${nd.description}</div>`;}
         if(nd.is_leaf&&m){
           const l=m.level; const c=m.avg>=80?'#10b981':m.avg>=60?'#f59e0b':m.avg>=30?'#ef4444':'#94a3b8';
           h+=`<div class="text-xs"><span style="color:${c}" class="font-medium">${l} ${m.avg}%</span></div>`;
@@ -329,13 +330,10 @@ export default function KnowledgeGraphPage() {
 
   return (
     <div className="flex flex-col h-full bg-[#fafbfc]" style={{minHeight:0}}>
-      <SetActiveNav href="/student/errors" />
+      <SetActiveNav href="/student/knowledge-graph" />
       {/* Top bar */}
       <div className="flex-none flex items-center justify-between px-5 py-2.5 bg-white border-b border-slate-200/50 z-20">
         <div className="flex items-center gap-3">
-          <Link href="/student/errors" className="mr-1 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-violet-600 transition-colors shrink-0">
-            <ArrowLeft className="w-3.5 h-3.5" />返回错题本
-          </Link>
           {/* Dynamic course tabs */}
           <div className="flex bg-slate-100 rounded-lg p-0.5">
             {(courses.length>0?courses:[{id:1,name:'Python程序设计'},{id:2,name:'数据结构与算法'},{id:3,name:'数据库原理'},{id:4,name:'深度学习框架'}]).map(c=>(
@@ -497,8 +495,20 @@ export default function KnowledgeGraphPage() {
             <div className="space-y-4">
               <div>
                 <div className="text-[11px] text-slate-400 uppercase tracking-wider mb-1">知识点</div>
-                <div className="text-sm font-semibold text-slate-800">{selectedNode.name}</div>
+                <div className="flex items-center gap-2">
+                  <div className="text-sm font-semibold text-slate-800">{selectedNode.name}</div>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded font-medium text-white" style={{ background: selectedNode.group_color }}>{['课程', '章节', '小节', '知识点'][selectedNode.node_level] || '节点'}</span>
+                </div>
+                {!selectedNode.is_leaf && selectedNode.child_count != null && (
+                  <div className="text-[11px] text-slate-400 mt-1">包含 {selectedNode.child_count} 个子节点，点击图表节点可展开查看</div>
+                )}
               </div>
+              {selectedNode.description && (
+                <div className="bg-slate-50 rounded-xl p-3">
+                  <div className="text-[11px] text-slate-500 mb-1">简介</div>
+                  <p className="text-xs text-slate-700 leading-relaxed">{selectedNode.description}</p>
+                </div>
+              )}
               {selectedNode.mastery_detail&&(function(){
                 const m=selectedNode.mastery_detail;
                 const c=m.avg>=80?'#10b981':m.avg>=60?'#f59e0b':m.avg>=30?'#ef4444':'#94a3b8';
@@ -543,6 +553,16 @@ export default function KnowledgeGraphPage() {
                     >
                       <BookOpen className="w-4 h-4" />
                       {m.pending > 0 ? `查看相关错题（${m.pending}题待复习）` : `查看已掌握错题（${m.mastered}题）`}
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {selectedNode.knowledge_point_id && (
+                    <button
+                      onClick={() => router.push(`/student/assistant?q=${encodeURIComponent(`请帮我详细讲解「${selectedNode.name}」这个知识点，解释原理、难点，并给出例子和学习建议`)}`)}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-violet-50 border border-violet-200 text-violet-700 hover:bg-violet-100 transition-colors text-sm font-medium"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      去 AI 答疑
                       <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                   )}

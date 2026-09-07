@@ -402,7 +402,7 @@ export default function TeacherGradeDetailPage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-sm font-medium text-muted-foreground">
-                        第{idx + 1}题 · {typeLabels[q.question_type] || q.question_type}
+                        第{idx + 1}题 · {typeLabels[q.question_type] || '其他题型'}
                       </span>
                       <span className="text-sm text-muted-foreground">({q.default_score}分)</span>
                       {q.knowledge_point && (

@@ -35,13 +35,16 @@ const errorTypeLabels: Record<string, string> = {
   knowledge_gap: '知识盲区',
   empty: '未作答',
   other: '其他',
+  practice: '练习错题',
 };
 const questionTypeLabels: Record<string, string> = {
   single_choice: '单选题',
   multiple_choice: '多选题',
+  multi_choice: '多选题',
   fill_blank: '填空题',
   judgment: '判断题',
   code: '编程题',
+  short_answer: '简答题',
 };
 const ALL_QUESTION_TYPES = ['single_choice', 'multiple_choice', 'fill_blank', 'judgment', 'code'];
 
@@ -319,7 +322,7 @@ export default function StudentErrors() {
             <Badge variant="secondary" className="text-xs bg-indigo-50 text-indigo-600">{err.course_name}</Badge>
             <Badge variant="outline" className="text-xs">{err.knowledge_point_name}</Badge>
             <Badge variant="outline" className="text-xs text-red-600 border-red-200 bg-red-50">{errorTypeLabels[err.error_type] || '其他错误'}</Badge>
-            <Badge variant="outline" className="text-xs text-slate-500 border-slate-200">{questionTypeLabels[err.question_type] || err.question_type}</Badge>
+            <Badge variant="outline" className="text-xs text-slate-500 border-slate-200">{questionTypeLabels[err.question_type] || '其他题型'}</Badge>
           </div>
           <div className="flex gap-2">
             {!err.aiAnalysis && (

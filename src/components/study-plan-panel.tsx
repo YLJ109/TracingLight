@@ -21,6 +21,7 @@ type SessionStatus = 'pending' | 'in_progress' | 'completed';
 interface StudySession {
   time: string; topic: string; type: string; kp: string;
   priority: string; resources: string; duration: number; status: SessionStatus;
+  knowledgePointId?: number | null;
 }
 
 interface DayPlan { day: string; date: string; sessions: StudySession[]; }
@@ -233,9 +234,20 @@ export function StudyPlanPanel() {
   };
 
   const handleNavigate = (session: StudySession) => {
-    if (session.type === 'review') router.push('/student/materials');
-    else if (session.type === 'practice') router.push('/student/errors');
-    else if (session.type === 'diagnose') router.push('/student/knowledge-graph');
+    // 真实跳转：优先携带知识点上下文（错题/材料精准定位）
+    const kpQ = session.knowledgePointId ? `?knowledge_point_id=${session.knowledgePointId}` : '';
+    switch (session.type) {
+      case 'review':    // 复习 → 该知识点错题专项复习
+        router.push(`/student/errors${kpQ}`); break;
+      case 'practice':  // 练习 → 学习材料针对性补漏
+        router.push(`/student/materials${kpQ}`); break;
+      case 'preview':   // 预习 → 学习材料先睹为快
+        router.push(`/student/materials${kpQ}`); break;
+      case 'diagnose':  // 诊断 → 知识图谱
+        router.push('/student/knowledge-graph'); break;
+      default:          // 复习及其他 → 错题本（杜绝空操作）
+        router.push(`/student/errors${kpQ}`); break;
+    }
   };
 
   useEffect(() => { return () => { Object.values(timerRefs.current).forEach(clearInterval); }; }, []);

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, saveDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
-import { knowledgeMasteryLog } from '@/storage/database/shared/schema';
+import { knowledgeMasteryLog, errorBook } from '@/storage/database/shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { gradeObjectiveQuestion, isObjectiveType } from '@/lib/objective-grading';
 
@@ -51,6 +51,39 @@ export async function POST(request: NextRequest) {
 
     // 清理该练习（一次性）
     practiceStore.delete(practice_id);
+
+    // 练习错题同步进错题本：答错的题目写入 error_book。
+    // 练习题为 AI 生成（不入题库、非正式作业），故 question_id/assignment_id/grading_task_id 留空，
+    // 以 content 列存题面；错题本页可据此展示，并作为该知识点薄弱/复习依据。
+    const kpIdForError = Number(practice.knowledge_point_id) || null;
+    if (kpIdForError) {
+      try {
+        const db = getDb();
+        const nextDay = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        const wrongs = results.filter((r) => !r.is_correct);
+        let insertCount = 0;
+        for (const rs of wrongs) {
+          const q = practice.questions[rs.index];
+          const submitted = answers.find((a) => a.index === rs.index)?.student_answer ?? '';
+          db.insert(errorBook).values({
+            student_id: authUser.userId,
+            knowledge_point_id: kpIdForError,
+            content: q?.content ?? '',
+            student_answer: submitted,
+            correct_answer: rs.correct_answer ?? q?.answer ?? '',
+            error_type: 'practice',
+            error_analysis: rs.analysis ?? q?.analysis ?? '',
+            review_status: 'pending',
+            next_review_at: nextDay,
+            review_count: 0,
+          }).run();
+          insertCount++;
+        }
+        if (insertCount > 0) { try { saveDb(); } catch {} }
+      } catch (e) {
+        console.error('Practice error-book sync error:', e);
+      }
+    }
 
     // 练习结果回写掌握度：以本次正确率为「本次表现」，与历史掌握度指数平滑（0.3 权重）
     const correctCount = results.filter((r) => r.is_correct).length;

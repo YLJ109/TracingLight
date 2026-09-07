@@ -48,9 +48,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "无权操作该错题" }, { status: 403 });
     }
 
-    // 单独查询关联的 question 和 knowledge_point
-    const questionRows = db.select().from(question).where(eq(question.id, ebData.question_id)).limit(1).all();
-    const questionData = questionRows[0] || null;
+    // 单独查询关联的 question 和 knowledge_point（练习类错题无题库 question_id，跳过 AI 解析）
+    const questionData = ebData.question_id
+      ? (db.select().from(question).where(eq(question.id, ebData.question_id)).limit(1).all()[0] || null)
+      : null;
 
     const kpRows = db.select().from(knowledgePoint).where(eq(knowledgePoint.id, ebData.knowledge_point_id)).limit(1).all();
     const kp = kpRows[0] || null;

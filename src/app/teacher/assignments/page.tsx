@@ -76,8 +76,8 @@ function fmt(n: number): string {
 }
 
 const typeLabels: Record<string, string> = {
-  single_choice: '单选', multi_choice: '多选', judgment: '判断',
-  fill_blank: '填空', short_answer: '简答', programming: '编程',
+  single_choice: '单选', multiple_choice: '多选', multi_choice: '多选', judgment: '判断',
+  fill_blank: '填空', short_answer: '简答', code: '编程', programming: '编程',
 };
 
 const levelLabels: Record<string, { label: string; color: string }> = {
@@ -595,7 +595,7 @@ export default function TeacherAssignments() {
                     <p className="text-sm text-slate-700 line-clamp-2">{q.content}</p>
                     <div className="flex gap-2 mt-1">
                       <Badge className={`text-xs ${difficultyConfig[q.difficulty] || ''}`}>{q.difficulty === "easy" ? "简单" : q.difficulty === "medium" ? "中等" : q.difficulty === "hard" ? "困难" : q.difficulty}</Badge>
-                      <Badge className="text-xs bg-slate-100 text-slate-500">{typeLabels[q.question_type] || q.question_type}</Badge>
+                      <Badge className="text-xs bg-slate-100 text-slate-500">{typeLabels[q.question_type] || '其他题型'}</Badge>
                       <span className="text-xs text-slate-400">{q.default_score}分</span>
                       {q.knowledge_point && (
                         <span className="text-xs text-teal-600">{q.knowledge_point.name}</span>

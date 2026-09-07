@@ -15,6 +15,8 @@ export interface AppShellNavItem {
   label: string;
   icon: LucideIcon;
   badge?: number; // 数字角标（未读数等）
+  /** 分组标题：仅当该项与前一项分组不同时渲染一次，用于把导航按学习/工作闭环分区 */
+  group?: string;
 }
 
 /** 允许子页显式声明"当前应高亮哪个菜单"，解决跨界入口（如从错题本进知识图谱）的默认不匹配问题 */
@@ -109,39 +111,46 @@ export default function AppShell({
         <div className="mx-3 mb-2 h-px bg-gradient-to-r from-transparent via-violet-200 to-transparent" />
 
         <nav className="flex-1 px-3 space-y-1 overflow-y-auto pb-3">
-          {navItems.map((item) => {
+          {navItems.map((item, idx) => {
             const isActive = item.href === activeHref;
+            const showGroup = !!item.group && (idx === 0 || item.group !== navItems[idx - 1]?.group);
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all',
-                  isActive
-                    ? 'bg-white text-violet-800 shadow-soft'
-                    : 'text-slate-600 hover:bg-white/70 hover:text-violet-700'
+              <div key={item.href}>
+                {showGroup && (
+                  <div className={cn('px-3 pt-3.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400', idx !== 0 && 'border-t border-white/40 mt-3 pt-4')}>
+                    {item.group}
+                  </div>
                 )}
-              >
-                {isActive && (
-                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full brand-gradient" />
-                )}
-                <span
+                <Link
+                  href={item.href}
                   className={cn(
-                    'flex items-center justify-center w-7 h-7 rounded-lg transition-colors',
+                    'group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all',
                     isActive
-                      ? 'brand-gradient text-white shadow-sm'
-                      : 'bg-slate-100/80 text-slate-500 group-hover:bg-violet-50 group-hover:text-violet-600'
+                      ? 'bg-white text-violet-800 shadow-soft'
+                      : 'text-slate-600 hover:bg-white/70 hover:text-violet-700'
                   )}
                 >
-                  <item.icon className="w-4 h-4" />
-                </span>
-                <span className="flex-1 truncate">{item.label}</span>
-                {typeof item.badge === 'number' && item.badge > 0 && (
-                  <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
-                    {item.badge > 99 ? '99+' : item.badge}
+                  {isActive && (
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full brand-gradient" />
+                  )}
+                  <span
+                    className={cn(
+                      'flex items-center justify-center w-7 h-7 rounded-lg transition-colors',
+                      isActive
+                        ? 'brand-gradient text-white shadow-sm'
+                        : 'bg-slate-100/80 text-slate-500 group-hover:bg-violet-50 group-hover:text-violet-600'
+                    )}
+                  >
+                    <item.icon className="w-4 h-4" />
                   </span>
-                )}
-              </Link>
+                  <span className="flex-1 truncate">{item.label}</span>
+                  {typeof item.badge === 'number' && item.badge > 0 && (
+                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                      {item.badge > 99 ? '99+' : item.badge}
+                    </span>
+                  )}
+                </Link>
+              </div>
             );
           })}
         </nav>

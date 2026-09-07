@@ -6,12 +6,13 @@ import { getCurrentUser, signOut, setUserAvatar, type CurrentUser, USER_UPDATED_
 import { apiFetch } from '@/lib/api-fetch';
 import {
   LayoutDashboard, Building2, Users, BookOpen,
-  BarChart3, Settings, ScrollText, DatabaseBackup, Activity,
+  BarChart3, Settings, ScrollText, DatabaseBackup, Activity, MonitorPlay,
 } from 'lucide-react';
 import AppShell, { type AppShellNavItem } from '@/components/app-shell';
 
 const navItems: AppShellNavItem[] = [
   { href: '/admin', label: '系统总览', icon: LayoutDashboard },
+  { href: '/admin/dashboard', label: '数据大屏', icon: MonitorPlay },
   { href: '/admin/organization', label: '组织架构', icon: Building2 },
   { href: '/admin/users', label: '用户管理', icon: Users },
   { href: '/admin/courses', label: '课程管理', icon: BookOpen },

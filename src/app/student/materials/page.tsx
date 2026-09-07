@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createPortal } from 'react-dom';
 import { apiFetch } from '@/lib/api-fetch';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
   FolderOpen, PlayCircle, FileText, Clock, RotateCcw,
-  CheckCircle2, X, BookOpen, Timer, Brain, Star,
+  CheckCircle2, X, BookOpen, Timer, Brain, Star, Filter,
 } from 'lucide-react';
 import { resolveVideoEmbed } from '@/lib/video-embed';
 
@@ -26,6 +26,11 @@ function fmtDuration(sec: number) {
 
 export default function StudentMaterials() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const kpIdFromQuery = searchParams.get('knowledge_point_id');
+  const kpNameFromQuery = searchParams.get('kpt') || '';
+  const [kpFilterId, setKpFilterId] = useState<number | null>(() => (kpIdFromQuery ? Number(kpIdFromQuery) : null));
+  const [kpFilterName, setKpFilterName] = useState(kpNameFromQuery);
   const [materials, setMaterials] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterCourse, setFilterCourse] = useState('all');
@@ -61,7 +66,18 @@ export default function StudentMaterials() {
   }, [reading?.id]);
 
   const courses = [...new Set(materials.map((m) => m.course_name).filter(Boolean))] as string[];
-  const filtered = filterCourse === 'all' ? materials : materials.filter((m) => m.course_name === filterCourse);
+  let filtered = filterCourse === 'all' ? materials : materials.filter((m) => m.course_name === filterCourse);
+  // 知识点定位：knowledge_point_ids 为 JSON 数组字符串，命中即保留
+  if (kpFilterId) {
+    filtered = filtered.filter((m) => {
+      const raw = m.knowledge_point_ids;
+      let ids: number[] = Array.isArray(raw) ? raw : [];
+      if (!Array.isArray(raw) && typeof raw === 'string') {
+        try { const p = JSON.parse(raw); ids = Array.isArray(p) ? p : []; } catch { ids = []; }
+      }
+      return ids.includes(kpFilterId);
+    });
+  }
 
   const totalWatch = materials.reduce((s, m) => s + (m.behavior?.watch_duration || 0), 0);
   const completedCount = materials.filter((m) => m.behavior?.is_completed).length;
@@ -211,6 +227,17 @@ export default function StudentMaterials() {
 
       {/* 课程筛选 */}
       <div className="flex flex-wrap items-center gap-2">
+        {kpFilterId && (
+          <button
+            onClick={() => { setKpFilterId(null); setKpFilterName(''); router.replace('/student/materials'); }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-teal-50 text-teal-700 border border-teal-200 transition-colors"
+            title="点击移除知识点定位"
+          >
+            <Filter className="w-3.5 h-3.5" />
+            {kpFilterName ? `知识点：${kpFilterName}` : '知识点定位'}
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
         <button
           onClick={() => setFilterCourse('all')}
           className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${filterCourse === 'all' ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
@@ -366,7 +393,7 @@ export default function StudentMaterials() {
                   className="text-xs py-2 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors"
                 >看知识图谱</button>
                 <button
-                  onClick={() => router.push('/student/assistant')}
+                  onClick={() => router.push('/student/assistant?q=' + encodeURIComponent(`我正在学《${reading.title}》（${reading.course_name}），请帮我提炼核心知识点、梳理重点，并用例子帮我理解`))}
                   className="text-xs py-2 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
                 >问 AI 老师</button>
               </div>

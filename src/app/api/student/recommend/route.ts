@@ -58,7 +58,11 @@ export async function GET(request: NextRequest) {
     }).from(knowledgeMasteryLog)
       .where(eq(knowledgeMasteryLog.student_id, studentId))
       .all();
-    const masteryByKp = new Map(masteryLogs.map((m) => [m.knowledge_point_id, m]));
+    const masteryByKp = new Map<number, typeof masteryLogs[number]>();
+    for (const m of masteryLogs) {
+      const cur = masteryByKp.get(m.knowledge_point_id);
+      if (!cur || (m.recorded_at || '') >= (cur.recorded_at || '')) masteryByKp.set(m.knowledge_point_id, m);
+    }
 
     // 每个知识点题量（真实）
     const qpCounts = kps.length > 0
@@ -74,6 +78,7 @@ export async function GET(request: NextRequest) {
       knowledge_point_id: errorBook.knowledge_point_id,
       error_type: errorBook.error_type,
       review_status: errorBook.review_status,
+      next_review_at: errorBook.next_review_at,
     }).from(errorBook).where(eq(errorBook.student_id, studentId)).all();
     const errQIds = [...new Set(errorRows.map((e) => e.question_id).filter(Boolean))];
     const errQMap = new Map<number, { content: string; difficulty: string | null }>();
@@ -85,8 +90,8 @@ export async function GET(request: NextRequest) {
     }
     const errors = errorRows.map((e) => ({
       ...e,
-      qContent: errQMap.get(e.question_id)?.content || '题目内容缺失',
-      qDifficulty: errQMap.get(e.question_id)?.difficulty || 'medium',
+      qContent: e.question_id ? (errQMap.get(e.question_id)?.content || '题目内容缺失') : '题目内容缺失',
+      qDifficulty: e.question_id ? (errQMap.get(e.question_id)?.difficulty || 'medium') : 'medium',
     }));
 
     // 真实批改成绩
@@ -105,10 +110,31 @@ export async function GET(request: NextRequest) {
       is_completed: learningBehaviorLog.is_completed,
     }).from(learningBehaviorLog).where(eq(learningBehaviorLog.student_id, studentId)).all();
 
-    // ===== 知识掌握列表 =====
-    const allMastery = masteryLogs
-      .map((m) => {
-        const kp = kpMap.get(m.knowledge_point_id);
+    // 学习材料（本班级课程，按知识点推荐）——knowledge_point_ids 存 JSON 数组
+    const materials = courseIds.length > 0
+      ? db.select().from(learningMaterial).where(inArray(learningMaterial.course_id, courseIds)).all()
+      : [];
+    const materialsByKp = new Map<number, typeof learningMaterial.$inferSelect[]>();
+    for (const m of materials) {
+      const kpIdsRaw = m.knowledge_point_ids;
+      let kpIds: number[] = Array.isArray(kpIdsRaw) ? kpIdsRaw as number[] : [];
+      if (!Array.isArray(kpIdsRaw) && typeof kpIdsRaw === 'string') {
+        try { const p = JSON.parse(kpIdsRaw); kpIds = Array.isArray(p) ? p : []; } catch { kpIds = []; }
+      }
+      for (const kid of kpIds) {
+        if (!materialsByKp.has(kid)) materialsByKp.set(kid, []);
+        materialsByKp.get(kid)!.push(m);
+      }
+    }
+    const materialProgress = new Map<number, number>();
+    db.select({ material_id: learningBehaviorLog.material_id, progress: learningBehaviorLog.progress })
+      .from(learningBehaviorLog).where(eq(learningBehaviorLog.student_id, studentId)).all()
+      .forEach((b) => materialProgress.set(b.material_id, b.progress || 0));
+
+    // ===== 知识掌握列表（每个知识点取最新掌握度） =====
+    const allMastery = [...masteryByKp.entries()]
+      .map(([kpId, m]) => {
+        const kp = kpMap.get(kpId);
         if (!kp) return null;
         const rate = m.mastery_rate || 0;
         const level = rate >= 80 ? 'strong' as const : rate >= 60 ? 'medium' as const : 'weak' as const;
@@ -139,8 +165,8 @@ export async function GET(request: NextRequest) {
       "可以观看教学材料中的相关章节，配合思维导图整理知识框架，然后进行针对性训练。",
       "建议与同学组成学习小组，互相讲解该知识点，通过教学相长加深理解。",
     ];
-    const weakLogs = masteryLogs
-      .map((m) => ({ ...m, kp: kpMap.get(m.knowledge_point_id) }))
+    const weakLogs = [...masteryByKp.entries()]
+      .map(([kpId, m]) => ({ ...m, kp: kpMap.get(kpId) }))
       .filter((m) => m.kp && (m.mastery_rate || 0) < 70)
       .sort((a, b) => (a.mastery_rate || 0) - (b.mastery_rate || 0))
       .slice(0, 8);
@@ -153,6 +179,11 @@ export async function GET(request: NextRequest) {
     const weakPoints = weakLogs.map((w, idx) => {
       // 真实错题明细（该知识点下）
       const kpErrors = errors.filter((e) => e.knowledge_point_id === w.kp!.id).slice(0, 3);
+      // 真实推荐材料（该知识点关联）
+      const kpMaterials = (materialsByKp.get(w.kp!.id) || []).map((m) => ({
+        id: m.id, title: m.title, type: m.type, duration: m.duration_minutes || 0,
+        url: m.url || '', courseId: m.course_id, progress: materialProgress.get(m.id) || 0,
+      }));
       const rate = w.mastery_rate || 0;
       return {
         knowledgePointId: w.kp!.id,
@@ -169,6 +200,8 @@ export async function GET(request: NextRequest) {
         })),
         prerequisites: sameCourseStrong(w.kp!.course_id, w.kp!.id).map((m) => ({ nodeName: m.name, mastery: m.mastery })),
         relatedKnowledge: sameCourseMedium(w.kp!.course_id, w.kp!.id).map((m) => ({ nodeName: m.name, mastery: m.mastery })),
+        materials: kpMaterials,
+        materialCount: kpMaterials.length,
         aiSuggestion: aiSuggestions[idx % aiSuggestions.length],
       };
     });
@@ -199,7 +232,7 @@ export async function GET(request: NextRequest) {
     // ===== 课程对比（真实聚合）=====
     const courseComparison = courses.map((c) => {
       const cKpIds = kps.filter((k) => k.course_id === c.id).map((k) => k.id);
-      const cMasteries = masteryLogs.filter((m) => cKpIds.includes(m.knowledge_point_id)).map((m) => m.mastery_rate || 0);
+      const cMasteries = allMastery.filter((m) => m.courseId === c.id).map((m) => m.mastery);
       return {
         courseId: c.id,
         name: c.name,
@@ -210,16 +243,18 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // ===== 近期考试（真实）=====
+    // ===== 近期考试（真实）：未指定课程时展示本班全部课程，指定时精确到该课程 =====
     const today = new Date().toISOString().split("T")[0];
-    const examScheduleData = db.select()
-      .from(examSchedule)
-      .where(and(
-        eq(examSchedule.course_id, courseId),
-        gte(examSchedule.exam_date, today)
-      ))
-      .orderBy(asc(examSchedule.exam_date))
-      .all();
+    const examScope = (courseId && courseIds.includes(courseId))
+      ? eq(examSchedule.course_id, courseId)
+      : (courseIds.length > 0 ? inArray(examSchedule.course_id, courseIds) : undefined);
+    const examScheduleData = examScope
+      ? db.select().from(examSchedule)
+          .where(and(examScope, gte(examSchedule.exam_date, today)))
+          .orderBy(asc(examSchedule.exam_date)).all()
+      : db.select().from(examSchedule)
+          .where(gte(examSchedule.exam_date, today))
+          .orderBy(asc(examSchedule.exam_date)).all();
     const upcomingExams = examScheduleData.map((e) => ({
       id: e.id,
       title: e.exam_name,

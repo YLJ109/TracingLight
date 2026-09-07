@@ -106,8 +106,8 @@ export async function GET(request: NextRequest) {
       if (!studentId) return null;
       if (logMasteries[kpId] !== undefined) return logMasteries[kpId];
       if (realMasteries[kpId] !== undefined) return realMasteries[kpId];
-      // 与知识图谱保持一致的无真实记录兜底
-      return Math.max(15, Math.min(95, ((studentId * 7 + kpId * 13) % 100) + 10));
+      // 与知识图谱保持一致：无真实掌握度记录 → null（未学习），绝不臆造模拟值
+      return null;
     };
 
     const abilityLevel = (s: number) =>
@@ -128,8 +128,8 @@ export async function GET(request: NextRequest) {
         let totalW = 0, weighted = 0;
         const kps = linked.map((lk) => {
           const m = getMastery(lk.id);
-          totalW += lk.weight;
-          weighted += (m ?? 0) * lk.weight;
+          // 仅将"有真实掌握度"的知识点纳入能力加权，避免未学习知识点按 0 拉低能力分
+          if (m != null) { totalW += lk.weight; weighted += m * lk.weight; }
           return {
             id: lk.id,
             name: kpIdToCourse.get(lk.id)?.name || '',
@@ -138,8 +138,9 @@ export async function GET(request: NextRequest) {
             weak: m != null && m < 60,
           };
         });
-        const score = totalW > 0 ? Math.round(weighted / totalW) : 0;
-        const lvl = abilityLevel(score);
+        const hasScored = totalW > 0;
+        const score = hasScored ? Math.round(weighted / totalW) : null;
+        const lvl = hasScored ? abilityLevel(score!) : { label: '暂无数据', color: '#94a3b8' };
         return {
           id: a.id,
           name: a.name,
@@ -150,7 +151,7 @@ export async function GET(request: NextRequest) {
           kps,
           weak_kps: kps.filter((k) => k.weak).map((k) => k.name),
         };
-      }).sort((x, y) => x.score - y.score); // 薄弱在前，便于优先补强
+      }).sort((x, y) => (x.score ?? Infinity) - (y.score ?? Infinity)); // 薄弱在前，暂无数据(score=null)排最后
       setCache(cacheKey, data);
       return NextResponse.json({ success: true, data });
     }

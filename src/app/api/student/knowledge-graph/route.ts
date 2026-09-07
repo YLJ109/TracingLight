@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
-import { course, knowledgePoint, gradingTask, knowledgeMasteryLog } from '@/storage/database/shared/schema';
+import { course, knowledgePoint, gradingTask, knowledgeMasteryLog, errorBook } from '@/storage/database/shared/schema';
 import { eq, and, inArray } from 'drizzle-orm';
 
 // ─── Simple in-memory cache with TTL ───
@@ -184,9 +184,12 @@ function masteryColor(m: number): string {
   return '#94a3b8';
 }
 
-function simulateMastery(studentId: number, kpId: number): number {
-  const seed = ((studentId * 7 + kpId * 13) % 100);
-  return Math.max(15, Math.min(95, seed + 10));
+function getMasteryWithReal(studentId: number, logMasteries: Record<number, number>, realMasteries: Record<number, number>, kpId: number): number | null {
+  if (!studentId) return null;
+  if (logMasteries[kpId] !== undefined) return logMasteries[kpId];
+  if (realMasteries[kpId] !== undefined) return realMasteries[kpId];
+  // 无真实掌握度记录 → 返回 null（未学习），绝不臆造模拟值
+  return null;
 }
 
 export async function GET(req: NextRequest) {
@@ -289,11 +292,42 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const getMastery = (kpId: number): number | null => {
-    if (!studentId) return null;
-    if (logMasteries[kpId] !== undefined) return logMasteries[kpId];
-    if (realMasteries[kpId] !== undefined) return realMasteries[kpId];
-    return simulateMastery(studentId, kpId);
+  const getMastery = (kpId: number): number | null =>
+      getMasteryWithReal(studentId, logMasteries, realMasteries, kpId);
+
+  // ─── 错题统计（供详情盒展示真实错题/已掌握/待复习数量）───
+  const errorStats: Record<number, { total: number; mastered: number; pending: number }> = {};
+  if (studentId) {
+    const errRows = db.select({
+      knowledge_point_id: errorBook.knowledge_point_id,
+      review_status: errorBook.review_status,
+    })
+      .from(errorBook)
+      .where(and(
+        eq(errorBook.student_id, studentId),
+        inArray(errorBook.knowledge_point_id, kpIds)
+      ))
+      .all();
+    for (const e of errRows) {
+      if (!errorStats[e.knowledge_point_id]) errorStats[e.knowledge_point_id] = { total: 0, mastered: 0, pending: 0 };
+      errorStats[e.knowledge_point_id].total += 1;
+      if (e.review_status === 'mastered') errorStats[e.knowledge_point_id].mastered += 1;
+      else errorStats[e.knowledge_point_id].pending += 1;
+    }
+  }
+
+  // 供知识点详情盒使用：丰富、真实的掌握度明细
+  const buildMasteryDetail = (kpId: number): { avg: number; total: number; mastered: number; pending: number; level: string } | null => {
+    const m = getMastery(kpId);
+    if (m === null) return null;
+    const es = errorStats[kpId] || { total: 0, mastered: 0, pending: 0 };
+    return {
+      avg: m,
+      total: es.total,
+      mastered: es.mastered,
+      pending: es.pending,
+      level: m >= 80 ? '掌握' : m >= 60 ? '良好' : m >= 30 ? '薄弱' : '未掌握',
+    };
   };
 
   // ─── Build hierarchy ───
@@ -320,6 +354,10 @@ export async function GET(req: NextRequest) {
     course_id: courseId,
     mastery: null,
     mastery_color: null,
+    is_leaf: false,
+    knowledge_point_id: null,
+    child_count: curriculum.chapters.length,
+    mastery_detail: null,
   });
 
   const stats = { mastered: 0, basics: 0, weak: 0, unlearned: 0, total: kps.length };
@@ -347,6 +385,10 @@ export async function GET(req: NextRequest) {
       group_color: colors.dark,
       mastery: null,
       mastery_color: null,
+      is_leaf: false,
+      knowledge_point_id: null,
+      child_count: ch.sections.length,
+      mastery_detail: null,
     });
     edges.push({ source: `course_${courseId}`, target: chId, type: 'belong_to', lineStyle: { color: colors.mid, width: 2, opacity: 0.7 } });
 
@@ -372,6 +414,10 @@ export async function GET(req: NextRequest) {
         group_color: colors.mid,
         mastery: null,
         mastery_color: null,
+        is_leaf: false,
+        knowledge_point_id: null,
+        child_count: sec.kpIds.filter((k) => kpMap.has(k)).length,
+        mastery_detail: null,
       });
       edges.push({ source: chId, target: secId, type: 'belong_to', lineStyle: { color: colors.light, width: 1.5, opacity: 0.6 } });
 
@@ -414,6 +460,10 @@ export async function GET(req: NextRequest) {
           group_color: colors.light,
           mastery: m,
           mastery_color: mc,
+          is_leaf: true,
+          knowledge_point_id: kpId,
+          child_count: 0,
+          mastery_detail: buildMasteryDetail(kpId),
         });
         edges.push({ source: secId, target: `kp_${kpId}`, type: 'belong_to', lineStyle: { color: colors.light, width: 1, opacity: 0.5 } });
 

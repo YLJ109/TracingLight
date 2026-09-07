@@ -32,6 +32,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import ReportMarkdown from '@/components/report-markdown';
 
 // 中文标签映射
 const typeLabels: Record<string, string> = {
@@ -68,9 +69,11 @@ const errorTypeLabels: Record<string, string> = {
 const questionTypeLabels: Record<string, string> = {
   single_choice: "单选题",
   multiple_choice: "多选题",
+  multi_choice: "多选题",
   fill_blank: "填空题",
   short_answer: "简答题",
   judgment: "判断题",
+  code: "编程题",
   programming: "编程题",
 };
 import { Button } from "@/components/ui/button";
@@ -445,9 +448,7 @@ export default function StudentDetailPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
-              {report.report}
-            </div>
+            <ReportMarkdown content={report.report} />
           </CardContent>
         </Card>
       )}
@@ -501,8 +502,8 @@ export default function StudentDetailPage() {
       </div>
 
       {/* 平时表现 / 学习参与度（D5 权重制） */}
-      <Card className="border-violet-200/70 bg-gradient-to-br from-violet-50/40 to-white py-0">
-        <CardHeader className="pb-3">
+      <Card className="border-violet-200/70 bg-gradient-to-br from-violet-50/40 to-white py-1 gap-3">
+        <CardHeader className="pt-3 pb-2 gap-1">
           <CardTitle className="text-base flex items-center gap-2">
             <Flame className="w-4 h-4 text-violet-600" />
             平时表现分（近 30 天学习投入）
@@ -511,7 +512,7 @@ export default function StudentDetailPage() {
             按「签到 30% · 作业完成 20% · 阅读投入 25% · 讨论贡献 15% · 错题复习 10%」权重综合评定时分，满分 100
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4">
           {participationLoading ? (
             <div className="flex items-center gap-3">
               <Loader2 className="w-5 h-5 animate-spin text-violet-600" />
@@ -652,7 +653,7 @@ export default function StudentDetailPage() {
                     <div key={idx} className="p-3 bg-slate-50 rounded-lg">
                       <div className="flex items-center justify-between mb-1">
                         <Badge variant="outline" className="text-xs">
-                          {questionTypeLabels[err.questionType] || err.questionType || "未知"}
+                          {questionTypeLabels[err.questionType] || "其他题型"}
                         </Badge>
                         <span className="text-xs text-muted-foreground">
                           {err.courseName || ""}

@@ -17,6 +17,7 @@ import {
   Flame,
   Zap,
   Brain,
+  Sparkles,
   Activity,
   PieChart,
   LineChart,
@@ -68,12 +69,25 @@ function perStudentMinutes(stats: any): number {
   return count > 0 ? Math.round((total / 60) / count) : 0;
 }
 
+/** 错因类型 → 中文标签 */
+function errorTypeLabel(t: string | null | undefined): string {
+  const map: Record<string, string> = {
+    concept_confusion: '概念混淆', calculation_error: '计算错误', calculation: '计算错误',
+    logic_error: '逻辑错误', logic: '逻辑错误', knowledge_missing: '知识缺失', knowledge: '知识缺失',
+    careless: '粗心大意', empty: '未作答', wrong: '答案错误', other: '其他',
+  };
+  return map[t || ''] || '其他';
+}
+
 export default function AnalyticsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
+  // P2: 共性问题 + 临界生（AI 诊断）
+  const [aiData, setAiData] = useState<any>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   // 筛选维度：all / course / class
   const [dimension, setDimension] = useState<'all' | 'course' | 'class'>(
@@ -106,8 +120,26 @@ export default function AnalyticsPage() {
         setLoading(false);
       }
     };
+    // P2: 共性问题 + 临界生（仅在切到 AI tab 且未加载时拉取）
+    const fetchAi = async () => {
+      if (activeTab !== "ai" || aiData) return;
+      setAiLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (courseId) params.set('course_id', courseId);
+        const qs = params.toString();
+        const res = await apiFetch("/api/teacher/analytics/common-issues" + (qs ? `?${qs}` : ''));
+        const json = await res.json();
+        if (json.success) setAiData(json.data);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setAiLoading(false);
+      }
+    };
     fetchData();
-  }, [dimension, courseId, classId]);
+    fetchAi();
+  }, [dimension, courseId, classId, activeTab, aiData]);
 
   // Radar chart - only when tab is active
   useEffect(() => {
@@ -488,11 +520,12 @@ export default function AnalyticsPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="overview">学生成绩概览</TabsTrigger>
           <TabsTrigger value="heatmap">知识点掌握热力图</TabsTrigger>
           <TabsTrigger value="radar">能力维度雷达图</TabsTrigger>
           <TabsTrigger value="trend">班级成绩趋势</TabsTrigger>
+          <TabsTrigger value="ai">AI 共性问题</TabsTrigger>
         </TabsList>
 
         {/* Tab 1: 学生成绩概览 */}
@@ -607,6 +640,122 @@ export default function AnalyticsPage() {
               <div id="trend-chart" className="h-96" />
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Tab 5: AI 共性问题 + 临界生 */}
+        <TabsContent value="ai" className="space-y-6">
+          {aiLoading ? (
+            <div className="flex items-center justify-center h-40 text-sm text-slate-400">
+              <Brain className="w-5 h-5 animate-pulse mr-2" />AI 正在聚合分析全班学情…
+            </div>
+          ) : aiData ? (
+            <>
+              {/* AI 汇总 */}
+              {aiData.summary && (
+                <Card className="border-teal-200 bg-gradient-to-br from-teal-50 to-emerald-50">
+                  <CardContent className="pt-6">
+                    <p className="text-sm font-medium text-teal-700 flex items-center gap-2">
+                      <Brain className="w-4 h-4" />教师行动建议
+                      {aiData.aiGenerated
+                        ? <Badge variant="outline" className="text-[10px] text-teal-600 border-teal-200">AI 生成</Badge>
+                        : <Badge variant="outline" className="text-[10px] text-slate-500">本地智能</Badge>}
+                    </p>
+                    <p className="mt-2 text-slate-700 leading-relaxed">{aiData.summary}</p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* 共性问题 */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2"><AlertCircle className="w-4 h-4 text-amber-500" />全班共性问题清单</CardTitle>
+                  <CardDescription>按知识点聚合错题与掌握度，识别最需要重点讲解的共性问题</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {aiData.issues.length === 0 ? (
+                    <p className="text-sm text-slate-400 py-6 text-center">暂无共性薄弱点，全班掌握情况良好</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {aiData.issues.map((it: any, i: number) => (
+                        <div key={i} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50">
+                          <div className="flex flex-wrap items-center gap-2 mb-2">
+                            <Badge className="bg-amber-100 text-amber-800 border-amber-200">{i + 1}</Badge>
+                            <span className="font-medium text-slate-800">{it.knowledgePointName}</span>
+                            <Badge variant="outline" className="text-[10px] text-slate-500">{it.courseName}</Badge>
+                            <span className="text-xs text-rose-600 ml-auto">{it.affectedStudents} 名同学出错 · 平均掌握度 {Math.round(it.avgMastery * 100)}%</span>
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-xs">
+                            <Badge className="bg-slate-100 text-slate-600 border-slate-200">错题 {it.errorCount} 道</Badge>
+                            <Badge className="bg-rose-50 text-rose-700 border-rose-200">{errorTypeLabel(it.topErrorType) || '其他'}</Badge>
+                          </div>
+                          {it.actionSuggestion && (
+                            <p className="mt-2 text-sm text-teal-800 flex gap-1"><Sparkles className="w-3.5 h-3.5 text-teal-500 mt-0.5 shrink-0" />{it.actionSuggestion}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* 临界生预警 */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2"><Flame className="w-4 h-4 text-red-500" />临界生预警</CardTitle>
+                    <CardDescription>持续薄弱、复习滞后或表现下滑，建议教师重点关注</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {aiData.atRisk.length === 0 ? (
+                      <p className="text-sm text-slate-400 py-6 text-center">暂无需要特别关注的学生</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {aiData.atRisk.map((s: any) => (
+                          <div key={s.studentId} className="p-3 rounded-xl border border-red-100 bg-red-50/40">
+                            <div className="flex items-center justify-between">
+                              <p className="font-medium text-slate-800">{s.name}</p>
+                              <Badge className="bg-red-100 text-red-700 border-red-200">平均 {s.avgScore}分</Badge>
+                            </div>
+                            <div className="text-xs text-slate-500 mt-1 space-y-0.5">
+                              {s.reasons.length > 0 && s.reasons.map((r: string, ri: number) => <p key={ri}>· {r}</p>)}
+                              <p>错题 {s.errorCount} 道 · 解决率 {s.errorResolutionRate}%</p>
+                            </div>
+                            {s.aiDiagnosis && (
+                              <p className="mt-2 text-xs text-red-700 bg-white/60 rounded-lg p-2">{s.aiDiagnosis}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* 建议下一步 */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2"><Activity className="w-4 h-4 text-teal-600" />建议下一步</CardTitle>
+                    <CardDescription>基于共性问题给出的课堂/作业建议</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {aiData.issues.slice(0, 5).length === 0 ? (
+                      <p className="text-sm text-slate-400 py-6 text-center">暂无建议</p>
+                    ) : (
+                      <>
+                        {aiData.issues.slice(0, 5).map((it: any, i: number) => (
+                          <p key={i} className="text-sm text-slate-600 flex gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                            <span>重点回顾「{it.knowledgePointName}」，可发起针对该知识点的专项练习覆盖 {it.affectedStudents} 名同学</span>
+                          </p>
+                        ))}
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </>
+          ) : (
+            <Card><CardContent><p className="text-sm text-slate-400 py-8 text-center">暂无可用数据</p></CardContent></Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>

@@ -12,10 +12,23 @@ export async function GET(request: NextRequest) {
 
     const sp = request.nextUrl.searchParams;
     const courseId = sp.get('course_id') ? Number(sp.get('course_id')) : null;
+    const kpId = sp.get('knowledge_point_id') ? Number(sp.get('knowledge_point_id')) : null;
 
     const materials = courseId
       ? db.select().from(learningMaterial).where(eq(learningMaterial.course_id, courseId)).all()
       : db.select().from(learningMaterial).all();
+
+    // 按知识点过滤：knowledge_point_ids（JSON）
+    const materialsFiltered = kpId
+      ? materials.filter((m) => {
+          const kpIdsRaw = m.knowledge_point_ids;
+          let kpIds: number[] = Array.isArray(kpIdsRaw) ? kpIdsRaw as number[] : [];
+          if (!Array.isArray(kpIdsRaw) && typeof kpIdsRaw === 'string') {
+            try { const p = JSON.parse(kpIdsRaw); kpIds = Array.isArray(p) ? p : []; } catch { kpIds = []; }
+          }
+          return kpIds.includes(kpId!);
+        })
+      : materials;
 
     // 当前学生的行为日志
     const logs = db.select().from(learningBehaviorLog)
@@ -26,7 +39,7 @@ export async function GET(request: NextRequest) {
     const courses = db.select({ id: course.id, name: course.name }).from(course).all();
     const courseMap = new Map(courses.map((c) => [c.id, c.name]));
 
-    const data = materials.map((m) => {
+    const data = materialsFiltered.map((m) => {
       const behavior = logMap.get(m.id) || null;
       return {
         id: m.id,

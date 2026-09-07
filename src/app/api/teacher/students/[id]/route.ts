@@ -90,9 +90,9 @@ export async function GET(
 
     // Collect all unique assignment IDs from gradings, errors, answers
     const assignmentIds = [
-      ...new Set([
+      ...new Set<number>([
         ...gradings.map((g) => g.assignment_id),
-        ...errors.map((e) => e.assignment_id),
+        ...(errors.map((e) => e.assignment_id).filter((id): id is number => !!id)),
         ...answers.map((a) => a.assignment_id),
       ]),
     ];
@@ -121,9 +121,9 @@ export async function GET(
 
     // Collect question IDs
     const questionIds = [
-      ...new Set([
+      ...new Set<number>([
         ...gradings.map((g) => g.question_id),
-        ...errors.map((e) => e.question_id),
+        ...(errors.map((e) => e.question_id).filter((id): id is number => !!id)),
         ...answers.map((a) => a.question_id),
       ]),
     ];
@@ -153,8 +153,8 @@ export async function GET(
     }
 
     // Helper to get enriched info
-    const getAssignmentCourse = (assignmentId: number) => {
-      const a = assignmentsMap.get(assignmentId);
+    const getAssignmentCourse = (assignmentId: number | null) => {
+      const a = assignmentId ? assignmentsMap.get(assignmentId) : null;
       return {
         assignment: a || null,
         courseName: a ? (coursesMap.get(a.course_id) || '') : '',
@@ -162,8 +162,8 @@ export async function GET(
       };
     };
 
-    const getQuestionKp = (questionId: number) => {
-      const q = questionsMap.get(questionId);
+    const getQuestionKp = (questionId: number | null) => {
+      const q = questionId ? questionsMap.get(questionId) : null;
       const kp = q ? kpMap.get(q.knowledge_point_id) : undefined;
       return {
         question: q || null,

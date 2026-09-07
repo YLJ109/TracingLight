@@ -424,7 +424,7 @@ export default function TeacherAssignmentDetailPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-2">
                       <Badge className={typeLabels[q.question_type] ? 'bg-slate-100 text-slate-700' : 'bg-slate-100'} variant="secondary">
-                        {typeLabels[q.question_type] || q.question_type}
+                        {typeLabels[q.question_type] || '其他题型'}
                       </Badge>
                       <Badge className={difficultyConfig[q.difficulty] || 'bg-slate-100'} variant="secondary">
                         {q.difficulty === 'easy' ? '简单' : q.difficulty === 'medium' ? '中等' : '困难'}

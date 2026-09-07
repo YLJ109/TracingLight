@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { apiFetch } from '@/lib/api-fetch';
 import {
   Send, Sparkles, User, Bot, Plus, MessageCircle,
@@ -71,6 +72,9 @@ export default function AssistantPage() {
   // 消息区自动滚动：发送/流式回显时滚到底部；用户上翻历史时暂停跟随
   const scrollRef = useRef<HTMLDivElement>(null);
   const nearBottomRef = useRef(true);
+  // 支持从其它功能带 ?q= 跳转：自动新建对话并提问
+  const searchParams = useSearchParams();
+  const autoAskRef = useRef<string | null>(null);
 
   const activeSession = sessions.find((s) => s.id === activeId) || null;
 
@@ -96,15 +100,18 @@ export default function AssistantPage() {
     }
   }, []);
 
-  // 会话列表
-  const loadSessions = useCallback(async (selectId?: number) => {
+  // 会话列表。selectId 传 number 时加载指定会话；传 false 时只加载列表，不自动选中（供 ?q= 自动提问兜底，避免抢占新会话）
+  const loadSessions = useCallback(async (selectId?: number | false) => {
     setLoadingSessions(true);
     try {
       const res = await apiFetch('/api/ai/assistant');
       const d = await res.json();
       const list: SessionItem[] = d.success ? d.data : [];
       setSessions(list);
-      if (selectId != null) {
+      if (selectId === false) {
+        // 不自动选中：等待 URL 自动提问创建新会话
+        if (!activeId) { setMessages([]); }
+      } else if (selectId != null) {
         await switchSession(selectId);
       } else if (list.length > 0) {
         await switchSession(list[0].id);
@@ -115,9 +122,36 @@ export default function AssistantPage() {
     } finally {
       setLoadingSessions(false);
     }
-  }, [switchSession]);
+  }, [switchSession, activeId]);
 
-  useEffect(() => { loadSessions(); }, [loadSessions]);
+  useEffect(() => {
+    const q = (searchParams.get('q') || '').trim();
+    loadSessions(q ? false : undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // 带 ?q= 跳转：自动新建对话并发送该问题
+  useEffect(() => {
+    const q = (searchParams.get('q') || '').trim();
+    if (!q || autoAskRef.current === q) return;
+    autoAskRef.current = q;
+    (async () => {
+      try {
+        const res = await apiFetch('/api/ai/assistant/session', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+        });
+        const d = await res.json();
+        if (!d.success) return;
+        const nsid: number = d.data.id;
+        setSessions((prev) => [{ id: nsid, title: d.data.title || q.slice(0, 20), updated_at: d.data.updated_at, message_count: 0 }, ...prev]);
+        setActiveId(nsid);
+        setMessages([]);
+        setPending([]);
+        send(q, nsid);
+      } catch { /* 静默 */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // 新消息 / 流式增量回显时自动下滑到底部；仅当用户停留在底部附近时跟随，避免打断上翻阅读
   useEffect(() => {
@@ -189,13 +223,13 @@ export default function AssistantPage() {
     setEditingId(null);
   };
 
-  // 发送（流式 + 自动降级）
-  const send = async (text: string) => {
+  // 发送（流式 + 自动降级）。initSid 用于外部已建好新会话时显式指定，避免复用旧的激活会话
+  const send = async (text: string, initSid?: number) => {
     const attachments = pending.slice();
     if (loading) return;
     if (!text.trim() && attachments.length === 0) return;
     // 若无激活会话，先新建一个
-    let sid = activeId;
+    let sid = initSid ?? activeId;
     if (sid == null) {
       try {
         const res = await apiFetch('/api/ai/assistant/session', {

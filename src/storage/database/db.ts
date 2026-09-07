@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS grading_task (id INTEGER PRIMARY KEY AUTOINCREMENT, a
 CREATE INDEX IF NOT EXISTS gt_status_idx ON grading_task(status);
 CREATE INDEX IF NOT EXISTS gt_assignment_id_idx ON grading_task(assignment_id);
 CREATE INDEX IF NOT EXISTS gt_student_id_idx ON grading_task(student_id);
-CREATE TABLE IF NOT EXISTS error_book (id INTEGER PRIMARY KEY AUTOINCREMENT, student_id INTEGER NOT NULL REFERENCES user(id), question_id INTEGER NOT NULL REFERENCES question(id), knowledge_point_id INTEGER NOT NULL REFERENCES knowledge_point(id), assignment_id INTEGER NOT NULL REFERENCES assignment(id), grading_task_id INTEGER NOT NULL REFERENCES grading_task(id), student_answer TEXT, correct_answer TEXT, error_type TEXT, error_analysis TEXT, knowledge_explanation TEXT, similar_questions TEXT, learning_suggestion TEXT, review_status TEXT DEFAULT 'pending', reviewed_at TEXT, next_review_at TEXT, review_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (CURRENT_TIMESTAMP));
+CREATE TABLE IF NOT EXISTS error_book (id INTEGER PRIMARY KEY AUTOINCREMENT, student_id INTEGER NOT NULL REFERENCES user(id), question_id INTEGER REFERENCES question(id), knowledge_point_id INTEGER NOT NULL REFERENCES knowledge_point(id), assignment_id INTEGER REFERENCES assignment(id), grading_task_id INTEGER REFERENCES grading_task(id), content TEXT, student_answer TEXT, correct_answer TEXT, error_type TEXT, error_analysis TEXT, knowledge_explanation TEXT, similar_questions TEXT, learning_suggestion TEXT, review_status TEXT DEFAULT 'pending', reviewed_at TEXT, next_review_at TEXT, review_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (CURRENT_TIMESTAMP));
 CREATE INDEX IF NOT EXISTS eb_student_id_idx ON error_book(student_id);
 CREATE INDEX IF NOT EXISTS eb_kp_id_idx ON error_book(knowledge_point_id);
 CREATE INDEX IF NOT EXISTS eb_review_status_idx ON error_book(review_status);
@@ -212,6 +212,11 @@ export async function initDb(): Promise<ReturnType<typeof drizzle>> {
       try { sqlite.exec(stmt); } catch { /* 列已存在 */ }
     }
 
+    // error_book 结构升级：question_id/assignment_id/grading_task_id 放宽为可空，并新增 content 列
+    // （支持练习类错题——AI 即时练习不入题库、不属某次作业，以 content 存题面）。
+    // SQLite 不能 ALTER 修改列约束，需重建表并保数据。
+    migrateErrorBook(sqlite);
+
     g.__TL_DB = drizzle(sqlite, { schema: { ...schema, ...relations } });
 
     // 启动后兜底补齐轻量列：旧库缺列时补 ALTER
@@ -233,6 +238,62 @@ export function closeDb() {
 }
 
 export function saveDb() { /* better-sqlite3 已实时落盘，无需额外操作 */ }
+
+/**
+ * error_book 结构升级迁移：question_id/assignment_id/grading_task_id 放宽为可空 + 新增 content 列。
+ * SQLite 无法 ALTER 修改列约束，采用「备份→重建→回填→重建索引」。
+ * 幂等：已迁移（含 content 列且 question_id 可空）则跳过；任何异常回滚不阻塞启动。
+ */
+export function migrateErrorBook(sqlite: Database.Database): void {
+  try {
+    const info = sqlite.prepare('PRAGMA table_info(error_book)').all() as Array<{ name: string; notnull: number }>;
+    const hasContent = info.some((r) => r.name === 'content');
+    const qNullable = info.find((r) => r.name === 'question_id')?.notnull === 0;
+    if (hasContent && qNullable) return;
+
+    sqlite.exec('PRAGMA foreign_keys=OFF;');
+    sqlite.exec('BEGIN;');
+    try {
+      sqlite.exec('ALTER TABLE error_book RENAME TO error_book_tmp;');
+      sqlite.exec(`CREATE TABLE error_book (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER NOT NULL REFERENCES user(id),
+        question_id INTEGER REFERENCES question(id),
+        knowledge_point_id INTEGER NOT NULL REFERENCES knowledge_point(id),
+        assignment_id INTEGER REFERENCES assignment(id),
+        grading_task_id INTEGER REFERENCES grading_task(id),
+        content TEXT,
+        student_answer TEXT, correct_answer TEXT, error_type TEXT, error_analysis TEXT,
+        knowledge_explanation TEXT, similar_questions TEXT, learning_suggestion TEXT,
+        review_status TEXT DEFAULT 'pending', reviewed_at TEXT, next_review_at TEXT,
+        review_count INTEGER DEFAULT 0, created_at TEXT DEFAULT (CURRENT_TIMESTAMP)
+      );`);
+      sqlite.prepare(`
+        INSERT INTO error_book (
+          id, student_id, question_id, knowledge_point_id, assignment_id, grading_task_id,
+          content, student_answer, correct_answer, error_type, error_analysis,
+          knowledge_explanation, similar_questions, learning_suggestion,
+          review_status, reviewed_at, next_review_at, review_count, created_at
+        )
+        SELECT id, student_id, question_id, knowledge_point_id, assignment_id, grading_task_id,
+          NULL, student_answer, correct_answer, error_type, error_analysis,
+          knowledge_explanation, similar_questions, learning_suggestion,
+          review_status, reviewed_at, next_review_at, review_count, created_at
+        FROM error_book_tmp
+      `).run();
+      sqlite.exec('DROP TABLE error_book_tmp;');
+      sqlite.exec('CREATE INDEX IF NOT EXISTS eb_student_id_idx ON error_book(student_id);');
+      sqlite.exec('CREATE INDEX IF NOT EXISTS eb_kp_id_idx ON error_book(knowledge_point_id);');
+      sqlite.exec('CREATE INDEX IF NOT EXISTS eb_review_status_idx ON error_book(review_status);');
+      sqlite.exec('COMMIT;');
+    } catch (e) {
+      sqlite.exec('ROLLBACK;');
+      throw e;
+    } finally {
+      sqlite.exec('PRAGMA foreign_keys=ON;');
+    }
+  } catch { /* 迁移失败时静默，避免阻塞启动 */ }
+}
 
 /**
  * 运行时兜底：确保某表存在某列（针对已在运行中、单例 DB 未重跑迁移的进程）。

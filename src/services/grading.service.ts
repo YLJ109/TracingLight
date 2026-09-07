@@ -14,6 +14,7 @@ import { GRADING_SYSTEM_PROMPT, buildGradingPrompt } from "@/lib/ai/prompts/grad
 import { eq, and } from "drizzle-orm";
 import { gradingConfig, assignment as assignmentTable } from "@/storage/database/shared/schema";
 import { htmlToPlainText } from "@/lib/rich-text";
+import { scoreToMastery } from "@/lib/mastery-sync";
 
 export interface GradingResult {
   total_score: number;
@@ -270,10 +271,11 @@ export function recordGrading(params: {
     }
 
     // 掌握度更新（单题粒度，指数平滑避免覆盖历史）
+    // 口径统一：掌握度=本次得分率（比例制，与 lib/mastery-sync、practice 一致），纠错计数按是否过半判对
     const kpId = questionData.knowledge_point_id;
     if (kpId) {
       const isCorrect = result.total_score >= fullScore * 0.6;
-      const thisRate = isCorrect ? 100 : 0;
+      const thisRate = scoreToMastery(result.total_score, fullScore);
       const existingLog = db.select({
         id: knowledgeMasteryLog.id,
         mastery_rate: knowledgeMasteryLog.mastery_rate,
