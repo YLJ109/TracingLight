@@ -4,6 +4,7 @@ import { user as userTable } from '@/storage/database/shared/schema';
 import { eq } from 'drizzle-orm';
 import jwt from 'jsonwebtoken';
 import { verifyPassword } from '@/lib/password';
+import { writeAudit } from '@/lib/audit';
 
 // 内存级登录限流，防止暴力破解（演示/单机场景够用，生产可换 Redis）
 const MAX_ATTEMPTS = 5;             // 每窗口最多失败 5 次
@@ -112,6 +113,15 @@ export async function POST(request: NextRequest) {
       sameSite: 'lax',
       path: '/',
       maxAge: 7 * 24 * 60 * 60, // 7 天
+    });
+    // 登录成功埋点（静默，失败不影响响应）
+    writeAudit({
+      operatorId: userData.id,
+      operatorName: userData.username,
+      action: 'login',
+      targetType: 'user',
+      targetId: userData.id,
+      detail: `用户 <${userData.real_name || userData.username}> 登录系统（${userData.role}）`,
     });
     return resp;
   } catch (e: unknown) {

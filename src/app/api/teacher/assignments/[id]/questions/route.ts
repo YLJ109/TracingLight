@@ -3,7 +3,7 @@ import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
 import { eq, inArray, and } from 'drizzle-orm';
 import { assignment, question, knowledgePoint, answer, gradingTask, user, course } from '@/storage/database/shared/schema';
-import { getTeacherCourseIds, getTeacherClassIds } from '@/lib/teacher-scope';
+import { getTeacherClassIds } from '@/lib/teacher-scope';
 
 // GET /api/teacher/assignments/[id]/questions - 获取作业包含的题目详情+学生提交情况
 export async function GET(
@@ -27,9 +27,8 @@ export async function GET(
       return NextResponse.json({ error: '作业不存在' }, { status: 404 });
     }
 
-    // 跨租户隔离：作业必须属于本人课程
-    const myCourseIds = getTeacherCourseIds(authUser.userId);
-    if (!myCourseIds.includes(asgn.course_id)) {
+    // 跨租户隔离：仅作业创建教师可访问（与作业列表 `assignment.teacher_id` 归口一致）
+    if (asgn.teacher_id !== authUser.userId) {
       return NextResponse.json({ error: '无权访问该作业' }, { status: 403 });
     }
     const myClassIds = getTeacherClassIds(authUser.userId);

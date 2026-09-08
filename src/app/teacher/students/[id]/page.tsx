@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiFetch } from '@/lib/api-fetch';
+import { BackButton } from '@/components/ui/back-button';
 import {
-  ArrowLeft,
   User,
   BookOpen,
   TrendingUp,
@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import ReportMarkdown from '@/components/report-markdown';
+import { htmlToPlainText } from '@/lib/rich-text';
 
 // 中文标签映射
 const typeLabels: Record<string, string> = {
@@ -63,6 +64,8 @@ const errorTypeLabels: Record<string, string> = {
   knowledge_gap: "知识盲区",
   knowledge_missing: "知识缺失",
   typo: "书写错误",
+  syntax_error: "语法错误",
+  practice: "练习",
   other: "其他",
 };
 
@@ -211,12 +214,12 @@ export default function StudentDetailPage() {
           type: "radar",
           data: [{
             value: [
-              data.radarData?.knowledgeAccuracy || 0,
-              data.radarData?.logicCompleteness || 0,
-              data.radarData?.expressionClarity || 0,
-              data.radarData?.expansionAbility || 0,
-              data.radarData?.completionRate || 0,
-              data.radarData?.errorResolutionRate || 0,
+              Math.max(0, Math.min(100, data.radarData?.knowledgeAccuracy || 0)),
+              Math.max(0, Math.min(100, data.radarData?.logicCompleteness || 0)),
+              Math.max(0, Math.min(100, data.radarData?.expressionClarity || 0)),
+              Math.max(0, Math.min(100, data.radarData?.expansionAbility || 0)),
+              Math.max(0, Math.min(100, data.radarData?.completionRate || 0)),
+              Math.max(0, Math.min(100, data.radarData?.errorResolutionRate || 0)),
             ],
             name: data.student?.real_name || "学生",
             areaStyle: { color: "rgba(13, 148, 136, 0.2)" },
@@ -297,6 +300,7 @@ export default function StudentDetailPage() {
           radius: ["35%", "65%"],
           itemStyle: { borderRadius: 8, borderColor: "#fff", borderWidth: 2 },
           label: { show: true, fontSize: 11, formatter: "{b}: {c}" },
+          labelLayout: { hideOverlap: true },
           data: errorTypes.map((e: any) => ({
             value: e.count,
             name: errorTypeLabels[e.type] || e.type,
@@ -384,9 +388,7 @@ export default function StudentDetailPage() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
+          <BackButton />
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center text-lg font-bold text-teal-700">
               {student.real_name?.slice(-1) || "?"}
@@ -462,7 +464,7 @@ export default function StudentDetailPage() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground">平均分</p>
-              <p className="text-xl font-bold">{avgScore}</p>
+              <p className="text-xl font-bold">{avgScore}<span className="text-sm font-normal text-slate-400"> 分</span></p>
             </div>
           </CardContent>
         </Card>
@@ -473,7 +475,7 @@ export default function StudentDetailPage() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground">完成作业</p>
-              <p className="text-xl font-bold">{assignmentHistory?.length || 0}</p>
+              <p className="text-xl font-bold">{assignmentHistory?.length || 0}<span className="text-sm font-normal text-slate-400"> 份</span></p>
             </div>
           </CardContent>
         </Card>
@@ -484,7 +486,8 @@ export default function StudentDetailPage() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground">待复习错题</p>
-              <p className="text-xl font-bold">{pendingErrors}</p>
+              <p className="text-xl font-bold">{pendingErrors}<span className="text-sm font-normal text-slate-400"> 题</span></p>
+              <p className="text-[11px] text-slate-400">{(pendingErrors + masteredErrors) > 0 ? `占错题 ${Math.round((pendingErrors / (pendingErrors + masteredErrors)) * 100)}%` : '暂无错题'}</p>
             </div>
           </CardContent>
         </Card>
@@ -495,7 +498,8 @@ export default function StudentDetailPage() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground">已掌握错题</p>
-              <p className="text-xl font-bold">{masteredErrors}</p>
+              <p className="text-xl font-bold">{masteredErrors}<span className="text-sm font-normal text-slate-400"> 题</span></p>
+              <p className="text-[11px] text-slate-400">{(pendingErrors + masteredErrors) > 0 ? `掌握率 ${Math.round((masteredErrors / (pendingErrors + masteredErrors)) * 100)}%` : '暂无错题'}</p>
             </div>
           </CardContent>
         </Card>
@@ -535,31 +539,31 @@ export default function StudentDetailPage() {
                 </div>
                 <span className="text-xs text-muted-foreground mt-1">平时表现分</span>
               </div>
-              <div className="flex flex-col gap-2 lg:col-span-5">
-                <div className="flex items-center gap-2">
-                  <span className="w-24 shrink-0 text-xs text-muted-foreground">签到率</span>
-                  <Progress value={participation.signinRate} className="h-2" />
-                  <span className="w-20 shrink-0 text-right text-xs text-slate-600">{participation.signinDays}/{participation.windowDays} 天 · {participation.signinRate}%</span>
+              <div className="flex flex-col gap-2.5 lg:col-span-5">
+                <div className="flex items-center gap-3">
+                  <span className="w-20 shrink-0 text-xs text-muted-foreground">签到率</span>
+                  <Progress value={participation.signinRate} className="h-2 flex-1" />
+                  <span className="w-36 shrink-0 text-right text-xs tabular-nums whitespace-nowrap text-slate-600">{participation.signinDays}/{participation.windowDays} 天 · {participation.signinRate}%</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-24 shrink-0 text-xs text-muted-foreground">作业完成</span>
-                  <Progress value={participation.homeworkRate} className="h-2" />
-                  <span className="w-20 shrink-0 text-right text-xs text-slate-600">{participation.submittedCount}/{participation.assignedCount} · {participation.homeworkRate}%</span>
+                <div className="flex items-center gap-3">
+                  <span className="w-20 shrink-0 text-xs text-muted-foreground">作业完成</span>
+                  <Progress value={participation.homeworkRate} className="h-2 flex-1" />
+                  <span className="w-36 shrink-0 text-right text-xs tabular-nums whitespace-nowrap text-slate-600">{participation.submittedCount}/{participation.assignedCount} 份 · {participation.homeworkRate}%</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-24 shrink-0 text-xs text-muted-foreground">阅读投入</span>
-                  <Progress value={participation.readingScore * 4} className="h-2" />
-                  <span className="w-20 shrink-0 text-right text-xs text-slate-600">{participation.readingMinutes} 分钟 · {participation.readingScore}/25</span>
+                <div className="flex items-center gap-3">
+                  <span className="w-20 shrink-0 text-xs text-muted-foreground">阅读投入</span>
+                  <Progress value={participation.readingScore * 4} className="h-2 flex-1" />
+                  <span className="w-36 shrink-0 text-right text-xs tabular-nums whitespace-nowrap text-slate-600">{participation.readingMinutes} 分钟 · {participation.readingScore}/25 分</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-24 shrink-0 text-xs text-muted-foreground">讨论贡献</span>
-                  <Progress value={participation.discussionContribution * (100 / 15)} className="h-2" />
-                  <span className="w-20 shrink-0 text-right text-xs text-slate-600">发帖 {participation.postCount} · 回复 {participation.replyCount} · {participation.discussionContribution}/15</span>
+                <div className="flex items-center gap-3">
+                  <span className="w-20 shrink-0 text-xs text-muted-foreground">讨论贡献</span>
+                  <Progress value={participation.discussionContribution * (100 / 15)} className="h-2 flex-1" />
+                  <span className="w-36 shrink-0 text-right text-xs tabular-nums whitespace-nowrap text-slate-600">{participation.postCount} 帖 · {participation.replyCount} 回 · {participation.discussionContribution}/15 分</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-24 shrink-0 text-xs text-muted-foreground">错题复习</span>
-                  <Progress value={participation.reviewRate} className="h-2" />
-                  <span className="w-20 shrink-0 text-right text-xs text-slate-600">{participation.reviewRate}% · {participation.reviewScore}/10</span>
+                <div className="flex items-center gap-3">
+                  <span className="w-20 shrink-0 text-xs text-muted-foreground">错题复习</span>
+                  <Progress value={participation.reviewRate} className="h-2 flex-1" />
+                  <span className="w-36 shrink-0 text-right text-xs tabular-nums whitespace-nowrap text-slate-600">已练 {participation.reviewScore}/10 分 · 掌握 {participation.reviewRate}%</span>
                 </div>
               </div>
             </div>
@@ -659,9 +663,9 @@ export default function StudentDetailPage() {
                           {err.courseName || ""}
                         </span>
                       </div>
-                      <p className="text-sm line-clamp-2">{err.questionContent || "题目内容未知"}</p>
-                      <p className="text-xs text-red-600 mt-1">
-                        错误答案：{err.wrongAnswer || "未知"}
+                      <p className="text-sm line-clamp-2">{htmlToPlainText(err.questionContent || "题目内容未知")}</p>
+                      <p className="text-xs text-red-600 mt-1 whitespace-pre-wrap break-words font-mono">
+                        错误答案：{htmlToPlainText(err.wrongAnswer || "未知")}
                       </p>
                     </div>
                   ))}

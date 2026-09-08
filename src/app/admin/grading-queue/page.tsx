@@ -157,7 +157,7 @@ export default function AdminGradingQueue() {
       ) : (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-            <Card className="border-0 shadow-sm py-0">
+            <Card className="rounded-2xl border-0 shadow-sm py-0">
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
                   <p className="text-xs text-muted-foreground">任务总计</p>
@@ -167,7 +167,7 @@ export default function AdminGradingQueue() {
               </CardContent>
             </Card>
             {statCards.slice(0, 4).map((c) => (
-              <Card key={c.label} className="border-0 shadow-sm py-0">
+              <Card key={c.label} className="rounded-2xl border-0 shadow-sm py-0">
                 <CardContent className="p-4">
                   <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${c.tone} flex items-center justify-center text-white`}>
                     <c.icon className="w-5 h-5" />
@@ -179,7 +179,7 @@ export default function AdminGradingQueue() {
             ))}
           </div>
 
-          <Card className="border-0 shadow-sm py-0">
+          <Card className="rounded-2xl border-0 shadow-sm py-0">
             <CardContent className="p-4">
               <p className="text-sm font-medium mb-2">近 7 天排队 / 完成趋势</p>
               <div ref={trendRef} className="w-full" style={{ height: 220 }} />
@@ -198,7 +198,7 @@ export default function AdminGradingQueue() {
             })}
           </div>
 
-          <Card className="border-0 shadow-sm py-0">
+          <Card className="rounded-2xl border-0 shadow-sm py-0">
             <CardContent className="p-0 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -251,7 +251,9 @@ export default function AdminGradingQueue() {
                     );
                   })}
                   {(data?.list.length === 0) && (
-                    <tr><td colSpan={9} className="px-4 py-10 text-center text-muted-foreground">暂无批改任务</td></tr>
+                    <tr><td colSpan={9} className="px-4 py-10 text-center text-muted-foreground">
+                      暂无批改任务——学生提交含主观题的作业后，系统会自动生成 AI 批改任务并入队，此处即可查看进度与结果。
+                    </td></tr>
                   )}
                 </tbody>
               </table>

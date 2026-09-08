@@ -62,7 +62,7 @@ CREATE INDEX IF NOT EXISTS q_course_id_idx ON question(course_id);
 CREATE INDEX IF NOT EXISTS q_kp_id_idx ON question(knowledge_point_id);
 CREATE INDEX IF NOT EXISTS q_type_idx ON question(question_type);
 CREATE INDEX IF NOT EXISTS q_difficulty_idx ON question(difficulty);
-CREATE TABLE IF NOT EXISTS assignment (id INTEGER PRIMARY KEY AUTOINCREMENT, course_id INTEGER NOT NULL REFERENCES course(id), teacher_id INTEGER NOT NULL REFERENCES user(id), title TEXT NOT NULL, description TEXT, question_ids TEXT NOT NULL, total_score REAL DEFAULT 100, start_time TEXT NOT NULL, end_time TEXT NOT NULL, status TEXT DEFAULT 'published', allow_resubmit INTEGER DEFAULT 0, review_mode TEXT DEFAULT 'auto', has_subjective INTEGER DEFAULT 0, grades_published INTEGER DEFAULT 0, created_at TEXT DEFAULT (CURRENT_TIMESTAMP));
+CREATE TABLE IF NOT EXISTS assignment (id INTEGER PRIMARY KEY AUTOINCREMENT, course_id INTEGER NOT NULL REFERENCES course(id), teacher_id INTEGER NOT NULL REFERENCES user(id), title TEXT NOT NULL, description TEXT, question_ids TEXT NOT NULL, total_score REAL DEFAULT 100, start_time TEXT NOT NULL, end_time TEXT NOT NULL, status TEXT DEFAULT 'published', allow_resubmit INTEGER DEFAULT 0, review_mode TEXT DEFAULT 'auto', has_subjective INTEGER DEFAULT 0, grades_published INTEGER DEFAULT 0, question_scores TEXT, created_at TEXT DEFAULT (CURRENT_TIMESTAMP));
 CREATE INDEX IF NOT EXISTS asgn_course_id_idx ON assignment(course_id);
 CREATE INDEX IF NOT EXISTS asgn_status_idx ON assignment(status);
 CREATE TABLE IF NOT EXISTS answer (id INTEGER PRIMARY KEY AUTOINCREMENT, assignment_id INTEGER NOT NULL REFERENCES assignment(id) ON DELETE CASCADE, student_id INTEGER NOT NULL REFERENCES user(id), question_id INTEGER NOT NULL REFERENCES question(id), student_answer TEXT, is_submitted INTEGER DEFAULT 0, submitted_at TEXT, returned INTEGER DEFAULT 0, returned_at TEXT, return_comment TEXT, created_at TEXT DEFAULT (CURRENT_TIMESTAMP));
@@ -80,7 +80,7 @@ CREATE INDEX IF NOT EXISTS ud_user_subtype_idx ON user_decoration(user_id, subty
 CREATE INDEX IF NOT EXISTS ans_assignment_id_idx ON answer(assignment_id);
 CREATE INDEX IF NOT EXISTS ans_student_id_idx ON answer(student_id);
 CREATE UNIQUE INDEX IF NOT EXISTS ans_unique_idx ON answer(assignment_id, student_id, question_id);
-CREATE TABLE IF NOT EXISTS grading_task (id INTEGER PRIMARY KEY AUTOINCREMENT, answer_id INTEGER NOT NULL REFERENCES answer(id) ON DELETE CASCADE, assignment_id INTEGER NOT NULL REFERENCES assignment(id), student_id INTEGER NOT NULL REFERENCES user(id), question_id INTEGER NOT NULL REFERENCES question(id), knowledge_point_id INTEGER NOT NULL REFERENCES knowledge_point(id), full_score REAL NOT NULL, question_type TEXT NOT NULL, reference_answer TEXT, student_answer TEXT, rubric_json TEXT, total_score REAL, dimension_scores TEXT, annotations TEXT, unmastered_knowledge_ids TEXT, error_type TEXT, overall_comment TEXT, status TEXT DEFAULT 'pending', retry_count INTEGER DEFAULT 0, max_retries INTEGER DEFAULT 3, error_message TEXT, teacher_override_score REAL, teacher_override_comment TEXT, created_at TEXT DEFAULT (CURRENT_TIMESTAMP), completed_at TEXT);
+CREATE TABLE IF NOT EXISTS grading_task (id INTEGER PRIMARY KEY AUTOINCREMENT, answer_id INTEGER NOT NULL REFERENCES answer(id) ON DELETE CASCADE, assignment_id INTEGER NOT NULL REFERENCES assignment(id), student_id INTEGER NOT NULL REFERENCES user(id), question_id INTEGER NOT NULL REFERENCES question(id), knowledge_point_id INTEGER NOT NULL REFERENCES knowledge_point(id), full_score REAL NOT NULL, question_type TEXT NOT NULL, reference_answer TEXT, student_answer TEXT, rubric_json TEXT, total_score REAL, dimension_scores TEXT, annotations TEXT, unmastered_knowledge_ids TEXT, error_type TEXT, overall_comment TEXT, status TEXT DEFAULT 'pending', retry_count INTEGER DEFAULT 0, max_retries INTEGER DEFAULT 3, error_message TEXT, teacher_override_score REAL, teacher_override_comment TEXT, ai_generated_probability REAL, created_at TEXT DEFAULT (CURRENT_TIMESTAMP), completed_at TEXT);
 CREATE INDEX IF NOT EXISTS gt_status_idx ON grading_task(status);
 CREATE INDEX IF NOT EXISTS gt_assignment_id_idx ON grading_task(assignment_id);
 CREATE INDEX IF NOT EXISTS gt_student_id_idx ON grading_task(student_id);
@@ -192,6 +192,20 @@ export async function initDb(): Promise<ReturnType<typeof drizzle>> {
       `CREATE TABLE IF NOT EXISTS grading_config (id INTEGER PRIMARY KEY AUTOINCREMENT, teacher_id INTEGER NOT NULL REFERENCES user(id), name TEXT NOT NULL, course_id INTEGER, question_type TEXT, scoring_criteria TEXT, deduction_rules TEXT, comment_style TEXT, grade_levels TEXT, is_active INTEGER DEFAULT 1, created_at TEXT DEFAULT (CURRENT_TIMESTAMP), updated_at TEXT)`,
       'ALTER TABLE user ADD COLUMN token_version INTEGER DEFAULT 0',
       'ALTER TABLE assignment ADD COLUMN grades_published INTEGER DEFAULT 0',
+      'ALTER TABLE assignment ADD COLUMN question_scores TEXT',
+      'ALTER TABLE assignment ADD COLUMN monitor_config TEXT',
+      'ALTER TABLE assignment ADD COLUMN peer_review TEXT',
+      'ALTER TABLE grading_task ADD COLUMN ai_generated_probability REAL',
+      `CREATE TABLE IF NOT EXISTS peer_review (id INTEGER PRIMARY KEY AUTOINCREMENT, assignment_id INTEGER NOT NULL REFERENCES assignment(id) ON DELETE CASCADE, question_id INTEGER NOT NULL REFERENCES question(id), reviewer_id INTEGER NOT NULL REFERENCES user(id), reviewee_id INTEGER NOT NULL REFERENCES user(id), total_score REAL, dimension_scores TEXT, comment TEXT, status TEXT DEFAULT 'completed', created_at TEXT DEFAULT (CURRENT_TIMESTAMP))`,
+      'CREATE UNIQUE INDEX IF NOT EXISTS pr_unique_idx ON peer_review(assignment_id, question_id, reviewer_id, reviewee_id)',
+      'CREATE INDEX IF NOT EXISTS pr_assignment_id_idx ON peer_review(assignment_id)',
+      'CREATE INDEX IF NOT EXISTS pr_question_id_idx ON peer_review(question_id)',
+      'CREATE INDEX IF NOT EXISTS pr_reviewer_id_idx ON peer_review(reviewer_id)',
+      'CREATE INDEX IF NOT EXISTS pr_reviewee_id_idx ON peer_review(reviewee_id)',
+      `CREATE TABLE IF NOT EXISTS answer_monitor (id INTEGER PRIMARY KEY AUTOINCREMENT, assignment_id INTEGER NOT NULL REFERENCES assignment(id) ON DELETE CASCADE, student_id INTEGER NOT NULL REFERENCES user(id), copy_count INTEGER DEFAULT 0, paste_count INTEGER DEFAULT 0, blur_count INTEGER DEFAULT 0, blur_seconds INTEGER DEFAULT 0, time_spent_seconds INTEGER DEFAULT 0, paste_records TEXT, suspicious_flag INTEGER DEFAULT 0, suspicious_reason TEXT, monitor_snapshot TEXT, created_at TEXT DEFAULT (CURRENT_TIMESTAMP), updated_at TEXT)`,
+      'CREATE UNIQUE INDEX IF NOT EXISTS am_unique_idx ON answer_monitor(assignment_id, student_id)',
+      'CREATE INDEX IF NOT EXISTS am_assignment_id_idx ON answer_monitor(assignment_id)',
+      'CREATE INDEX IF NOT EXISTS am_student_id_idx ON answer_monitor(student_id)',
       'ALTER TABLE question ADD COLUMN locked INTEGER DEFAULT 0',
       'ALTER TABLE question ADD COLUMN min_chars INTEGER',
       'ALTER TABLE question ADD COLUMN max_chars INTEGER',
@@ -207,6 +221,32 @@ export async function initDb(): Promise<ReturnType<typeof drizzle>> {
       `CREATE UNIQUE INDEX IF NOT EXISTS dl_unique_idx ON discussion_like(target_type, target_id, user_id)`,
       // 学校名称统一（幂等）：历史库沿用旧名时改名
       `UPDATE school SET name = '福州理工学院', short_name = 'FIT' WHERE name = '福州大学'`,
+      // 考试系统表
+      `CREATE TABLE IF NOT EXISTS exam (id INTEGER PRIMARY KEY AUTOINCREMENT, course_id INTEGER NOT NULL REFERENCES course(id), teacher_id INTEGER NOT NULL REFERENCES user(id), title TEXT NOT NULL, description TEXT, exam_type TEXT DEFAULT 'unit', time_mode TEXT DEFAULT 'fixed', start_at TEXT NOT NULL, end_at TEXT, duration INTEGER DEFAULT 60, auto_submit INTEGER DEFAULT 1, allow_resubmit INTEGER DEFAULT 0, publish_mode TEXT DEFAULT 'manual', publish_at TEXT, grades_published INTEGER DEFAULT 0, question_ids TEXT NOT NULL, question_scores TEXT, total_score REAL DEFAULT 100, has_subjective INTEGER DEFAULT 0, proctor_config TEXT, randomized INTEGER DEFAULT 1, status TEXT DEFAULT 'draft', created_at TEXT DEFAULT (CURRENT_TIMESTAMP), updated_at TEXT)`,
+      `CREATE INDEX IF NOT EXISTS exam_course_id_idx ON exam(course_id)`,
+      `CREATE INDEX IF NOT EXISTS exam_status_idx ON exam(status)`,
+      `CREATE TABLE IF NOT EXISTS exam_enroll (id INTEGER PRIMARY KEY AUTOINCREMENT, exam_id INTEGER NOT NULL REFERENCES exam(id) ON DELETE CASCADE, student_id INTEGER NOT NULL REFERENCES user(id), class_id INTEGER REFERENCES class(id), allow INTEGER DEFAULT 1, enroll_status TEXT DEFAULT 'normal', created_at TEXT DEFAULT (CURRENT_TIMESTAMP))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS ee_unique_idx ON exam_enroll(exam_id, student_id)`,
+      `CREATE INDEX IF NOT EXISTS ee_exam_id_idx ON exam_enroll(exam_id)`,
+      `CREATE TABLE IF NOT EXISTS exam_attempt (id INTEGER PRIMARY KEY AUTOINCREMENT, exam_id INTEGER NOT NULL REFERENCES exam(id), enroll_id INTEGER NOT NULL REFERENCES exam_enroll(id), student_id INTEGER NOT NULL REFERENCES user(id), started_at TEXT NOT NULL, deadline TEXT NOT NULL, submitted_at TEXT, status TEXT DEFAULT 'in_progress', device_fp TEXT, ip TEXT, face_verified INTEGER DEFAULT 0, face_verified_at TEXT, face_strategy TEXT, risk_score REAL DEFAULT 0, risk_flags TEXT, switch_count INTEGER DEFAULT 0, fullscreen_exit_count INTEGER DEFAULT 0, submitted_via TEXT, created_at TEXT DEFAULT (CURRENT_TIMESTAMP), updated_at TEXT)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS ea_unique_idx ON exam_attempt(exam_id, student_id)`,
+      `CREATE INDEX IF NOT EXISTS ea_exam_id_idx ON exam_attempt(exam_id)`,
+      `CREATE INDEX IF NOT EXISTS ea_student_id_idx ON exam_attempt(student_id)`,
+      `CREATE TABLE IF NOT EXISTS exam_answer (id INTEGER PRIMARY KEY AUTOINCREMENT, attempt_id INTEGER NOT NULL REFERENCES exam_attempt(id) ON DELETE CASCADE, exam_id INTEGER NOT NULL REFERENCES exam(id), student_id INTEGER NOT NULL REFERENCES user(id), question_id INTEGER NOT NULL REFERENCES question(id), student_answer TEXT, is_answered INTEGER DEFAULT 0, revise_count INTEGER DEFAULT 0, duration_ms INTEGER DEFAULT 0, marked INTEGER DEFAULT 0, saved_at TEXT, created_at TEXT DEFAULT (CURRENT_TIMESTAMP))`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS xans_attempt_q_idx ON exam_answer(attempt_id, question_id)`,
+      `CREATE INDEX IF NOT EXISTS xans_attempt_id_idx ON exam_answer(attempt_id)`,
+      `CREATE INDEX IF NOT EXISTS xans_exam_id_idx ON exam_answer(exam_id)`,
+      `CREATE TABLE IF NOT EXISTS exam_grading (id INTEGER PRIMARY KEY AUTOINCREMENT, answer_id INTEGER NOT NULL REFERENCES exam_answer(id) ON DELETE CASCADE, exam_id INTEGER NOT NULL REFERENCES exam(id), student_id INTEGER NOT NULL REFERENCES user(id), question_id INTEGER NOT NULL REFERENCES question(id), knowledge_point_id INTEGER NOT NULL REFERENCES knowledge_point(id), full_score REAL NOT NULL, question_type TEXT NOT NULL, reference_answer TEXT, student_answer TEXT, rubric_json TEXT, total_score REAL, dimension_scores TEXT, unmastered_knowledge_ids TEXT, error_type TEXT, overall_comment TEXT, status TEXT DEFAULT 'pending', teacher_override_score REAL, ai_generated_probability REAL, created_at TEXT DEFAULT (CURRENT_TIMESTAMP), completed_at TEXT)`,
+      `CREATE INDEX IF NOT EXISTS xg_exam_id_idx ON exam_grading(exam_id)`,
+      `CREATE INDEX IF NOT EXISTS xg_student_id_idx ON exam_grading(student_id)`,
+      `CREATE TABLE IF NOT EXISTS exam_proctor_event (id INTEGER PRIMARY KEY AUTOINCREMENT, exam_id INTEGER NOT NULL REFERENCES exam(id), attempt_id INTEGER REFERENCES exam_attempt(id), student_id INTEGER NOT NULL REFERENCES user(id), type TEXT NOT NULL, severity TEXT DEFAULT 'warn', detail TEXT, created_at TEXT DEFAULT (CURRENT_TIMESTAMP))`,
+      `CREATE INDEX IF NOT EXISTS xpe_exam_id_idx ON exam_proctor_event(exam_id)`,
+      `CREATE INDEX IF NOT EXISTS xpe_student_id_idx ON exam_proctor_event(student_id)`,
+      `CREATE TABLE IF NOT EXISTS exam_appeal (id INTEGER PRIMARY KEY AUTOINCREMENT, exam_id INTEGER NOT NULL REFERENCES exam(id), student_id INTEGER NOT NULL REFERENCES user(id), question_id INTEGER NOT NULL REFERENCES question(id), grading_id INTEGER REFERENCES exam_grading(id), reason TEXT NOT NULL, status TEXT DEFAULT 'pending', teacher_comment TEXT, created_at TEXT DEFAULT (CURRENT_TIMESTAMP), handled_at TEXT)`,
+      `CREATE INDEX IF NOT EXISTS xap_exam_id_idx ON exam_appeal(exam_id)`,
+      `CREATE INDEX IF NOT EXISTS xap_student_id_idx ON exam_appeal(student_id)`,
+      'ALTER TABLE error_book ADD COLUMN exam_id INTEGER',
+      'ALTER TABLE exam_grading ADD COLUMN annotations TEXT',
     ];
     for (const stmt of MIGRATIONS) {
       try { sqlite.exec(stmt); } catch { /* 列已存在 */ }
@@ -221,6 +261,12 @@ export async function initDb(): Promise<ReturnType<typeof drizzle>> {
 
     // 启动后兜底补齐轻量列：旧库缺列时补 ALTER
     ensureColumn('qa_message', 'attachment', 'ALTER TABLE qa_message ADD COLUMN attachment TEXT');
+    ensureColumn('assignment', 'question_scores', 'ALTER TABLE assignment ADD COLUMN question_scores TEXT');
+    ensureColumn('assignment', 'monitor_config', 'ALTER TABLE assignment ADD COLUMN monitor_config TEXT');
+    ensureColumn('assignment', 'peer_review', 'ALTER TABLE assignment ADD COLUMN peer_review TEXT');
+    ensureColumn('grading_task', 'ai_generated_probability', 'ALTER TABLE grading_task ADD COLUMN ai_generated_probability REAL');
+    ensureColumn('error_book', 'exam_id', 'ALTER TABLE error_book ADD COLUMN exam_id INTEGER');
+    ensureColumn('exam_grading', 'annotations', 'ALTER TABLE exam_grading ADD COLUMN annotations TEXT');
 
     return g.__TL_DB;
   })();
@@ -262,6 +308,7 @@ export function migrateErrorBook(sqlite: Database.Database): void {
         knowledge_point_id INTEGER NOT NULL REFERENCES knowledge_point(id),
         assignment_id INTEGER REFERENCES assignment(id),
         grading_task_id INTEGER REFERENCES grading_task(id),
+        exam_id INTEGER REFERENCES exam(id),
         content TEXT,
         student_answer TEXT, correct_answer TEXT, error_type TEXT, error_analysis TEXT,
         knowledge_explanation TEXT, similar_questions TEXT, learning_suggestion TEXT,
@@ -271,11 +318,13 @@ export function migrateErrorBook(sqlite: Database.Database): void {
       sqlite.prepare(`
         INSERT INTO error_book (
           id, student_id, question_id, knowledge_point_id, assignment_id, grading_task_id,
+          exam_id,
           content, student_answer, correct_answer, error_type, error_analysis,
           knowledge_explanation, similar_questions, learning_suggestion,
           review_status, reviewed_at, next_review_at, review_count, created_at
         )
         SELECT id, student_id, question_id, knowledge_point_id, assignment_id, grading_task_id,
+          NULL,
           NULL, student_answer, correct_answer, error_type, error_analysis,
           knowledge_explanation, similar_questions, learning_suggestion,
           review_status, reviewed_at, next_review_at, review_count, created_at

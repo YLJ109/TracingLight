@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, saveDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
-import { assignment, answer, notification, gradingTask } from '@/storage/database/shared/schema';
+import { assignment, answer, errorBook, notification, gradingTask } from '@/storage/database/shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { isAssignmentInTeacherScope, isStudentInTeacherScope } from '@/lib/teacher-scope';
+import { writeAudit } from '@/lib/audit';
 
 /**
  * 教师退回作业 → 学生可重做（学习通式闭环）
@@ -68,6 +69,16 @@ export async function POST(request: NextRequest) {
       ))
       .run();
 
+    // 回滚该生该作业已写入的错题本记录：
+    // 退回重做后，旧错题不再计入「需复习」统计，待重做提交后由批改管线按新作答重新入册，
+    // 避免同一次尝试因「退回→重交」被重复叠加到错题本/复习排期。
+    db.delete(errorBook)
+      .where(and(
+        eq(errorBook.assignment_id, Number(assignment_id)),
+        eq(errorBook.student_id, Number(student_id)),
+      ))
+      .run();
+
     // 通知学生（复用通知机制）
     db.insert(notification).values({
       user_id: Number(student_id),
@@ -77,6 +88,20 @@ export async function POST(request: NextRequest) {
       link: `/student/assignments/${assignment_id}`,
     }).run();
     try { saveDb(); } catch { /* 定时持久化兜底 */ }
+
+    // 退回重做埋点（静默，失败不影响响应）
+    try {
+      writeAudit({
+        operatorId: authUser.userId,
+        operatorName: authUser.username,
+        action: 'assignment_returned',
+        targetType: 'assignment',
+        targetId: Number(assignment_id),
+        detail: `退回作业「${String(asgn.title).slice(0, 50)}」`,
+      });
+    } catch (auditErr) {
+      console.error('Assignment return audit error:', auditErr);
+    }
 
     return NextResponse.json({ success: true, data: { returned_answers: rows.length } });
   } catch (e) {

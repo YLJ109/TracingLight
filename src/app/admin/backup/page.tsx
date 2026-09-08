@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 export default function AdminBackup() {
   return (
     <div className="space-y-4">
-      <Card className="border-0 shadow-sm py-0">
+      <Card className="rounded-2xl border-0 shadow-sm py-0">
         <CardContent className="p-6 space-y-3 text-sm">
           <p className="font-medium">备份说明</p>
           <p className="text-muted-foreground">

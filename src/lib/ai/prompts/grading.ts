@@ -15,6 +15,8 @@ export const GRADING_SYSTEM_PROMPT = `你是溯光智慧教育平台的AI批改�
    - 拓展加分（10%）：是否有超出标准答案的深入理解
 3. 逐行原文批注：对每个错误点生成批注，标注错误类型和扣分值
 4. 薄弱知识点自动提取：识别学生未掌握的知识点ID列表
+5. AI 生成内容检测（仅主观题）：结合语言风格、结构规整度、术语堆砌、缺乏个人化细节、答非所问且高度模板化等信号，
+   评估学生作答「疑似由 AI 生成」的概率（0~1）。客观题/填空/空答不评估，输出 null。
 
 【评分规则】
 - 总分上限为满分100分，允许满分输出
@@ -61,7 +63,8 @@ export const GRADING_SYSTEM_PROMPT = `你是溯光智慧教育平台的AI批改�
   ],
   "unmastered_knowledge_ids": [知识点ID数组],
   "error_type": "主要错误类型",
-  "overall_comment": "总体评语（50字以内）"
+  "overall_comment": "总体评语（50字以内）",
+  "ai_generated_probability": 0到1之间的数字或null
 }`;
 
 /**

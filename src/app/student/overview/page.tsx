@@ -7,14 +7,23 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { DashboardSkeleton } from '@/components/ui/dashboard-skeleton';
+import DiscussionZone from '@/components/discussion-zone';
 import * as echarts from 'echarts';
 import {
   BookOpen, Target, TrendingUp, FileText, ChevronRight, AlertCircle, Clock, Zap, Trophy, Loader2,
   Activity, BarChart3, Sparkles, CalendarDays, RefreshCcw, Layers, GraduationCap, Brain, CheckCircle2,
+  MessagesSquare,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+function rankDisplay(rank?: number | null, total?: number | null): string {
+  if (!rank) return '暂无';
+  if (total && total > 1) return `第 ${rank} 名 / ${total} 人`;
+  return `第 ${rank} 名`;
+}
 
 interface Archive {
-  student: { real_name?: string; avatar_url?: string | null; student_level?: string; classRank?: number | null; className?: string; majorName?: string; courseCount?: number };
+  student: { real_name?: string; avatar_url?: string | null; student_level?: string; classRank?: number | null; classTotal?: number | null; className?: string; majorName?: string; courseCount?: number };
   courses: Array<{ id: number; name: string }>;
   avgMastery: number;
   indicators: Array<{ key: string; label: string; value: number; unit?: string; color?: string; icon?: string; trend?: string }>;
@@ -30,16 +39,19 @@ interface Archive {
   learningBehavior: { weekMinutes: number; weekHours: number; materialProgress: number; days: Array<{ date: string; seconds: number }>; materialsStudied: number };
   stability: { scoreStd: number; level: string; carelessRatio: number; judgedAssignments: number };
   growthTimeline: Array<{ type: string; title: string; desc: string; ts: string }>;
+  examPerformance?: { examCount: number; examAvgPercent: number | null; examList: Array<{ exam_id: number; title: string; score: number | null; full: number | null; percent: number | null; pending_subjective: number; wrong: number; submitted_at: string | null }> };
   courseData: { courseName: string; avgScore: number; completedCount: number; avgMastery: number; weakKps: Array<{ name: string; masteryRate: number }>; trend: Array<{ week: string; avgScore: number }> } | null;
 }
 
 const TABS = [
   { key: 'homework', label: '作业表现', icon: BarChart3 },
+  { key: 'exam', label: '考试表现', icon: GraduationCap },
   { key: 'ability', label: '能力画像', icon: Target },
   { key: 'behavior', label: '学习行为', icon: Clock },
   { key: 'stability', label: '稳定性', icon: TrendingUp },
   { key: 'growth', label: '成长时间线', icon: CalendarDays },
   { key: 'profile', label: '基础与课程', icon: BookOpen },
+  { key: 'discussion', label: '讨论区', icon: MessagesSquare },
 ];
 
 export default function StudentDashboard() {
@@ -225,7 +237,7 @@ export default function StudentDashboard() {
             </div>
             <div className="flex items-center gap-4 text-sm text-slate-500 flex-wrap">
               <span className="inline-flex items-center gap-1"><BookOpen className="w-3.5 h-3.5" />{student.majorName || '专业'} · {student.className || '班级'}</span>
-              <span className="inline-flex items-center gap-1"><Trophy className="w-3.5 h-3.5 text-amber-500" />班级排名 <strong className="text-slate-800">{student.classRank ? `第 ${student.classRank} 名` : '暂无'}</strong></span>
+              <span className="inline-flex items-center gap-1"><Trophy className="w-3.5 h-3.5 text-amber-500" />班级排名 <strong className="text-slate-800">{rankDisplay(student.classRank, student.classTotal)}</strong>{student.classRank && student.classTotal ? <span className="text-xs text-slate-400 font-normal">· 前 {Math.max(1, Math.ceil(student.classRank / student.classTotal * 100))}%</span> : null}</span>
               <span className="inline-flex items-center gap-1"><Layers className="w-3.5 h-3.5" />本学期 {student.courseCount ?? profile.courses.length} 门课</span>
             </div>
           </div>
@@ -303,9 +315,8 @@ export default function StudentDashboard() {
           </div>
           {/* 行动入口 */}
           <div className="flex flex-wrap gap-2.5 mt-5 pt-4 border-t border-white/15">
-            <Link href="/student/today" className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white text-violet-700 text-sm font-medium shadow hover:bg-violet-50 transition-colors"><Target className="w-4 h-4" />今日任务</Link>
+            <Link href="/student/learn" className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white text-violet-700 text-sm font-medium shadow hover:bg-violet-50 transition-colors"><Sparkles className="w-4 h-4" />今日学习</Link>
             <Link href="/student/errors" className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/15 text-white text-sm font-medium hover:bg-white/25 transition-colors"><AlertCircle className="w-4 h-4" />看错题</Link>
-            <Link href="/student/materials" className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/15 text-white text-sm font-medium hover:bg-white/25 transition-colors"><BookOpen className="w-4 h-4" />学习材料</Link>
             <Link href="/student/assistant" className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/15 text-white text-sm font-medium hover:bg-white/25 transition-colors"><Sparkles className="w-4 h-4" />问 AI 老师</Link>
           </div>
         </CardContent>
@@ -380,6 +391,80 @@ export default function StudentDashboard() {
               </CardContent>
             </Card>
           </div>
+        </div>
+      )}
+
+      {/* —— 考试表现 —— */}
+      {tab === 'exam' && (
+        <div className="space-y-5">
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
+            <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-violet-50 to-white rounded-2xl">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-muted-foreground">参考考试数</span>
+                  <div className="w-8 h-8 rounded-lg bg-violet-100/80 text-violet-600 flex items-center justify-center"><FileText className="w-4 h-4" /></div>
+                </div>
+                <div className="text-2xl font-bold text-slate-800">{profile.examPerformance?.examCount ?? 0}<span className="text-xs font-normal text-muted-foreground ml-0.5">场</span></div>
+              </CardContent>
+            </Card>
+            <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-indigo-50 to-white rounded-2xl">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-muted-foreground">考试平均得分率</span>
+                  <div className="w-8 h-8 rounded-lg bg-indigo-100/80 text-indigo-600 flex items-center justify-center"><TrendingUp className="w-4 h-4" /></div>
+                </div>
+                <div className="text-2xl font-bold text-slate-800">{profile.examPerformance?.examAvgPercent != null ? profile.examPerformance.examAvgPercent : '-'}<span className="text-xs font-normal text-muted-foreground ml-0.5">{profile.examPerformance?.examAvgPercent != null ? '%' : ''}</span></div>
+              </CardContent>
+            </Card>
+            <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-amber-50 to-white rounded-2xl">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium text-muted-foreground">待批主观题</span>
+                  <div className="w-8 h-8 rounded-lg bg-amber-100/80 text-amber-600 flex items-center justify-center"><Clock className="w-4 h-4" /></div>
+                </div>
+                <div className="text-2xl font-bold text-slate-800">{profile.examPerformance?.examList.reduce((s, e) => s + e.pending_subjective, 0) ?? 0}<span className="text-xs font-normal text-muted-foreground ml-0.5">题</span></div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="border-slate-200/60 shadow-soft rounded-2xl">
+            <CardHeader className="pb-2"><CardTitle className="text-base font-semibold flex items-center gap-2"><GraduationCap className="w-4 h-4 text-violet-500" />逐场考试成绩</CardTitle></CardHeader>
+            <CardContent className="pt-0">
+              {profile.examPerformance?.examList.length ? (
+                <div className="space-y-3">
+                  {profile.examPerformance.examList.map((e) => (
+                    <div key={e.exam_id} className="rounded-xl border border-slate-100 bg-slate-50/60 p-3.5">
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-8 h-8 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center flex-shrink-0"><GraduationCap className="w-4 h-4" /></div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-800 truncate">{e.title}</p>
+                            <p className="text-[11px] text-slate-400">{(e.submitted_at || '').slice(0, 10)} 交卷</p>
+                          </div>
+                        </div>
+                        {e.percent != null ? (
+                          <div className="flex items-center gap-3">
+                            <div className="w-24 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                              <div className={cn('h-full rounded-full', e.percent >= 80 ? 'bg-teal-400' : e.percent >= 60 ? 'bg-amber-400' : 'bg-rose-400')} style={{ width: `${Math.min(100, e.percent)}%` }} />
+                            </div>
+                            <span className={cn('text-lg font-bold', e.percent >= 60 ? 'text-teal-600' : 'text-rose-500')}>{e.percent}%</span>
+                            <span className="text-xs text-slate-400">{e.score} / {e.full} 分</span>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-md px-2 py-1"><Clock className="w-3 h-3" />主观题待批 {e.pending_subjective} 题</span>
+                        )}
+                        {e.percent != null && e.wrong > 0 && (
+                          <span className="inline-flex items-center gap-1 text-xs text-rose-600 bg-rose-50 border border-rose-100 rounded-md px-2 py-1"><AlertCircle className="w-3 h-3" />错 {e.wrong} 题</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <Empty text="暂无已交卷的考试，参加并完成一次考试后，这里会展示你的成绩与得分率" />
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
 
@@ -491,9 +576,9 @@ export default function StudentDashboard() {
               <div className="relative border-l-2 border-slate-100 pl-5 space-y-5">
                 {profile.growthTimeline.map((item, i) => (
                   <div key={i} className="relative">
-                    <span className={`absolute -left-[27px] top-1 w-3 h-3 rounded-full border-2 border-white ${item.type === 'qa' ? 'bg-violet-500' : 'bg-teal-500'}`} />
+                    <span className={`absolute -left-[27px] top-1 w-3 h-3 rounded-full border-2 border-white ${item.type === 'qa' ? 'bg-violet-500' : item.type === 'exam' ? 'bg-rose-500' : 'bg-teal-500'}`} />
                     <div className="flex items-center gap-2">
-                      {item.type === 'qa' ? <Sparkles className="w-4 h-4 text-violet-500" /> : <FileText className="w-4 h-4 text-teal-500" />}
+                      {item.type === 'qa' ? <Sparkles className="w-4 h-4 text-violet-500" /> : item.type === 'exam' ? <Trophy className="w-4 h-4 text-amber-500" /> : <FileText className="w-4 h-4 text-teal-500" />}
                       <p className="text-sm font-medium text-slate-800">{item.title}</p>
                       <span className="text-[11px] text-slate-400">{formatDate(item.ts)}</span>
                     </div>
@@ -516,7 +601,7 @@ export default function StudentDashboard() {
               <StatRow label="姓名" value={student.real_name || '-'} />
               <StatRow label="专业" value={student.majorName || '-'} />
               <StatRow label="班级" value={student.className || '-'} />
-              <StatRow label="班级排名" value={student.classRank ? `第 ${student.classRank} 名` : '暂无'} color="text-slate-800" />
+              <StatRow label="班级排名" value={rankDisplay(student.classRank, student.classTotal) + (student.classRank && student.classTotal ? ` (前 ${Math.max(1, Math.ceil(student.classRank / student.classTotal * 100))}%)` : '')} color="text-slate-800" />
             </div>
             <p className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-1.5"><Layers className="w-4 h-4 text-teal-500" />本学期课程</p>
             {profile.courses.length ? (
@@ -528,6 +613,11 @@ export default function StudentDashboard() {
             ) : <Empty text="暂无课程" />}
           </CardContent>
         </Card>
+      )}
+
+      {/* —— 讨论区 —— */}
+      {tab === 'discussion' && (
+        <DiscussionZone courses={profile.courses} activeCourseId={courseId} />
       )}
     </div>
   );
@@ -579,8 +669,21 @@ function formatDate(ts: string) {
   return `${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
-const levelLabelMap: Record<string, string> = { '全优层': '全优层', '学霸层': '学霸层', '勤奋中等层': '勤奋中等', '提升层': '提升层' };
+// 学生层级：数据库存顶层 code（top/medium/weak），部分接口直接返回原文，
+// 这里统一映射为中文；兼顾兼容已存中文标签的历史数据。
+const levelLabelMap: Record<string, string> = {
+  'top': '学霸层',
+  'medium': '勤奋中等层',
+  'weak': '提升层',
+  '全优层': '全优层',
+  '学霸层': '学霸层',
+  '勤奋中等层': '勤奋中等',
+  '提升层': '提升层',
+};
 const levelBadgeMap: Record<string, string> = {
+  'top': 'border-blue-200 text-blue-700 bg-blue-50',
+  'medium': 'border-yellow-200 text-yellow-700 bg-yellow-50',
+  'weak': 'border-red-200 text-red-700 bg-red-50',
   '全优层': 'border-amber-200 text-amber-700 bg-amber-50',
   '学霸层': 'border-blue-200 text-blue-700 bg-blue-50',
   '勤奋中等层': 'border-yellow-200 text-yellow-700 bg-yellow-50',

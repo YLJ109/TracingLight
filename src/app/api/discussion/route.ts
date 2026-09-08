@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/server-auth';
 import { eq, desc, inArray, sql } from 'drizzle-orm';
 import { discussionPost, course } from '@/storage/database/shared/schema';
 import { canAccessCourse, getAccessibleCourseIds, resolveAuthorInfo } from '@/lib/course-access';
+import { writeAudit } from '@/lib/audit';
 
 /** 输入白名单清洗：讨论帖内容仅保留纯文本，杜绝脚本注入 */
 function cleanText(input: unknown, maxLen: number): string {
@@ -60,7 +61,13 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({ success: true, data });
+    // 教师/管理员额外返回可访问课程列表，供前端课程筛选与「发帖选课」使用（避免缺 course_id 导致发帖 400）
+    // 学生端仍只消费 data 数组，附加字段不破坏兼容。
+    const coursesForPicker = authUser.role === 'teacher' || authUser.role === 'admin'
+      ? [...courseMap.entries()].map(([id, name]) => ({ id, name }))
+      : undefined;
+
+    return NextResponse.json({ success: true, data, courses: coursesForPicker });
   } catch (e) {
     if (e && typeof (e as { status?: number }).status === 'number') return e as NextResponse;
     console.error('Get discussions error:', e);
@@ -95,6 +102,16 @@ export async function POST(request: NextRequest) {
       updated_at: new Date().toISOString(),
     }).run();
     saveDb();
+
+    // 讨论发布/置顶埋点（静默，失败不影响响应）
+    const isPinned = authUser.role === 'teacher' ? !!body.is_pinned : false;
+    writeAudit({
+      operatorId: authUser.userId,
+      operatorName: authUser.username,
+      action: isPinned ? 'discussion_pin' : 'discussion_create',
+      targetType: 'discussion_post',
+      detail: `${authUser.role === 'teacher' ? '教师' : '用户'}发布讨论「${title}」${isPinned ? '并置顶' : ''}`,
+    });
 
     return NextResponse.json({ success: true });
   } catch (e) {

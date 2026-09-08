@@ -15,6 +15,7 @@ import { eq, and } from "drizzle-orm";
 import { gradingConfig, assignment as assignmentTable } from "@/storage/database/shared/schema";
 import { htmlToPlainText } from "@/lib/rich-text";
 import { scoreToMastery } from "@/lib/mastery-sync";
+import { extractFilesText } from "@/lib/file-extract";
 
 export interface GradingResult {
   total_score: number;
@@ -34,6 +35,7 @@ export interface GradingResult {
   unmastered_knowledge_ids: number[];
   error_type: string;
   overall_comment: string;
+  ai_generated_probability?: number | null; // 疑似 AI 生成概率 0~1（仅主观题由 AI 评估，客观题/空答为 null）
 }
 
 type QuestionRow = typeof question.$inferSelect;
@@ -50,8 +52,8 @@ function isMeaninglessAnswer(studentAnswer: string, questionType: string): boole
   return trimmed.length <= 3;
 }
 
-function zeroResult(questionData: QuestionRow, hasAnswer: boolean): GradingResult {
-  const fullScore = questionData.default_score || 10;
+function zeroResult(questionData: QuestionRow, hasAnswer: boolean, scoreOverride?: number): GradingResult {
+  const fullScore = scoreOverride ?? (questionData.default_score || 10);
   return {
     total_score: 0,
     full_score: fullScore,
@@ -65,6 +67,7 @@ function zeroResult(questionData: QuestionRow, hasAnswer: boolean): GradingResul
     unmastered_knowledge_ids: [questionData.knowledge_point_id],
     error_type: hasAnswer ? 'incomplete' : 'empty',
     overall_comment: hasAnswer ? '未提供有效答案，无法评分' : '未作答',
+    ai_generated_probability: null,
   };
 }
 
@@ -106,13 +109,142 @@ export function getActiveGradingRules(
   };
 }
 
+/* ─────────────────── 实验题/附件题批改 ─────────────────── */
+
+interface AttachmentFileMeta {
+  name?: string;
+  path?: string;
+  size?: number;
+  mime?: string;
+}
+
+interface AttachmentTemplate {
+  experiment_name?: string;
+  materials?: string;
+  purpose?: string;
+  steps?: string;
+  data_record?: string;
+  result_analysis?: string;
+  conclusion?: string;
+}
+
+interface AttachmentAnswer {
+  files?: AttachmentFileMeta[];
+  template?: AttachmentTemplate | null;
+}
+
+const ATTACHMENT_TEMPLATE_FIELDS: Array<{ key: keyof AttachmentTemplate; label: string }> = [
+  { key: 'experiment_name', label: '实验名称' },
+  { key: 'materials', label: '实验材料及器材' },
+  { key: 'purpose', label: '实验目的' },
+  { key: 'steps', label: '实验步骤' },
+  { key: 'data_record', label: '数据记录' },
+  { key: 'result_analysis', label: '结果与分析' },
+  { key: 'conclusion', label: '实验结论' },
+];
+
+function truncate(s: string, max: number): string {
+  const v = String(s || '');
+  return v.length > max ? v.slice(0, max) + '\n…(已截断)' : v;
+}
+
+/**
+ * 实验题/附件题批改：解析 student_answer JSON（{ files, template }），提取附件文本，
+ * 按实验模板字段 + 附件内容走专属 AI 提示词。解析/提取失败均不阻断（回退模板与文件名）。
+ */
+async function gradeAttachmentQuestion(
+  questionData: QuestionRow,
+  rawStudentAnswer: string,
+  plainStudentAnswer: string,
+  baseFull: number,
+  knowledgePointName: string,
+  configRules?: GradingRules | null,
+  forwardHeaders?: Headers,
+): Promise<GradingResult> {
+  const client = createAIClient(forwardHeaders ? HeaderUtils.extractForwardHeaders(forwardHeaders) : undefined);
+
+  // 解析作答 JSON（失败则回退为原始文本兜底）
+  let files: AttachmentFileMeta[] = [];
+  let template: AttachmentTemplate | null = null;
+  try {
+    const parsed = JSON.parse(rawStudentAnswer || '{}') as AttachmentAnswer;
+    if (parsed && Array.isArray(parsed.files)) files = parsed.files;
+    if (parsed && parsed.template && typeof parsed.template === 'object') template = parsed.template;
+  } catch { /* JSON 解析失败 → 按原始文本兜底 */ }
+
+  // 空作答判定：无附件且实验模板全空 → 0 分（不调用 AI）
+  const hasTemplateContent = template != null && ATTACHMENT_TEMPLATE_FIELDS.some(({ key }) => (template[key] || '').trim());
+  if (files.length === 0 && !hasTemplateContent) {
+    return zeroResult(questionData, !!plainStudentAnswer?.trim(), baseFull);
+  }
+
+  // 提取附件文本（尽力而为，失败不阻断）
+  let extractedText = '';
+  try {
+    extractedText = await extractFilesText(files.map((f) => ({ path: f.path })));
+  } catch { extractedText = ''; }
+
+  const fileNames = files.map((f) => f.name || f.path).filter(Boolean);
+  const filesDesc = fileNames.length
+    ? fileNames.map((n) => `- ${n}`).join('\n')
+    : '（学生未上传附件）';
+
+  const templateBlocks = ATTACHMENT_TEMPLATE_FIELDS
+    .map(({ key, label }) => {
+      const v = template?.[key] ? String(template[key]).trim() : '';
+      return v ? `- ${label}：${v}` : '';
+    })
+    .filter(Boolean);
+
+  const prompt = `请批改以下【实验报告/附件题】学生作答：
+
+【题目信息】
+- 题目内容：${questionData.content || '（未填写）'}
+- 题目类型：实验报告/附件题（实验题）
+- 关联知识点：${knowledgePointName || '—'}
+- 满分：${baseFull}分
+- 实验要求/参考答案：${questionData.answer || '（未提供）'}
+
+【学生提交的附件】
+${filesDesc}
+${extractedText ? `\n【附件提取文本】\n${truncate(extractedText, 12000)}\n` : '\n（附件为二进制文件或无法提取文本，请依据实验模板填写情况与文件名进行合理评估，不要因此过度扣分）'}
+
+【学生填写的实验报告】
+${templateBlocks.length ? templateBlocks.join('\n') : '（学生未填写实验模板字段）'}
+
+请从实验报告的完整性、实验原理与步骤是否正确、数据记录与分析是否合理、结论是否严谨、附件内容与报告是否一致等方面综合评分。严格按 JSON 输出批改结果。`;
+
+  const rulesBlock = configRules ? [
+    configRules.scoring_criteria ? `【教师评分标准（必须遵守）】\n${configRules.scoring_criteria}` : '',
+    configRules.deduction_rules ? `【扣分规则】\n${configRules.deduction_rules}` : '',
+    configRules.comment_style ? `【评语风格要求】${configRules.comment_style}` : '',
+  ].filter(Boolean).join('\n\n') : '';
+
+  const result = await invokeStructured<GradingResult>(
+    client,
+    GRADING_SYSTEM_PROMPT,
+    rulesBlock ? `${prompt}\n\n${rulesBlock}` : prompt,
+    0.2
+  );
+  // 归一化 AI 生成概率（0~1 内/越界/缺失均兜底）
+  if (typeof result.ai_generated_probability === 'number' && Number.isFinite(result.ai_generated_probability)) {
+    result.ai_generated_probability = Math.min(1, Math.max(0, result.ai_generated_probability));
+  } else {
+    result.ai_generated_probability = null;
+  }
+  return result;
+}
+
 export async function computeGrade(
   questionData: QuestionRow,
   rawStudentAnswer: string,
   knowledgePointName: string,
   forwardHeaders?: Headers,
-  configRules?: GradingRules | null
+  configRules?: GradingRules | null,
+  scoreOverride?: number // 布置时按难度/题型分配的本题满分（未分配时回退 default_score）
 ): Promise<GradingResult> {
+  // 满分：优先作业分配的分数，其次题目 default_score
+  const baseFull = scoreOverride ?? questionData.default_score ?? 10;
   // 富文本作答（简答题 HTML）→ 纯文本用于判分与 AI 提示词
   let studentAnswer = rawStudentAnswer || '';
   if (/<(img|table|p|div|pre|ul|ol|h\d|br)[\s>]/i.test(studentAnswer)) {
@@ -120,7 +252,7 @@ export async function computeGrade(
   }
   // 1. 空答/无意义直接 0 分，跳过 AI
   if (isMeaninglessAnswer(studentAnswer, questionData.question_type)) {
-    return zeroResult(questionData, !!studentAnswer?.trim());
+    return zeroResult(questionData, !!studentAnswer?.trim(), scoreOverride);
   }
 
   // 2. 客观题规则引擎（单选/多选/判断/填空，含数学等价判定）
@@ -129,10 +261,10 @@ export async function computeGrade(
       questionData.question_type,
       questionData.answer,
       studentAnswer,
-      questionData.default_score || 10
+      baseFull
     );
     if (objectiveResult) {
-      const fullScore = questionData.default_score || 10;
+      const fullScore = baseFull;
       return {
         total_score: objectiveResult.total_score,
         full_score: fullScore,
@@ -146,9 +278,23 @@ export async function computeGrade(
         unmastered_knowledge_ids: objectiveResult.is_correct ? [] : [questionData.knowledge_point_id],
         error_type: objectiveResult.is_correct ? '' : 'wrong',
         overall_comment: objectiveResult.comment,
+        ai_generated_probability: null, // 客观题不评估 AI 率
       };
     }
     // 规则引擎返回 null（如文字型填空）→ 交给 AI 语义判定
+  }
+
+  // 2.5 实验题/附件题：解析 JSON 作答（附件 + 实验模板字段），提取附件文本走专属批次
+  if (questionData.question_type === 'attachment') {
+    return await gradeAttachmentQuestion(
+      questionData,
+      rawStudentAnswer,
+      studentAnswer,
+      baseFull,
+      knowledgePointName,
+      configRules,
+      forwardHeaders
+    );
   }
 
   // 3. 主观题 AI 批改
@@ -158,7 +304,7 @@ export async function computeGrade(
     questionType: questionData.question_type,
     referenceAnswer: questionData.answer,
     studentAnswer: studentAnswer || "（未作答）",
-    fullScore: questionData.default_score || 10,
+    fullScore: baseFull,
     knowledgePointName,
     knowledgePointId: questionData.knowledge_point_id,
   });
@@ -170,7 +316,39 @@ export async function computeGrade(
     configRules.comment_style ? `【评语风格要求】${configRules.comment_style}` : '',
   ].filter(Boolean).join('\n\n') : '';
   const result = await invokeStructured<GradingResult>(client, GRADING_SYSTEM_PROMPT, rulesBlock ? `${prompt}\n\n${rulesBlock}` : prompt, 0.2);
+  // 归一化 AI 生成概率（0~1 内/越界/缺失均兜底），确保 DB 存储与前端展示安全
+  if (typeof result.ai_generated_probability === 'number' && Number.isFinite(result.ai_generated_probability)) {
+    result.ai_generated_probability = Math.min(1, Math.max(0, result.ai_generated_probability));
+  } else {
+    result.ai_generated_probability = null;
+  }
+
+  // 客观题（如文字型填空）交 AI 语义判定后，仍需遵循「全对满分、否则零分」：
+  // 仅当 AI 评为满分才给满分，其余一律 0 分（不给部分分），并与能力维度保持一致。
+  if (isObjectiveType(questionData.question_type)) {
+    if (result.total_score >= baseFull) {
+      result.total_score = baseFull;
+    } else {
+      result.total_score = 0;
+      result.dimension_scores = {
+        knowledge_accuracy: 0,
+        logic_completeness: 0,
+        expression_clarity: 0,
+        expansion: 0,
+      };
+    }
+  }
   return result;
+}
+
+/**
+ * 原「批改完即自动公布」已废弃：成绩公布改为教师主导——教师批改/复核后可随时调用
+ * publish-grades 接口手动公布，公布前学生端一律只显示「成绩待批改公布」。
+ * 保留此占位仅避免逐点删除调用点；不再有任何自动置 grades_published 的副作用。
+ * @returns 恒 false（从不自动发布）
+ */
+export function maybeAutoPublishGrades(_assignmentId: number): boolean {
+  return false;
 }
 
 /** 批改完成 → 通知学生（闭环 P1-1：学生收到通知可直达作业详情） */
@@ -237,6 +415,7 @@ export function recordGrading(params: {
       unmastered_knowledge_ids: result.unmastered_knowledge_ids,
       error_type: result.error_type || null,
       overall_comment: result.overall_comment,
+      ai_generated_probability: result.ai_generated_probability ?? null,
       status: 'completed',
       completed_at: new Date().toISOString(),
     }).returning().all();
@@ -339,11 +518,18 @@ export async function gradeOneAndRecord(params: {
   // 教师自定义批改规则：按作业归属教师与课程匹配（实时查库，配置修改立即生效）
   const db = getDb();
   let configRules: GradingRules | null = null;
+  let scoreOverride: number | undefined;
   try {
-    const asgn = db.select({ teacher_id: assignmentTable.teacher_id, course_id: assignmentTable.course_id })
+    const asgn = db.select({
+      teacher_id: assignmentTable.teacher_id,
+      course_id: assignmentTable.course_id,
+      question_scores: assignmentTable.question_scores,
+    })
       .from(assignmentTable).where(eq(assignmentTable.id, params.assignmentId)).limit(1).all()[0];
     if (asgn) {
       configRules = getActiveGradingRules(asgn.teacher_id, asgn.course_id, params.questionData.question_type);
+      const qs = (asgn.question_scores as Record<number, number> | null | undefined) ?? {};
+      if (typeof qs[params.questionData.id] === 'number') scoreOverride = Number(qs[params.questionData.id]);
     }
   } catch { /* 规则匹配失败不阻塞批改 */ }
 
@@ -352,12 +538,13 @@ export async function gradeOneAndRecord(params: {
     params.studentAnswer,
     params.knowledgePointName,
     params.forwardHeaders,
-    configRules
+    configRules,
+    scoreOverride
   );
 
   // 成绩等级映射（教师配置的等级划分）：overall_comment 前缀等级标签
   if (configRules?.grade_levels?.length && result.overall_comment) {
-    const full = params.questionData.default_score || 10;
+    const full = scoreOverride ?? (params.questionData.default_score || 10);
     const pct = Math.round(((result.total_score ?? 0) / full) * 100);
     const level = configRules.grade_levels.find((g) => pct >= g.min);
     if (level) result.overall_comment = `【${level.label}】${result.overall_comment}`;

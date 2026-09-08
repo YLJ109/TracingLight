@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, saveDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
-import { errorBook, question, knowledgePoint, course } from '@/storage/database/shared/schema';
+import { errorBook, question, knowledgePoint, course, assignment } from '@/storage/database/shared/schema';
 import { eq, desc, inArray, and } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
@@ -85,6 +85,31 @@ export async function GET(request: NextRequest) {
         .all();
     }
 
+    // 来源作业信息：作业名 + 题号（题目在作业中的序号，由 assignment.question_ids 顺序决定）
+    const assignmentIds = [...new Set(errors.map((e) => e.assignment_id).filter((id): id is number => !!id))];
+    let assignments: {
+      id: number;
+      title: string;
+      question_ids: unknown;
+    }[] = [];
+    if (assignmentIds.length > 0) {
+      assignments = db.select({
+        id: assignment.id,
+        title: assignment.title,
+        question_ids: assignment.question_ids,
+      })
+        .from(assignment)
+        .where(inArray(assignment.id, assignmentIds))
+        .all();
+    }
+    // 题号映射：`${assignmentId}_${questionId}` -> 第几题（从 1 起）
+    const questionNo = new Map<string, number>();
+    for (const a of assignments) {
+      const qids = Array.isArray(a.question_ids) ? (a.question_ids as number[]) : [];
+      qids.forEach((qid, i) => questionNo.set(`${a.id}_${qid}`, i + 1));
+    }
+    const assignmentMap = new Map(assignments.map((a) => [a.id, a]));
+
     const questionMap = new Map(questions.map((q) => [q.id, q]));
     const kpMap = new Map(kps.map((k) => [k.id, k]));
     const courseMap = new Map(courses.map((c) => [c.id, c]));
@@ -94,6 +119,7 @@ export async function GET(request: NextRequest) {
       const kp = kpMap.get(e.knowledge_point_id);
       const courseId = q?.course_id || kp?.course_id;
       const courseData = courseMap.get(courseId || 0);
+      const asgn = e.assignment_id ? assignmentMap.get(e.assignment_id) : undefined;
 
       return {
         ...e,
@@ -102,6 +128,14 @@ export async function GET(request: NextRequest) {
         question_options: q?.options || null,
         knowledge_point_name: kp?.name || '未知知识点',
         course_name: courseData?.name || '未知课程',
+        assignment_title: asgn?.title || '',
+        question_no: e.assignment_id && e.question_id
+          ? (questionNo.get(`${e.assignment_id}_${e.question_id}`) ?? null)
+          : null,
+        // 今日是否到期待复习：未掌握 且 到期时间已到（间隔复习排期）
+        due: e.review_status !== 'mastered' && !!e.reviewed_at
+          ? new Date(e.reviewed_at).getTime() <= Date.now()
+          : false,
       };
     });
 

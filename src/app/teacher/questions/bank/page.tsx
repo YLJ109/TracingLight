@@ -53,6 +53,7 @@ const questionTypeLabels: Record<string, string> = {
   essay: '论述题',
   programming: '编程题',
   code: '编程题',
+  attachment: '实验题',
 };
 
 const displayQuestionTypes = [
@@ -62,6 +63,7 @@ const displayQuestionTypes = [
   { key: 'fill_blank', label: '填空题' },
   { key: 'short_answer', label: '简答题' },
   { key: 'programming', label: '编程题' },
+  { key: 'attachment', label: '实验题' },
 ];
 
 // Map from display key to DB-compatible values for filtering
@@ -72,6 +74,7 @@ const filterTypeMap: Record<string, string[]> = {
   fill_blank: ['fill_blank'],
   short_answer: ['short_answer'],
   programming: ['programming', 'code'],
+  attachment: ['attachment'],
 };
 
 const difficultyLabels: Record<string, string> = {
@@ -116,6 +119,29 @@ function optionsObjToArray(obj: Record<string, string>): string[] {
   return Object.values(obj).filter(v => v && v.trim() !== '');
 }
 
+// ── 实验题/附件题：实验报告模板字段 ──
+const EXPERIMENT_TEMPLATE_FIELDS: Array<{ key: string; label: string; placeholder: string; multiline?: boolean }> = [
+  { key: 'experiment_name', label: '实验名称', placeholder: '如：测量自由落体加速度' },
+  { key: 'materials', label: '实验材料及器材', placeholder: '列举所需的材料与仪器', multiline: true },
+  { key: 'purpose', label: '实验目的', placeholder: '说明本实验要验证或探究的目标', multiline: true },
+  { key: 'steps', label: '实验步骤', placeholder: '分步描述操作过程', multiline: true },
+  { key: 'data_record', label: '数据记录', placeholder: '记录观测数据', multiline: true },
+  { key: 'result_analysis', label: '结果与分析', placeholder: '数据处理、误差分析与结果讨论', multiline: true },
+  { key: 'conclusion', label: '实验结论', placeholder: '得出的最终结论', multiline: true },
+];
+
+function defaultExperimentTemplate(): Record<string, string> {
+  return { experiment_name: '', materials: '', purpose: '', steps: '', data_record: '', result_analysis: '', conclusion: '' };
+}
+
+// 从题目 options 中解析实验报告模板（options 结构为 { template: { ... } }，兼容已存在字符串 JSON）
+function extractTemplateFromQuestion(q: Question): Record<string, string> {
+  let opts: unknown = q.options;
+  if (typeof opts === 'string') { try { opts = JSON.parse(opts); } catch { opts = undefined; } }
+  const t = (opts as { template?: Record<string, string> } | undefined)?.template;
+  return { ...defaultExperimentTemplate(), ...(t || {}) };
+}
+
 export default function QuestionBankPage() {
   const router = useRouter();
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -153,6 +179,7 @@ export default function QuestionBankPage() {
     max_chars: '',
     min_select: '',
     max_select: '',
+    experiment_template: defaultExperimentTemplate(),
   });
 
   const fetchQuestions = async () => {
@@ -209,6 +236,7 @@ export default function QuestionBankPage() {
       max_chars: '',
       min_select: '',
       max_select: '',
+      experiment_template: defaultExperimentTemplate(),
     });
     setDialogOpen(true);
   };
@@ -223,7 +251,7 @@ export default function QuestionBankPage() {
       content: q.content,
       options: q.options && Array.isArray(q.options)
         ? arrayToOptionsObj(q.options as unknown as string[])
-        : (q.options || { A: '', B: '', C: '', D: '' }) as Record<string, string>,
+        : { A: '', B: '', C: '', D: '' },
       answer: q.answer,
       analysis: q.analysis || '',
       default_score: String(q.default_score),
@@ -232,6 +260,7 @@ export default function QuestionBankPage() {
       max_chars: numToForm(q.max_chars),
       min_select: numToForm(q.min_select),
       max_select: numToForm(q.max_select),
+      experiment_template: extractTemplateFromQuestion(q),
     });
     setDialogOpen(true);
   };
@@ -254,7 +283,8 @@ export default function QuestionBankPage() {
     if (!courseId) { setSaveError('请选择课程'); return; }
     if (!kpId) { setSaveError('请选择知识点'); return; }
     if (!formData.content.trim()) { setSaveError('请输入题目内容'); return; }
-    if (!formData.answer.trim()) { setSaveError('请输入答案'); return; }
+    const isAttachment = formData.question_type === 'attachment';
+    if (!isAttachment && !formData.answer.trim()) { setSaveError('请输入答案'); return; }
 
     setSaving(true);
     const payload: Record<string, any> = {
@@ -263,13 +293,16 @@ export default function QuestionBankPage() {
       question_type: formData.question_type,
       difficulty: formData.difficulty,
       content: formData.content.trim(),
-      options: optionsObjToArray(formData.options),
-      answer: formData.answer.trim(),
+      // 实验题：将实验模板存入 question.options = { template: {...} }
+      options: isAttachment
+        ? { template: Object.fromEntries(EXPERIMENT_TEMPLATE_FIELDS.map(({ key }) => [key, (formData.experiment_template[key] || '').trim()])) }
+        : optionsObjToArray(formData.options),
+      answer: formData.answer ? formData.answer.trim() : '',
       analysis: formData.analysis.trim(),
       default_score: parseInt(formData.default_score) || 10,
       source: formData.source,
-      min_chars: formData.min_chars === '' ? null : parseInt(formData.min_chars) || null,
-      max_chars: formData.max_chars === '' ? null : parseInt(formData.max_chars) || null,
+      min_chars: isAttachment ? null : (formData.min_chars === '' ? null : parseInt(formData.min_chars) || null),
+      max_chars: isAttachment ? null : (formData.max_chars === '' ? null : parseInt(formData.max_chars) || null),
       min_select: formData.min_select === '' ? null : parseInt(formData.min_select) || null,
       max_select: formData.max_select === '' ? null : parseInt(formData.max_select) || null,
     };
@@ -686,12 +719,46 @@ export default function QuestionBankPage() {
                 </div>
               </div>
             )}
+            {formData.question_type === 'attachment' && (
+              <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3 space-y-3">
+                <p className="text-xs font-medium text-indigo-700">
+                  实验报告模板（选填，学生端将按此字段作答，AI 依据填写情况与附件批改）
+                </p>
+                <div className="grid grid-cols-1 gap-3">
+                  {EXPERIMENT_TEMPLATE_FIELDS.map((f) => (
+                    <div key={f.key}>
+                      <Label className="text-xs">{f.label}</Label>
+                      {f.multiline ? (
+                        <Textarea
+                          rows={2}
+                          value={formData.experiment_template[f.key] || ''}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            experiment_template: { ...formData.experiment_template, [f.key]: e.target.value },
+                          })}
+                          placeholder={f.placeholder}
+                        />
+                      ) : (
+                        <Input
+                          value={formData.experiment_template[f.key] || ''}
+                          onChange={(e) => setFormData({
+                            ...formData,
+                            experiment_template: { ...formData.experiment_template, [f.key]: e.target.value },
+                          })}
+                          placeholder={f.placeholder}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div>
               <Label>答案</Label>
               <Input
                 value={formData.answer}
                 onChange={(e) => setFormData({ ...formData, answer: e.target.value })}
-                placeholder="如：A 或 ABC"
+                placeholder={formData.question_type === 'attachment' ? '可填写实验评分要点或标准（选填，留空则按通用标准）' : '如：A 或 ABC'}
               />
             </div>
             <div>

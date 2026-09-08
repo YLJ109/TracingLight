@@ -4,12 +4,13 @@ import { requireAuth } from '@/lib/server-auth';
 import { assignment } from '@/storage/database/shared/schema';
 import { eq } from 'drizzle-orm';
 import { isAssignmentInTeacherScope } from '@/lib/teacher-scope';
+import { writeAudit } from '@/lib/audit';
 
 /**
- * 补考 / 重开提交（C6）
+ * 补交 / 重开提交（C6）
  * PATCH {allow_resubmit: boolean}
- * 教师可对已截止的作业开启补考重开（allow_resubmit=true，学生在截止时间后仍可提交），
- * 或关闭补考（allow_resubmit=false）。
+ * 教师可对已截止的作业开启补交（allow_resubmit=true，学生在截止时间后仍可提交），
+ * 或关闭补交（allow_resubmit=false）。
  */
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   try {
@@ -29,6 +30,20 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       .where(eq(assignment.id, assignmentId))
       .run();
     try { saveDb(); } catch { /* 定时持久化兜底 */ }
+
+    // 补交切换埋点（静默，失败不影响响应）
+    try {
+      writeAudit({
+        operatorId: authUser.userId,
+        operatorName: authUser.username,
+        action: 'assignment_reopen_toggle',
+        targetType: 'assignment',
+        targetId: assignmentId,
+        detail: `${allowResubmit ? '开启' : '关闭'}作业补交`,
+      });
+    } catch (auditErr) {
+      console.error('Assignment reopen audit error:', auditErr);
+    }
 
     return NextResponse.json({ success: true, data: { assignment_id: assignmentId, allow_resubmit: allowResubmit } });
   } catch (e) {

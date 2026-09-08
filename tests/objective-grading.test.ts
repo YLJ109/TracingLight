@@ -42,19 +42,25 @@ test('判断正确', () => {
   assert.strictEqual(r?.total_score, 5);
 });
 
-console.log('\n=== 多选题 ===');
+console.log('\n=== 多选题（全对满分、漏选/错选一律零分）===');
 test('多选全对满分', () => {
   const r = gradeObjectiveQuestion('multiple_choice', 'ABD', 'ABD', 10);
   assert.strictEqual(r?.total_score, 10);
+  assert.strictEqual(r?.is_correct, true);
 });
-test('多选漏选部分给分', () => {
+test('多选漏选 → 零分（不给部分分）', () => {
   const r = gradeObjectiveQuestion('multiple_choice', 'ABD', 'AB', 10);
-  assert.ok(r!.total_score > 0 && r!.total_score < 10);
+  assert.strictEqual(r?.total_score, 0);
+  assert.strictEqual(r?.is_correct, false);
 });
-test('多选错选不归零（半对给分，扣错选）', () => {
+test('多选错选 → 零分（不给部分分）', () => {
   const r = gradeObjectiveQuestion('multiple_choice', 'ABD', 'ABC', 10);
-  // 选对 AB(2) - 错选 C(1) = 1 → 占比 1/3 ≈ 3.3 分；错选只扣分，不直接归零
-  assert.ok(r!.total_score > 0 && r!.total_score < 10);
+  assert.strictEqual(r?.total_score, 0);
+  assert.strictEqual(r?.is_correct, false);
+});
+test('多选多选（多选一项）→ 零分', () => {
+  const r = gradeObjectiveQuestion('multiple_choice', 'ABD', 'ABDE', 10);
+  assert.strictEqual(r?.total_score, 0);
 });
 test('多选只错不选对 → 零分', () => {
   const r = gradeObjectiveQuestion('multiple_choice', 'ABD', 'CEF', 10);

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
+import { canAccessCourse } from '@/lib/course-access';
 import { course, knowledgePoint, gradingTask, knowledgeMasteryLog, errorBook } from '@/storage/database/shared/schema';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, sql } from 'drizzle-orm';
 
 // ─── Simple in-memory cache with TTL ───
 interface CacheEntry { data: any; timestamp: number; }
@@ -220,6 +221,8 @@ export async function GET(req: NextRequest) {
     .all();
   const courseData = courseRows[0] || null;
   if (!courseData) return NextResponse.json({ success: false, error: '课程不存在' }, { status: 404 });
+  // 越权防护：仅允许访问本班课程的知识图谱
+  if (!canAccessCourse(user, courseId)) return NextResponse.json({ success: false, error: '无权访问该课程' }, { status: 403 });
 
   // ─── Load knowledge points ───
   const kps = db.select({
@@ -269,7 +272,7 @@ export async function GET(req: NextRequest) {
 
     const grades = db.select({
       knowledge_point_id: gradingTask.knowledge_point_id,
-      total_score: gradingTask.total_score,
+      total_score: sql<number>`COALESCE(${gradingTask.teacher_override_score}, ${gradingTask.total_score})`,
     })
       .from(gradingTask)
       .where(and(
@@ -486,26 +489,9 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Cross-chapter related edges (prerequisite/related)
-  const addedPairs = new Set<string>();
-  for (let i = 0; i < kps.length; i++) {
-    for (let j = i + 1; j < kps.length; j++) {
-      const pairKey = `${kps[i].id}-${kps[j].id}`;
-      if (addedPairs.has(pairKey)) continue;
-      // Add prerequisite edges for KPs in adjacent chapters
-      const kpA = kps[i];
-      const kpB = kps[j];
-      if ((kpA.id % 4 === 1 && kpB.id === kpA.id + 1) || (kpB.id % 4 === 1 && kpA.id === kpB.id + 1)) {
-        edges.push({
-          source: `kp_${kpA.id}`,
-          target: `kp_${kpB.id}`,
-          type: 'prerequisite',
-          lineStyle: { color: '#cbd5e1', width: 0.8, type: 'dashed', opacity: 0.5 },
-        });
-        addedPairs.add(pairKey);
-      }
-    }
-  }
+  // 跨章节前置关系边：历史实现用 `id % 4` 取模臆造，实为伪数据且会误导依赖关系。
+  // 在真实知识点依赖表落地前，**不绘制任何臆造的 prerequisite 边**，仅保留 belong_to 层级边，
+  // 避免学生看到错误的知识依赖。
 
   // ─── Build response payload ───
   const payload = {

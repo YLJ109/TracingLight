@@ -5,6 +5,7 @@ import { eq, and, inArray } from 'drizzle-orm';
 import { announcement , notification, course, user} from '@/storage/database/shared/schema';
 import { getTeacherCourseIds } from '@/lib/teacher-scope';
 import { sanitizeRichHTML, htmlToPlainText } from '@/lib/rich-text';
+import { writeAudit } from '@/lib/audit';
 
 // GET /api/teacher/announcements - 获取公告列表
 export async function GET(request: NextRequest) {
@@ -102,6 +103,21 @@ export async function POST(request: NextRequest) {
       }
     } catch (notifyErr) {
       console.error('Announcement notify error:', notifyErr);
+    }
+
+    // 发布公告埋点（静默，失败不影响响应）
+    try {
+      const createdId = result[0]?.id;
+      writeAudit({
+        operatorId: authUser.userId,
+        operatorName: authUser.username,
+        action: 'announcement_create',
+        targetType: 'announcement',
+        targetId: createdId,
+        detail: `发布公告「${String(safeTitle).slice(0, 50)}」${targetCourseId ? `（课程 ${targetCourseId}）` : '（全体学生）'}`,
+      });
+    } catch (auditErr) {
+      console.error('Announcement audit error:', auditErr);
     }
 
     return NextResponse.json({ data: result[0] || null });

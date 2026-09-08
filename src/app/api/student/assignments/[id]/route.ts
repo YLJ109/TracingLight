@@ -77,7 +77,8 @@ export async function GET(
     const gradesPublished = !!Number(assignmentData.grades_published ?? 0);
 
     const questionsWithAnswers = questions.map((q) => ({
-      ...q,
+      // 合并发布门控：成绩未发布时向学生隐藏参考答案(answer)与解析(analysis)，避免泄露
+      ...(gradesPublished ? q : { ...q, answer: null, analysis: null }),
       student_answer: answerMap.get(q.id)?.student_answer || null,
       is_submitted: answerMap.get(q.id)?.is_submitted || false,
       submitted_at: answerMap.get(q.id)?.submitted_at || null,
@@ -118,7 +119,7 @@ export async function GET(
           is_submitted: a.is_submitted,
           returned: a.returned,
           grading: gradesPublished && gradingMap.get(a.question_id) ? {
-            total_score: gradingMap.get(a.question_id)!.total_score,
+            total_score: gradingMap.get(a.question_id)!.teacher_override_score ?? gradingMap.get(a.question_id)!.total_score,
             full_score: gradingMap.get(a.question_id)!.full_score,
             dimension_scores: gradingMap.get(a.question_id)!.dimension_scores,
             annotations: gradingMap.get(a.question_id)!.annotations,

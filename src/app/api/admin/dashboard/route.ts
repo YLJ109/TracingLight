@@ -3,7 +3,7 @@ import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
 import { eq, and, gte, inArray, sql } from 'drizzle-orm';
 import {
-  user, course, assignment, gradingTask, knowledgeMasteryLog,
+  user, course, assignment, gradingTask, knowledgeMasteryLog, examGrading,
   knowledgePoint, signInRecord, learningBehaviorLog,
 } from '@/storage/database/shared/schema';
 
@@ -116,13 +116,45 @@ export async function GET(request: NextRequest) {
       count: signByDay.get(d)?.size || 0,
     }));
 
+    // ===== 实时监控：待批改任务数 + 薄弱知识点 TOP5 =====
+    const pendingGradingTasks = Number(
+      db.select({ c: sql<number>`count(*)` }).from(gradingTask)
+        .where(eq(gradingTask.status, 'pending')).all()[0]?.c ?? 0
+    );
+    const pendingExamTasks = Number(
+      db.select({ c: sql<number>`count(*)` }).from(examGrading)
+        .where(eq(examGrading.status, 'pending')).all()[0]?.c ?? 0
+    );
+    const pendingTasks = pendingGradingTasks + pendingExamTasks;
+
+    const kpNameRows = db.select({
+      id: knowledgePoint.id, name: knowledgePoint.name, course_id: knowledgePoint.course_id,
+    }).from(knowledgePoint).all();
+    const kpNameMap = new Map(kpNameRows.map((k) => [k.id, k.name]));
+    const kpCourseMap = new Map(kpNameRows.map((k) => [k.id, k.course_id]));
+    const courseNameMap = new Map(courses.map((c) => [c.id, c.short_name || c.name]));
+    const weakAgg = new Map<number, { sum: number; count: number }>();
+    masteryRows.forEach((m) => {
+      const a = weakAgg.get(m.kp_id) || { sum: 0, count: 0 };
+      a.sum += m.rate || 0; a.count += 1; weakAgg.set(m.kp_id, a);
+    });
+    const weakTopics = [...weakAgg.entries()]
+      .map(([kid, a]) => ({
+        name: kpNameMap.get(kid) || `知识点#${kid}`,
+        course: courseNameMap.get(kpCourseMap.get(kid) as number) || '—',
+        avgMastery: Math.round(a.sum / a.count),
+        count: a.count,
+      }))
+      .sort((x, y) => x.avgMastery - y.avgMastery)
+      .slice(0, 5);
+
     return NextResponse.json({
       success: true,
       data: {
         updatedAt: new Date().toISOString(),
         cards: {
           totalStudents, totalTeachers, totalCourses, totalAssignments,
-          todayActive, completedTasks,
+          todayActive, completedTasks, pendingTasks,
           avgMastery, masteryPoints: totalMastery,
         },
         submissionRate: totalStudents > 0
@@ -136,6 +168,7 @@ export async function GET(request: NextRequest) {
         },
         courseComparison,
         signHeatmap,
+        weakTopics,
       },
     });
   } catch (e) {

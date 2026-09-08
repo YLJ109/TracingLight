@@ -2,49 +2,24 @@
 setlocal
 cd /d "%~dp0"
 title TracingLight - Start
-
-set MODE=%~1
-set PORT_DEFAULT=5000
-
-REM ---------- check dependencies installed ----------
-if not exist "%~dp0node_modules\.bin\tsx.cmd" (
-    echo.
-    echo  [WARN] Dependencies not installed. Run setup.bat first.
-    echo.
-    pause
-    exit /b 1
-)
-
-REM ---------- mode: default=production, pass "dev" for hot-reload ----------
-if /i "%MODE%"=="dev" goto dev
-
-REM ---------- production mode ----------
-if not exist ".next\BUILD_ID" (
-    echo.
-    echo  [WARN] No production build found. Run setup.bat first,
-    echo          or use "start.bat dev" for development mode.
-    echo.
-    pause
-    exit /b 1
-)
-if not defined PORT set "PORT=%PORT_DEFAULT%"
-set "NODE_ENV=production"
-echo.
-echo  Starting server (production):  http://localhost:%PORT%
-echo  Press Ctrl+C to stop. Closing this window stops the server.
-echo.
+set NODE_ENV=production
+if not defined PORT set PORT=5000
+if exist "%~dp0node_modules\.bin\tsx.cmd" goto check
+echo  Dependencies not installed. Run setup.bat first.
+pause
+exit /b 1
+:check
+if exist ".next\BUILD_ID" goto run
+echo  Building production bundle...
+call "%~dp0node_modules\.bin\next.cmd" build
+if errorlevel 1 goto fail
+:run
 call "%~dp0node_modules\.bin\tsx.cmd" src/server.ts
-goto end
-
-:dev
-if not defined PORT set "PORT=%PORT_DEFAULT%"
-set "NODE_ENV=development"
 echo.
-echo  Starting server (development):  http://localhost:%PORT%
-echo  Hot-reload enabled. Press Ctrl+C to stop. Closing this window stops it.
-echo.
-call "%~dp0node_modules\.bin\tsx.cmd" watch src/server.ts
-goto end
-
-:end
-endlocal
+echo  Server stopped. Press any key to exit.
+pause
+exit /b 0
+:fail
+echo  Build failed.
+pause
+exit /b 1

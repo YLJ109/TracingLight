@@ -239,10 +239,9 @@ export function StudyPlanPanel() {
     switch (session.type) {
       case 'review':    // 复习 → 该知识点错题专项复习
         router.push(`/student/errors${kpQ}`); break;
-      case 'practice':  // 练习 → 学习材料针对性补漏
-        router.push(`/student/materials${kpQ}`); break;
-      case 'preview':   // 预习 → 学习材料先睹为快
-        router.push(`/student/materials${kpQ}`); break;
+      case 'practice':  // 练习 → 今日学习的对应知识点材料补漏（当前页内阅读）
+      case 'preview':   // 预习 → 今日学习的材料先睹为快（当前页内阅读）
+        router.push(`/student/learn${kpQ}`); break;
       case 'diagnose':  // 诊断 → 知识图谱
         router.push('/student/knowledge-graph'); break;
       default:          // 复习及其他 → 错题本（杜绝空操作）

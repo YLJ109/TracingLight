@@ -7,9 +7,10 @@ import { SetActiveNav } from '@/components/app-shell';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import {
-  MessagesSquare, Pin, ThumbsUp, MessageSquare, Loader2, Plus, Send, X, Lock,
+  MessagesSquare, Pin, ThumbsUp, MessageSquare, Loader2, Plus, Send, ArrowLeft, CalendarDays, ListFilter,
 } from 'lucide-react';
 
 interface Post {
@@ -44,40 +45,68 @@ function fmtTime(t: string): string {
 export default function TeacherDiscussionPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const courseIdParam = searchParams.get('course_id');
+
+  // 课程筛选：['all'] 或具体课程 id（来自后端返回的可访问课程）
+  const initCourse = searchParams.get('course_id') || 'all';
+  const [courseFilter, setCourseFilter] = useState<string>('all');
+  const [courseOptions, setCourseOptions] = useState<Array<{ id: number; name: string }>>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [composerOpen, setComposerOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
+  const [postCourseId, setPostCourseId] = useState<string>('');
   const [pinPost, setPinPost] = useState(false);
   const [posting, setPosting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Post | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [togglingPin, setTogglingPin] = useState<number | null>(null);
+
+  // 同步 URL 初始课程（teacher/analytics 带 course_id 跳转时生效）
+  useEffect(() => {
+    if (initCourse && initCourse !== 'all' && initCourse !== courseFilter) setCourseFilter(initCourse);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const fetchPosts = useCallback(() => {
     setLoading(true);
-    const q = courseIdParam ? `?course_id=${courseIdParam}` : '';
+    const q = courseFilter !== 'all' ? `?course_id=${courseFilter}` : '';
     apiFetch(`/api/discussion${q}`)
       .then((r) => r.json())
       .then((json) => {
-        if (json.success) setPosts(json.data || []);
-        else toast.error(json.error || '获取讨论失败');
+        if (json.success) {
+          setPosts(json.data || []);
+          // 教师端拿到可访问课程列表，用于课程筛选与发帖选课
+          if (Array.isArray(json.courses)) {
+            setCourseOptions(json.courses);
+            // 默认发帖课程：选中课程 > 首门可访问课程
+            setPostCourseId((prev) => prev || String(courseFilter !== 'all' ? courseFilter : (json.courses[0]?.id ?? '')));
+          }
+        } else toast.error(json.error || '获取讨论失败');
       })
       .catch(() => toast.error('获取讨论失败，请稍后重试'))
       .finally(() => setLoading(false));
-  }, [courseIdParam]);
+  }, [courseFilter]);
 
   useEffect(() => { fetchPosts(); }, [fetchPosts]);
 
+  // 统计卡
+  const stats = {
+    total: posts.length,
+    pinned: posts.filter((p) => p.is_pinned).length,
+    today: posts.filter((p) => {
+      if (!p.created_at) return false;
+      return new Date(p.created_at.replace(' ', 'T')).toDateString() === new Date().toDateString();
+    }).length,
+  };
+
   const handlePost = async () => {
+    if (!postCourseId) { toast.error('请先选择要发布到哪门课程的讨论'); return; }
     if (!title.trim()) { toast.error('请输入标题'); return; }
     if (!content.trim()) { toast.error('请输入内容'); return; }
     setPosting(true);
     try {
       const res = await apiPost('/api/discussion', {
-        course_id: courseIdParam ? Number(courseIdParam) : undefined,
+        course_id: Number(postCourseId),
         title: title.trim(),
         content: content.trim(),
         is_pinned: pinPost,
@@ -118,31 +147,91 @@ export default function TeacherDiscussionPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <SetActiveNav href="/teacher/analytics" />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => router.push('/teacher/analytics')}>
-            <X className="w-5 h-5" />
+          <Button variant="ghost" onClick={() => router.push('/teacher/analytics')} className="gap-1.5 text-muted-foreground hover:text-slate-700 -ml-2">
+            <ArrowLeft className="w-4 h-4" /> 返回
           </Button>
+          <div>
+            <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <MessagesSquare className="w-5 h-5 text-indigo-600" /> 课堂讨论区
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">发布话题、引导学生交流，信息仅在所授课程内可见</p>
+          </div>
         </div>
         <Button onClick={() => setComposerOpen(true)} className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-200">
           <Plus className="w-4 h-4" /> 发布讨论
         </Button>
       </div>
 
-      {courseIdParam && (
-        <p className="text-sm text-slate-500">当前仅显示该课程下的讨论（{posts.length} 条）</p>
-      )}
+      {/* 统计卡 */}
+      <div className="grid grid-cols-3 gap-4">
+        {([
+          { label: '讨论总数', value: stats.total, icon: MessagesSquare, cls: 'from-indigo-400 to-violet-500' },
+          { label: '置顶话题', value: stats.pinned, icon: Pin, cls: 'from-amber-400 to-orange-500' },
+          { label: '今日新增', value: stats.today, icon: CalendarDays, cls: 'from-emerald-400 to-teal-500' },
+        ]).map((s) => {
+          const IconCmp = s.icon;
+          return (
+            <Card key={s.label} className="border-slate-200/60 shadow-sm">
+              <CardContent className="flex items-center gap-3 py-4">
+                <div className={`shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br ${s.cls} flex items-center justify-center shadow-sm`}>
+                  <IconCmp className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <p className="text-xl font-bold leading-tight text-slate-800">{s.value}</p>
+                  <p className="text-xs text-muted-foreground">{s.label}</p>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* 课程筛选栏 */}
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <ListFilter className="w-3.5 h-3.5" /> 课程范围
+        </span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            onClick={() => setCourseFilter('all')}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${courseFilter === 'all' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+          >全部</button>
+          {courseOptions.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => setCourseFilter(String(c.id))}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${courseFilter === String(c.id) ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            >{c.name}</button>
+          ))}
+        </div>
+        <span className="ml-auto text-xs text-muted-foreground">{posts.length} 条</span>
+      </div>
 
       {/* 发布框 */}
       {composerOpen && (
         <Card className="border-indigo-200 shadow-md py-0">
           <CardContent className="p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <MessagesSquare className="w-4 h-4 text-indigo-600" />
-              <span className="text-sm font-semibold">发布讨论</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <MessagesSquare className="w-4 h-4 text-indigo-600" />
+                <span className="text-sm font-semibold">发布讨论</span>
+              </div>
+              <Select value={postCourseId} onValueChange={setPostCourseId}>
+                <SelectTrigger className="w-52">
+                  <SelectValue placeholder="选择发布课程（必选）" />
+                </SelectTrigger>
+                <SelectContent>
+                  {courseOptions.map((c) => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <input
               value={title}
@@ -159,13 +248,16 @@ export default function TeacherDiscussionPage() {
               placeholder="说点什么…（纯文本）"
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-indigo-200"
             />
-            <label className="flex items-center gap-2 text-sm text-slate-600 select-none">
-              <input type="checkbox" checked={pinPost} onChange={(e) => setPinPost(e.target.checked)} className="accent-indigo-600" />
-              标记为置顶
-            </label>
+            <div className="flex items-center gap-4 text-sm">
+              <label className="flex items-center gap-2 text-slate-600 select-none">
+                <input type="checkbox" checked={pinPost} onChange={(e) => setPinPost(e.target.checked)} className="accent-indigo-600" />
+                标记为置顶
+              </label>
+              {!postCourseId && <span className="text-xs text-rose-500">请先选择课程</span>}
+            </div>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setComposerOpen(false)}>取消</Button>
-              <Button onClick={handlePost} disabled={posting} className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white">
+              <Button onClick={handlePost} disabled={posting || !postCourseId} className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white">
                 {posting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} 发布
               </Button>
             </div>
@@ -182,7 +274,7 @@ export default function TeacherDiscussionPage() {
         <div className="text-center py-20 text-muted-foreground">
           <MessagesSquare className="w-14 h-14 mx-auto opacity-30" />
           <p className="text-base mt-4 font-medium">还没有讨论</p>
-          <p className="text-sm mt-1">发布第一个话题，引导学生交流吧</p>
+          <p className="text-sm mt-1">{courseFilter === 'all' ? '发布第一个话题，引导学生交流吧' : '该课程下还没有讨论，换个范围或发布一条吧'}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -190,7 +282,7 @@ export default function TeacherDiscussionPage() {
             <Card
               key={p.id}
               className="border-slate-200/60 shadow-sm card-hover cursor-pointer py-0"
-              onClick={() => router.push(`/teacher/discussion/${p.id}${courseIdParam ? `?course_id=${courseIdParam}` : ''}`)}
+              onClick={() => router.push(`/teacher/discussion/${p.id}${courseFilter !== 'all' ? `?course_id=${courseFilter}` : ''}`)}
             >
               <CardContent className="p-4">
                 <div className="flex items-center justify-between gap-3">

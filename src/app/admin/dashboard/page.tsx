@@ -5,15 +5,16 @@ import * as echarts from 'echarts';
 import { apiFetch } from '@/lib/api-fetch';
 import { getCurrentUser } from '@/lib/auth-helper';
 import { SetActiveNav } from '@/components/app-shell';
-import { Maximize2, RefreshCw, Users, BookOpen, ClipboardCheck, Activity, Gauge } from 'lucide-react';
+import { Maximize2, RefreshCw, Users, BookOpen, ClipboardCheck, Activity, Gauge, AlertTriangle, Inbox } from 'lucide-react';
 
 interface DashData {
   updatedAt: string;
-  cards: { totalStudents: number; totalTeachers: number; totalCourses: number; totalAssignments: number; todayActive: number; completedTasks: number; avgMastery: number; masteryPoints: number };
+  cards: { totalStudents: number; totalTeachers: number; totalCourses: number; totalAssignments: number; todayActive: number; completedTasks: number; pendingTasks: number; avgMastery: number; masteryPoints: number };
   submissionRate: number;
   masteryDist: { strong: number; medium: number; weak: number; strongCount: number; mediumCount: number; weakCount: number };
   courseComparison: Array<{ name: string; avgMastery: number; kpCount: number }>;
   signHeatmap: Array<{ date: string; count: number }>;
+  weakTopics: Array<{ name: string; course: string; avgMastery: number; count: number }>;
 }
 
 export default function AdminDashboardPage() {
@@ -113,6 +114,15 @@ export default function AdminDashboardPage() {
     else await document.exitFullscreen().catch(() => {});
   };
 
+  // 窗口尺寸变化时自适应图表，避免容器拉伸后图表错位
+  useEffect(() => {
+    const onResize = () => {
+      [distChart, courseChart, heatChart].forEach((c) => c.current?.resize());
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   const cards = [
     { label: '在校学生', value: data?.cards.totalStudents ?? 0, icon: <Users className="w-5 h-5" />, tint: 'text-teal-400' },
     { label: '授课教师', value: data?.cards.totalTeachers ?? 0, icon: <Users className="w-5 h-5" />, tint: 'text-blue-400' },
@@ -155,15 +165,61 @@ export default function AdminDashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
           <h3 className="text-sm font-semibold text-slate-300 mb-4">知识点掌握度分布</h3>
-          <div ref={distRef} className="h-64" />
+          <div ref={distRef} className="h-56" />
         </div>
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
           <h3 className="text-sm font-semibold text-slate-300 mb-4">各课程平均掌握度</h3>
-          <div ref={courseRef} className="h-64" />
+          <div ref={courseRef} className="h-56" />
         </div>
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
           <h3 className="text-sm font-semibold text-slate-300 mb-4">近7天每日签到</h3>
-          <div ref={heatRef} className="h-64" />
+          <div ref={heatRef} className="h-56" />
+        </div>
+      </div>
+
+      {/* 实时监控行 */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* 待批改任务 */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-4"><Inbox className="w-4 h-4 text-amber-400" /><h3 className="text-sm font-semibold text-slate-300">实时待批改</h3></div>
+          <p className="text-4xl font-extrabold text-amber-400 leading-none">{data?.cards.pendingTasks ?? 0}</p>
+          <p className="text-xs text-slate-500 mt-2">作业与考试主观题累计待批任务（教师采纳后清零）</p>
+          <p className="text-xs text-slate-500 mt-1">已批改 {data?.cards.completedTasks ?? 0} 条</p>
+        </div>
+
+        {/* 薄弱知识点 TOP5 */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-3"><AlertTriangle className="w-4 h-4 text-red-400" /><h3 className="text-sm font-semibold text-slate-300">薄弱知识点 TOP5</h3></div>
+          {!data?.weakTopics || data.weakTopics.length === 0 ? (
+            <p className="text-xs text-slate-500 py-8 text-center">暂无薄弱点，掌握情况良好</p>
+          ) : (
+            <ul className="space-y-2.5">
+              {data.weakTopics.map((w) => (
+                <li key={w.name} className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-slate-200 truncate">{w.name}</p>
+                    <p className="text-[10px] text-slate-500 truncate">{w.course} · 样本 {w.count}</p>
+                  </div>
+                  <span className="shrink-0 text-sm font-bold text-red-400">{w.avgMastery}%</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* 掌握度分布横条 */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col">
+          <div className="flex items-center gap-2 mb-4"><Gauge className="w-4 h-4 text-emerald-400" /><h3 className="text-sm font-semibold text-slate-300">掌握度分布</h3></div>
+          <div className="flex h-4 rounded-full overflow-hidden my-auto">
+            <div className="bg-emerald-500" style={{ width: `${data?.masteryDist.strong ?? 0}%` }} />
+            <div className="bg-amber-500" style={{ width: `${data?.masteryDist.medium ?? 0}%` }} />
+            <div className="bg-red-500" style={{ width: `${data?.masteryDist.weak ?? 0}%` }} />
+          </div>
+          <div className="flex justify-between text-[11px] text-slate-400 mt-3">
+            <span>已掌握 {data?.masteryDist.strong ?? 0}%</span>
+            <span>需加强 {data?.masteryDist.medium ?? 0}%</span>
+            <span>薄弱 {data?.masteryDist.weak ?? 0}%</span>
+          </div>
         </div>
       </div>
 

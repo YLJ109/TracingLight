@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     if (!authUser) return NextResponse.json({ error: '未登录' }, { status: 401 });
     // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
     const studentId = authUser.userId;
-    const courseId = parseInt(searchParams.get("course_id") || "1");
+    const courseId = (() => { const p = searchParams.get("course_id"); return p ? parseInt(p, 10) : null; })();
 
     const db = getDb();
 
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
     // 真实批改成绩
     const gradings = db.select({
       assignment_id: gradingTask.assignment_id,
-      total_score: gradingTask.total_score,
+      total_score: sql<number>`COALESCE(${gradingTask.teacher_override_score}, ${gradingTask.total_score})`,
       full_score: gradingTask.full_score,
       completed_at: gradingTask.completed_at,
     }).from(gradingTask)
@@ -167,7 +167,7 @@ export async function GET(request: NextRequest) {
     ];
     const weakLogs = [...masteryByKp.entries()]
       .map(([kpId, m]) => ({ ...m, kp: kpMap.get(kpId) }))
-      .filter((m) => m.kp && (m.mastery_rate || 0) < 70)
+      .filter((m) => m.kp && (m.mastery_rate || 0) < 60)
       .sort((a, b) => (a.mastery_rate || 0) - (b.mastery_rate || 0))
       .slice(0, 8);
 

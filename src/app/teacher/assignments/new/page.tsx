@@ -13,7 +13,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Sparkles, BookOpen, Clock, CheckCircle2, Search, Loader2, Wand2, RefreshCw, Plus, Zap } from 'lucide-react';
+import { ArrowLeft, Sparkles, BookOpen, Clock, CheckCircle2, Search, Loader2, Wand2, RefreshCw, Plus, Zap, Users, ShieldCheck } from 'lucide-react';
+import { BackButton } from '@/components/ui/back-button';
 
 interface QuestionItem {
   id: number;
@@ -73,6 +74,14 @@ export default function NewAssignmentPage() {
   const [endTime, setEndTime] = useState('');
   const [selectedQuestions, setSelectedQuestions] = useState<QuestionItem[]>([]);
   const [reviewMode, setReviewMode] = useState('auto_judge'); // auto_judge / teacher_review / auto
+  const [peerReviewEnabled, setPeerReviewEnabled] = useState(false);
+  const [peerReviewCount, setPeerReviewCount] = useState(2);
+  // 防作弊监督配置（老师可选，学生作答时据此强制行为 + 系统记录）
+  const [monitorDisabled, setMonitorDisabled] = useState(false); // 总开关：收起整块配置
+  const [disableCopy, setDisableCopy] = useState(false);
+  const [disablePaste, setDisablePaste] = useState(false);
+  const [enableFullscreen, setEnableFullscreen] = useState(false);
+  const [disableDevtools, setDisableDevtools] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCourse, setFilterCourse] = useState('all');
   const [filterType, setFilterType] = useState('all');
@@ -100,10 +109,12 @@ export default function NewAssignmentPage() {
 
   // 加载题库、课程和知识点（一次请求全量获取）
   useEffect(() => {
-    // P2-1：看板跳转预填课程并自动展开 AI 出题面板
+    // P2-1：看板跳转预填课程并自动展开 AI 出题面板（可附带指定薄弱知识点 ai_kp_id）
+    const qCourse = searchParamsNew.get('course_id');
+    const qKp = searchParamsNew.get('ai_kp_id');
     if (searchParamsNew.get('auto_ai') === '1') {
-      const qCourse = searchParamsNew.get('course_id');
       if (qCourse) { setCourseId(qCourse); setAiCourseId(qCourse); }
+      if (qKp) setAiKpId(qKp);
       setShowAIPanel(true);
     }
     apiFetch('/api/teacher/questions/bank?pageSize=500&exclude_locked=1')
@@ -128,6 +139,16 @@ export default function NewAssignmentPage() {
             setAllKnowledgePoints(dd.allKps);
           } else if (dd.knowledgePoints && Array.isArray(dd.knowledgePoints)) {
             setAllKnowledgePoints(dd.knowledgePoints);
+          }
+          // 看板「针对薄弱知识点布置」：只带知识点未带课程时，用知识点反查课程并自动预选
+          if (searchParamsNew.get('auto_ai') === '1' && qKp && !qCourse) {
+            const kpList = dd.allKps || dd.knowledgePoints || [];
+            const kpC = (kpList as any[]).find((k) => String(k.id) === String(qKp));
+            if (kpC && kpC.course_id) {
+              const c = String(kpC.course_id);
+              setAiCourseId(c);
+              setCourseId(c);
+            }
           }
         }
         setLoading(false);
@@ -266,6 +287,15 @@ export default function NewAssignmentPage() {
           total_score: totalScore,
           start_time: startTime, end_time: endTime,
           review_mode: reviewMode,
+          peer_review: peerReviewEnabled ? { enabled: true, count: peerReviewCount, reveal_name: false } : undefined,
+          monitor_config: monitorDisabled
+            ? undefined
+            : {
+                disable_copy: disableCopy,
+                disable_paste: disablePaste,
+                enable_fullscreen: enableFullscreen,
+                disable_devtools: disableDevtools,
+              },
         }),
       });
       const data = await res.json();
@@ -285,9 +315,7 @@ export default function NewAssignmentPage() {
     <div className="space-y-6 max-w-5xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.back()}>
-          <ArrowLeft className="w-5 h-5" />
-        </Button>
+        <BackButton />
         <div className="ml-auto flex items-center gap-2">
           {[1, 2, 3].map(s => (
             <div key={s} className="flex items-center gap-2">
@@ -668,6 +696,75 @@ export default function NewAssignmentPage() {
                   <SelectItem value="auto">全自动批改</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2 rounded-xl border border-teal-100 bg-teal-50/40 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <label className="flex items-center gap-2 text-sm font-medium text-teal-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={peerReviewEnabled}
+                    onChange={(e) => setPeerReviewEnabled(e.target.checked)}
+                    className="accent-teal-600 w-4 h-4"
+                  />
+                  <Users className="w-4 h-4" /> 开启学生互评（生生互评）
+                </label>
+                {peerReviewEnabled && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">每份评</span>
+                    <Input
+                      type="number" min={1} max={10}
+                      value={peerReviewCount}
+                      onChange={(e) => setPeerReviewCount(Math.max(1, Math.min(10, parseInt(e.target.value) || 2)))}
+                      className="w-16 h-8 text-center"
+                    />
+                    <span className="text-xs text-slate-500">位同学</span>
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-teal-600/80">
+                学生对同学的主观题作答进行匿名互评，作为「互评参考」展示，不影响官方成绩（以你的批改成绩为准）。
+              </p>
+            </div>
+            {/* 防作弊监督配置 */}
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-indigo-50/30 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!monitorDisabled && (disableCopy || disablePaste || enableFullscreen || disableDevtools)}
+                    onChange={(e) => setMonitorDisabled(!e.target.checked)}
+                    className="accent-indigo-600 w-4 h-4"
+                  />
+                  <ShieldCheck className="w-4 h-4 text-indigo-600" /> 开启防作弊监督
+                  <span className="text-xs font-normal text-slate-400">（作答时强制限制并记录行为）</span>
+                </label>
+              </div>
+              {!monitorDisabled && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-1">
+                  {[
+                    { key: 'copy', label: '禁止复制', desc: '作答页禁用复制（含 Ctrl/Cmd+C）', value: disableCopy, set: setDisableCopy },
+                    { key: 'paste', label: '禁止粘贴', desc: '作答页禁用粘贴（含 Ctrl/Cmd+V）', value: disablePaste, set: setDisablePaste },
+                    { key: 'fullscreen', label: '强制全屏作答', desc: '引导学生进入全屏(F11)，退出切屏将被记录', value: enableFullscreen, set: setEnableFullscreen },
+                    { key: 'devtools', label: '禁用开发者工具(F12)', desc: '拦截 F12 / Ctrl+Shift+I / 右键菜单', value: disableDevtools, set: setDisableDevtools },
+                  ].map(opt => (
+                    <label key={opt.key} className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white p-2.5 cursor-pointer hover:border-indigo-300 hover:shadow-sm transition-all">
+                      <input
+                        type="checkbox"
+                        checked={opt.value}
+                        onChange={(e) => opt.set(e.target.checked)}
+                        className="accent-indigo-600 w-4 h-4 mt-0.5"
+                      />
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-slate-700">{opt.label}</div>
+                        <div className="text-xs text-slate-400">{opt.desc}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-slate-400 pl-1">
+                开启后，系统始终记录作答用时、复制/粘贴次数与切屏行为供你复核；发布后可在「监控」中查看。
+              </p>
             </div>
             <div className="flex justify-between pt-4">
               <Button variant="outline" onClick={() => setStep(1)}>上一步</Button>

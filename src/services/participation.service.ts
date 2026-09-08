@@ -17,6 +17,7 @@
  */
 import { getDb } from '@/storage/database/db';
 import { eq, and, gte, lte, inArray } from 'drizzle-orm';
+import { readingMinutesFromSeconds, readingScoreFromMinutes } from '@/lib/reading-score';
 import {
   signInRecord,
   learningBehaviorLog,
@@ -102,12 +103,12 @@ export function computeParticipationScore(studentId: number): ParticipationScore
   const submittedCount = Math.min(new Set(answered.map((a) => a.assignment_id)).size, assignedAll || Number.MAX_SAFE_INTEGER);
   const homeworkRate = assignedAll > 0 ? Math.round((submittedCount / assignedAll) * 100) : 0;
 
-  // 3) 阅读投入：累计分钟数 → 每 60 分钟 10 分，封顶 25
+  // 3) 阅读投入：累计分钟数 → 每 60 分钟 10 分，封顶 25（口径见 lib/reading-score）
   const readingLogs = db.select().from(learningBehaviorLog)
     .where(eq(learningBehaviorLog.student_id, studentId))
     .all();
-  const readingMinutes = Math.round((readingLogs.reduce((s, r) => s + (r.watch_duration || 0), 0)) / 60);
-  const readingScore = Math.min(25, Math.round((readingMinutes / 60) * 10));
+  const readingMinutes = readingMinutesFromSeconds(readingLogs.reduce((s, r) => s + (r.watch_duration || 0), 0));
+  const readingScore = readingScoreFromMinutes(readingMinutes);
 
   // 4) 讨论贡献：发帖数 + 回复数，每 1 次 2 分，封顶 15
   const postCount = db.select().from(discussionPost)

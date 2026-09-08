@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BookMarked, CheckCircle2, RotateCcw, Sparkles, Loader2, Brain, ChevronDown, ChevronUp, Download, Network, Filter, X, ExternalLink, Dumbbell } from 'lucide-react';
+import { BookMarked, CheckCircle2, RotateCcw, Sparkles, Loader2, Brain, ChevronDown, ChevronUp, Download, Filter, X, Dumbbell, FileText, Eye } from 'lucide-react';
 import { getCurrentUser } from '@/lib/auth-helper';
 import { exportCsv } from '@/lib/export-utils';
 
@@ -45,8 +45,9 @@ const questionTypeLabels: Record<string, string> = {
   judgment: '判断题',
   code: '编程题',
   short_answer: '简答题',
+  attachment: '实验题',
 };
-const ALL_QUESTION_TYPES = ['single_choice', 'multiple_choice', 'fill_blank', 'judgment', 'code'];
+const ALL_QUESTION_TYPES = ['single_choice', 'multiple_choice', 'fill_blank', 'judgment', 'code', 'attachment'];
 
 interface AIAnalysisResult {
   error_analysis: string;
@@ -77,6 +78,8 @@ interface ErrorItem {
   question_options: string[] | null;
   knowledge_point_name: string;
   course_name: string;
+  assignment_title: string;   // 来源作业名
+  question_no: number | null; // 在该作业中的题号（第几题）
   aiAnalysis: AIAnalysisResult | null;
 }
 
@@ -186,6 +189,10 @@ export default function StudentErrors() {
       });
     return () => { cancelled = true; };
   }, [kpIdFromQuery]);
+
+  // 自测模式：默认隐藏答案/解析，点击后再显示，形成「先回忆后核对」的复习体验
+  const [practiceMode, setPracticeMode] = useState(false);
+  const [revealedId, setRevealedId] = useState<number | null>(null);
 
   // Toast auto-dismiss — must be before any early return
   useEffect(() => {
@@ -301,6 +308,7 @@ export default function StudentErrors() {
 
   const pending = errors.filter((e) => e.review_status !== 'mastered');
   const mastered = errors.filter((e) => e.review_status === 'mastered');
+  const dueCount = pending.filter((e: ErrorItem) => Boolean((e as any).due ?? isDue(e.next_review_at))).length;
   const courses = Array.from(new Set(errors.map(e => (e as any).course_name || '未知').filter(Boolean)));
   // Course-filtered subsets for each tab
   const filterByCourse = (list: ErrorItem[]) => {
@@ -320,6 +328,13 @@ export default function StudentErrors() {
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="secondary" className="text-xs bg-indigo-50 text-indigo-600">{err.course_name}</Badge>
+            {err.assignment_title && (
+              <Badge variant="outline" className="text-xs text-slate-600 border-slate-300 bg-white">
+                <FileText className="w-3 h-3 mr-1 text-slate-400" />
+                {err.assignment_title}
+                {err.question_no != null && <span className="ml-1 text-slate-400">· 第 {err.question_no} 题</span>}
+              </Badge>
+            )}
             <Badge variant="outline" className="text-xs">{err.knowledge_point_name}</Badge>
             <Badge variant="outline" className="text-xs text-red-600 border-red-200 bg-red-50">{errorTypeLabels[err.error_type] || '其他错误'}</Badge>
             <Badge variant="outline" className="text-xs text-slate-500 border-slate-200">{questionTypeLabels[err.question_type] || '其他题型'}</Badge>
@@ -376,6 +391,16 @@ export default function StudentErrors() {
           )}
         </div>
 
+        {/* 自测模式：先回忆后核对，隐藏答案/解析 */}
+        {practiceMode && revealedId !== err.id ? (
+          <div className="flex flex-col items-center gap-2 py-4 border border-dashed border-slate-200 rounded-lg bg-slate-50/60">
+            <p className="text-xs text-slate-400">自测模式：先在脑中回忆答案，再核对</p>
+            <Button variant="outline" size="sm" className="text-xs border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => setRevealedId(err.id)}>
+              <Eye className="w-3 h-3 mr-1" /> 显示答案与解析
+            </Button>
+          </div>
+        ) : (
+          <>
         {/* Answer comparison */}
         <div className="grid grid-cols-2 gap-3 mb-3">
           <div className="p-2 rounded bg-red-50 border border-red-100">
@@ -394,6 +419,8 @@ export default function StudentErrors() {
             <p className="text-xs text-indigo-500 font-medium mb-1">解析：</p>
             <p className="text-sm text-indigo-800">{err.error_analysis}</p>
           </div>
+        )}
+          </>
         )}
 
         {/* AI Expanded */}
@@ -440,12 +467,6 @@ export default function StudentErrors() {
               <p className="text-sm text-slate-700 font-medium">{toast.message}</p>
               <p className="text-xs text-slate-400 mt-0.5">知识点：{toast.kpName}</p>
             </div>
-            <button
-              onClick={() => router.push('/student/knowledge-graph')}
-              className="flex items-center gap-1 text-xs font-medium text-teal-600 hover:text-teal-700 whitespace-nowrap px-2 py-1 rounded-md hover:bg-teal-50 transition-colors"
-            >
-              去知识图谱 <ExternalLink className="w-3 h-3" />
-            </button>
             <button onClick={() => setToast(null)} className="p-1 rounded hover:bg-slate-100 transition-colors">
               <X className="w-3.5 h-3.5 text-slate-400" />
             </button>
@@ -466,12 +487,6 @@ export default function StudentErrors() {
               </button>
             </div>
           )}
-          <button
-            onClick={() => router.push('/student/knowledge-graph')}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-violet-600 to-fuchsia-600 px-3 py-1.5 text-xs font-medium text-white hover:from-violet-700 hover:to-fuchsia-700 active:scale-95 transition-all shadow-md shadow-violet-200"
-          >
-            <Network className="h-3.5 w-3.5" />知识图谱
-          </button>
           <button
             onClick={() => {
               const rows = errors.map(e => ({
@@ -496,12 +511,25 @@ export default function StudentErrors() {
           </div>
         </div>
 
-        {/* 统计并入顶栏 */}
-        <div className="flex items-center gap-4 text-xs text-slate-500 bg-slate-50 rounded-lg px-4 py-1.5">
+        {/* 统计 + 复习进度 + 自测开关 */}
+        <div className="flex items-center gap-4 text-xs text-slate-500 bg-slate-50 rounded-lg px-4 py-2 flex-wrap">
           <span>共 <strong className="text-slate-700">{errors.length}</strong> 道</span>
+          <span className="text-rose-600"><strong>{dueCount}</strong> 今日到期</span>
           <span className="text-amber-600"><strong>{pending.length}</strong> 待复习</span>
           <span className="text-teal-600"><strong>{mastered.length}</strong> 已掌握</span>
+          <div className="flex-1 h-1.5 min-w-[90px] rounded-full bg-slate-200 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-amber-400 to-teal-500 transition-all duration-500"
+              style={{ width: `${errors.length ? Math.round(mastered.length / errors.length * 100) : 0}%` }}
+            />
+          </div>
           {filterCourse !== 'all' && <span className="hidden sm:inline">筛选: <strong>{filterCourse}</strong></span>}
+          <button
+            onClick={() => setPracticeMode(v => !v)}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all whitespace-nowrap ${practiceMode ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+          >
+            <Eye className="w-3 h-3" /> {practiceMode ? '自测模式 · 答案已隐藏' : '自测模式（隐藏答案）'}
+          </button>
         </div>
       </div>
 

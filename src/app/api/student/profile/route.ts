@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
-import { user, gradingTask, assignment, course, knowledgeMasteryLog, knowledgePoint, errorBook, answer, examSchedule, abilityPoint, abilityKnowledge, learningBehaviorLog, qaSession, classInfo, major } from '@/storage/database/shared/schema';
+import { user, gradingTask, assignment, course, knowledgeMasteryLog, knowledgePoint, errorBook, answer, examSchedule, abilityPoint, abilityKnowledge, learningBehaviorLog, qaSession, classInfo, major, exam, examAttempt, examGrading } from '@/storage/database/shared/schema';
 import { eq, and, sql, inArray } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     const courses = db.select({ id: course.id, name: course.name }).from(course).all();
 
     // ============ 真实数据覆盖（全部维度）：平均分 + 薄弱知识点 ============
-    const allGradings = db.select({ total_score: gradingTask.total_score, full_score: gradingTask.full_score })
+    const allGradings = db.select({ total_score: sql<number>`COALESCE(${gradingTask.teacher_override_score}, ${gradingTask.total_score})`, full_score: gradingTask.full_score })
       .from(gradingTask)
       .where(and(eq(gradingTask.student_id, studentId), eq(gradingTask.status, 'completed')))
       .all();
@@ -132,6 +132,7 @@ export async function GET(request: NextRequest) {
     // 班级排名：同班已完成批改的平均分降序，第 1 名 = 班级第一
     // 优化：一次批量查询全班批改记录，内存聚合求平均，避免逐个同学 N+1 查询
     let classRank: number | null = null;
+    let classTotal = 0; // 参与排名的全班人数（含已批改作业的同学）
     if (stuClassId) {
       const classmates = db.select({ id: user.id }).from(user)
         .where(and(eq(user.role, 'student'), eq(user.class_id, stuClassId)))
@@ -141,7 +142,7 @@ export async function GET(request: NextRequest) {
       if (classmateIds.length > 0) {
         const allGrades = db.select({
           student_id: gradingTask.student_id,
-          total_score: gradingTask.total_score,
+          total_score: sql<number>`COALESCE(${gradingTask.teacher_override_score}, ${gradingTask.total_score})`,
           full_score: gradingTask.full_score,
         })
           .from(gradingTask)
@@ -164,6 +165,7 @@ export async function GET(request: NextRequest) {
       scored.sort((a, b) => b.avg - a.avg);
       const idx = scored.findIndex((r) => r.id === studentId);
       if (idx >= 0) classRank = idx + 1;
+      classTotal = scored.length;
     }
 
     const indicators = [
@@ -248,7 +250,7 @@ export async function GET(request: NextRequest) {
     // 成绩趋势：按作业聚合（真实批改成绩），取最近 7 次
     const trendGradings = db.select({
       assignment_id: gradingTask.assignment_id,
-      total_score: gradingTask.total_score,
+      total_score: sql<number>`COALESCE(${gradingTask.teacher_override_score}, ${gradingTask.total_score})`,
       full_score: gradingTask.full_score,
     }).from(gradingTask)
       .where(and(eq(gradingTask.student_id, studentId), eq(gradingTask.status, 'completed')))
@@ -277,7 +279,7 @@ export async function GET(request: NextRequest) {
       const cAssignmentIds = cAssignments.map((a) => a.id);
       let avgScore = 0;
       if (cAssignmentIds.length > 0) {
-        const cGradings = db.select({ total_score: gradingTask.total_score, full_score: gradingTask.full_score })
+        const cGradings = db.select({ total_score: sql<number>`COALESCE(${gradingTask.teacher_override_score}, ${gradingTask.total_score})`, full_score: gradingTask.full_score })
           .from(gradingTask)
           .where(and(eq(gradingTask.student_id, studentId), inArray(gradingTask.assignment_id, cAssignmentIds)))
           .all();
@@ -480,10 +482,72 @@ export async function GET(request: NextRequest) {
       judgedAssignments: byAssignment.size,
     };
 
-    // ============ 成长时间线（真实：AI评语 + AI答疑） ============
+    // ============ 考试维度（真实 examAttempt + examGrading + exam，考试专项学情） ============
+    const examAttemptRows = db.select({
+      exam_id: examAttempt.exam_id,
+      submitted_at: examAttempt.submitted_at,
+      status: examAttempt.status,
+    }).from(examAttempt).where(eq(examAttempt.student_id, studentId)).all();
+    const submittedAttempts = examAttemptRows
+      .filter((a) => ['submitted', 'auto_submitted', 'terminated', 'exceed'].includes(String(a.status)));
+    const submittedExamIds = submittedAttempts.map((a) => a.exam_id);
+    const examRows = submittedExamIds.length
+      ? db.select({ id: exam.id, title: exam.title }).from(exam).where(inArray(exam.id, submittedExamIds)).all()
+      : [];
+    const examTitleMap = new Map(examRows.map((e) => [e.id, e.title]));
+    const examGradingRows = submittedExamIds.length
+      ? db.select({
+          exam_id: examGrading.exam_id,
+          total_score: examGrading.total_score,
+          full_score: examGrading.full_score,
+          status: examGrading.status,
+        }).from(examGrading)
+          .where(and(eq(examGrading.student_id, studentId), inArray(examGrading.exam_id, submittedExamIds)))
+          .all()
+      : [];
+    const examAgg = new Map<number, { ts: number; tf: number; totalQs: number; gradedQs: number; pendingQs: number; wrong: number }>();
+    for (const g of examGradingRows) {
+      const agg = examAgg.get(g.exam_id) || { ts: 0, tf: 0, totalQs: 0, gradedQs: 0, pendingQs: 0, wrong: 0 };
+      agg.totalQs += 1;
+      if (g.status === 'completed' && g.total_score != null) {
+        agg.gradedQs += 1;
+        agg.ts += g.total_score;
+        agg.tf += g.full_score || 0;
+        if ((g.full_score || 0) > 0 && g.total_score < g.full_score) agg.wrong += 1;
+      } else if (g.status === 'pending') {
+        agg.pendingQs += 1;
+      }
+      examAgg.set(g.exam_id, agg);
+    }
+    const examList = submittedAttempts
+      .map((a) => {
+        const agg = examAgg.get(a.exam_id) || { ts: 0, tf: 0, totalQs: 0, gradedQs: 0, pendingQs: 0, wrong: 0 };
+        const scored = agg.gradedQs > 0 && agg.tf > 0;
+        return {
+          exam_id: a.exam_id,
+          title: examTitleMap.get(a.exam_id) || `考试${a.exam_id}`,
+          score: scored ? Math.round(agg.ts) : null,
+          full: scored ? Math.round(agg.tf) : null,
+          percent: scored ? Math.round((agg.ts / agg.tf) * 1000) / 10 : null,
+          pending_subjective: agg.pendingQs,
+          wrong: agg.wrong,
+          submitted_at: a.submitted_at,
+        };
+      })
+      .sort((x, y) => (y.submitted_at || '').localeCompare(x.submitted_at || ''));
+    const examDefPercent = submittedAttempts
+      .map((a) => { const agg = examAgg.get(a.exam_id); if (!agg || !(agg.gradedQs > 0 && agg.tf > 0)) return null; return Math.round((agg.ts / agg.tf) * 1000) / 10; })
+      .filter((x): x is number => x != null);
+    const examPerformance = {
+      examCount: submittedAttempts.length,
+      examAvgPercent: examDefPercent.length ? Math.round(examDefPercent.reduce((a, b) => a + b, 0) / examDefPercent.length * 10) / 10 : null,
+      examList,
+    };
+
+    // ============ 成长时间线（真实：AI评语 + AI答疑 + 考试） ============
     const gradeRows = db.select({
       assignment_id: gradingTask.assignment_id,
-      total_score: gradingTask.total_score,
+      total_score: sql<number>`COALESCE(${gradingTask.teacher_override_score}, ${gradingTask.total_score})`,
       full_score: gradingTask.full_score,
       overall_comment: gradingTask.overall_comment,
       completed_at: gradingTask.completed_at,
@@ -508,13 +572,27 @@ export async function GET(request: NextRequest) {
       if (!q.title || !q.created_at) continue;
       timeline.push({ type: 'qa', title: `向 AI 提问「${q.title}」`, desc: 'AI 答疑已回复，可回看对话', ts: q.created_at });
     }
+    // 考试交卷事件（含得分，供成长时间线体现考试节奏）
+    for (const a of submittedAttempts) {
+      if (!a.submitted_at) continue;
+      const agg = examAgg.get(a.exam_id);
+      const scored = agg && agg.gradedQs > 0 && agg.tf > 0;
+      timeline.push({
+        type: 'exam',
+        title: `考试《${examTitleMap.get(a.exam_id) || `考试${a.exam_id}`}》已交卷`,
+        desc: scored
+          ? `得分 ${Math.round(agg!.ts)}/${Math.round(agg!.tf)}（${Math.round((agg!.ts / agg!.tf) * 100)}%）`
+          : `已交卷·主观题待批 ${agg?.pendingQs || 0} 题`,
+        ts: a.submitted_at,
+      });
+    }
     timeline.sort((a, b) => b.ts.localeCompare(a.ts));
     const growthTimeline = timeline.slice(0, 12);
 
     return NextResponse.json({
         success: true,
         data: {
-          student: { ...student, classRank, className, majorName, courseCount: courses.length },
+          student: { ...student, classRank, classTotal, className, majorName, courseCount: courses.length },
           courses,
           selectedCourseId: courseId,
           // 当前范围平均掌握率 + 综合掌握度
@@ -550,6 +628,8 @@ export async function GET(request: NextRequest) {
           growthTimeline,
           // 考试安排（真实）
           examSchedule: examScheduleReal,
+          // 考试维度学情（真实：参考考试数、平均得分率、逐场成绩）
+          examPerformance,
           // Assignment counts from DB
           completedAssignments: completedAssignments || 0,
           totalAssignments: totalAssignments || 0,

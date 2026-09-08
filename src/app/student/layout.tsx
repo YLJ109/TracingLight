@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { getCurrentUser, signOut, setUserAvatar, type CurrentUser, USER_UPDATED_EVENT_NAME } from '@/lib/auth-helper';
 import { apiFetch } from '@/lib/api-fetch';
 import {
   BookOpen, BookMarked, BarChart3,
-  Lightbulb, FolderOpen,
-  MessageCircle, CalendarCheck, Network
+  Lightbulb, Timer,
+  MessageCircle, Network, Sparkles
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import AppShell, { type AppShellNavItem } from '@/components/app-shell';
@@ -20,16 +20,20 @@ const navItems: AppShellNavItem[] = [
   { group: '学情', href: '/student/overview', label: '我的学情', icon: BarChart3 },
   { group: '学情', href: '/student/knowledge-graph', label: '知识图谱', icon: Network },
   { group: '学情', href: '/student/recommend', label: '个性化推荐', icon: Lightbulb },
-  { group: '学习', href: '/student/today', label: '今日任务', icon: CalendarCheck },
-  { group: '学习', href: '/student/materials', label: '学习材料', icon: FolderOpen },
+  { group: '学习', href: '/student/learn', label: '今日学习', icon: Sparkles },
   { group: '学习', href: '/student/assignments', label: '我的作业', icon: BookOpen },
+  { group: '学习', href: '/student/exams', label: '我的考试', icon: Timer },
   { group: '学习', href: '/student/errors', label: '错题本', icon: BookMarked },
   { group: '扩展', href: '/student/assistant', label: 'AI 答疑', icon: MessageCircle },
 ];
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+
+  // 考试专考页走全屏沉浸式，脱离侧边栏外壳（外部包裹的独立路由外壳不含 AppShell）
+  const isExamTake = /^\/student\/exams\/[^/]+\/take$/.test(pathname ?? '');
 
   useEffect(() => {
     getCurrentUser().then((user) => {
@@ -59,6 +63,9 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
   };
 
   if (!currentUser) return null;
+
+  // 专考页：全屏沉浸，不含侧边栏外壳（仍保留学生登录守卫）
+  if (isExamTake) return <>{children}</>;
 
   const levelLabel = ((level?: string | null) => {
     switch (level) {

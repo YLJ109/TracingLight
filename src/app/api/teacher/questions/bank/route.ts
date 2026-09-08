@@ -192,6 +192,7 @@ export async function POST(req: NextRequest) {
       max_chars,
       min_select,
       max_select,
+      experiment_template,
     } = body;
 
     if (!knowledge_point_id) {
@@ -205,13 +206,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: '无权在该课程创建题目' }, { status: 403 });
     }
 
+    // 实验题：将可选 experiment_template 存入 question.options = { template: {...} }
+    let finalOptions: unknown = options || {};
+    if (experiment_template && typeof experiment_template === 'object') {
+      const base = (options && typeof options === 'object') ? options : {};
+      finalOptions = { ...(base as Record<string, unknown>), template: experiment_template };
+    }
+
     const result = db.insert(question).values({
       course_id: targetCourseId ?? course_id ?? null,
       knowledge_point_id,
       question_type,
       difficulty,
       content,
-      options: options || {},
+      options: finalOptions,
       answer: answerText,
       analysis,
       default_score: default_score || 10,
@@ -242,7 +250,7 @@ export async function PUT(req: NextRequest) {
     if (!authUser) return NextResponse.json({ error: '未登录' }, { status: 401 });
     const db = getDb();
     const body = await req.json();
-    const { id, course_id, knowledge_point_id, ...updates } = body;
+    const { id, course_id, knowledge_point_id, experiment_template, ...updates } = body;
 
     if (!id) {
       return NextResponse.json({ success: false, error: '缺少题目ID' }, { status: 400 });
@@ -266,6 +274,11 @@ export async function PUT(req: NextRequest) {
     }
 
     const setObj: Record<string, unknown> = { ...updates };
+    // 实验题：experiment_template 与 options 合并存入 options.template
+    if (experiment_template && typeof experiment_template === 'object') {
+      const cur = setObj.options && typeof setObj.options === 'object' ? setObj.options : {};
+      setObj.options = { ...(cur as Record<string, unknown>), template: experiment_template };
+    }
     if (course_id != null) setObj.course_id = Number(course_id);
     if (knowledge_point_id != null) setObj.knowledge_point_id = Number(knowledge_point_id);
     // 规范化可选限制字段：空串/非数值 → null（不限制）

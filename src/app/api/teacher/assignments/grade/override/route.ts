@@ -3,9 +3,28 @@ import { getDb, saveDb } from '@/storage/database/db';
 import { gradingTask, reviewRecord, assignment, notification } from '@/storage/database/shared/schema';
 import { requireAuth } from '@/lib/server-auth';
 import { eq } from 'drizzle-orm';
-import { getTeacherCourseIds } from '@/lib/teacher-scope';
 import { htmlToPlainText } from '@/lib/rich-text';
 import { syncMasteryFromGrading } from '@/lib/mastery-sync';
+import { maybeAutoPublishGrades } from '@/services/grading.service';
+import { gradeObjectiveQuestion } from '@/lib/objective-grading';
+
+/** 规则引擎可「确定判定」的客观题（选择/判断），其结果非 null，可强制 0 或满分 */
+const OBJ_DETERMINISTIC = new Set(['single_choice', 'judgment', 'multiple_choice', 'multi_choice']);
+
+/**
+ * 客观题规则判定（全对满分、错了零分，不给部分分）：
+ * 仅对确定性客观题生效；填空/主观返回 null（交给原 AI/教师流程）。
+ */
+function objectiveRuleScore(task: typeof gradingTask.$inferSelect): number | null {
+  if (!OBJ_DETERMINISTIC.has(task.question_type)) return null;
+  const r = gradeObjectiveQuestion(
+    task.question_type,
+    task.reference_answer ?? '',
+    task.student_answer ?? '',
+    Number(task.full_score) || 0
+  );
+  return r ? r.total_score : null;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,9 +42,10 @@ export async function POST(request: NextRequest) {
     if (!task) {
       return NextResponse.json({ error: '批改记录不存在' }, { status: 404 });
     }
-    const courseOwner = db.select({ course_id: assignment.course_id })
+    const asgn = db.select({ teacher_id: assignment.teacher_id })
       .from(assignment).where(eq(assignment.id, task.assignment_id)).get();
-    if (!courseOwner || !getTeacherCourseIds(user.userId).includes(courseOwner.course_id)) {
+    // 跨租户隔离：仅作业创建教师可改分（与作业列表 `assignment.teacher_id` 归口一致）
+    if (!asgn || asgn.teacher_id !== user.userId) {
       return NextResponse.json({ error: '无权修改该成绩' }, { status: 403 });
     }
 
@@ -33,7 +53,12 @@ export async function POST(request: NextRequest) {
 
     const data: Record<string, unknown> = {};
 
-    if (override_score !== undefined && override_score !== null && override_score !== '') {
+    // 确定性客观题（单选/判断/多选）：最终分由规则引擎强制=0或满分，
+    // 忽略任何 AI 部分分 / 教师输入的部分分，杜绝「错了还给 1 分/部分分」。
+    const ruleScore = objectiveRuleScore(task);
+    if (ruleScore !== null) {
+      data.teacher_override_score = ruleScore;
+    } else if (override_score !== undefined && override_score !== null && override_score !== '') {
       const score = Number(override_score);
       // 服务端分数校验：必须是有限数字且在 [0, full_score] 区间
       if (!Number.isFinite(score)) {
@@ -106,6 +131,9 @@ export async function POST(request: NextRequest) {
 
     // 成功写入后必定落盘（通知失败等不影响成绩持久化）
     try { saveDb(); } catch { /* 定时持久化兜底 */ }
+
+    // 改分完成 → 若该作业所有已提交学生全部批改完成则自动公布成绩
+    maybeAutoPublishGrades(task.assignment_id);
 
     return NextResponse.json({ success: true });
   } catch (e) {

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
 import { assignment, answer, gradingTask, course } from '@/storage/database/shared/schema';
-import { eq, desc, and, inArray } from 'drizzle-orm';
+import { eq, desc, and, inArray, ne } from 'drizzle-orm';
+import { getAccessibleCourseIds } from '@/lib/course-access';
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,9 +14,15 @@ export async function GET(request: NextRequest) {
     // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
     const sid = user.userId;
 
-    // Get all assignments
+    // 仅返回本班课程的作业，且隐藏 draft/closed（草稿/已关闭）
+    const accessibleIds = getAccessibleCourseIds(user);
     const assignments = db.select()
       .from(assignment)
+      .where(and(
+        inArray(assignment.course_id, accessibleIds.length ? accessibleIds : [-1]),
+        ne(assignment.status, 'draft'),
+        ne(assignment.status, 'closed'),
+      ))
       .orderBy(desc(assignment.created_at))
       .all();
 
@@ -74,6 +81,9 @@ export async function GET(request: NextRequest) {
         status = 'graded';
       } else if (isSubmitted) {
         status = 'submitted';
+      } else if (asgn.end_time && new Date().toISOString() > asgn.end_time && !asgn.allow_resubmit) {
+        // 已超过截止时间且未提交、未开放补交 → 已截止（只能阅读，不能作答）
+        status = 'expired';
       } else {
         status = 'pending';
       }

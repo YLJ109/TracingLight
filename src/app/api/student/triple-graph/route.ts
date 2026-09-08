@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, sql } from 'drizzle-orm';
 import {
   abilityPoint, ideologyPoint, abilityKnowledge, ideologyKnowledge, knowledgePoint,
   gradingTask, knowledgeMasteryLog,
@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
       }
       const grades = db.select({
         knowledge_point_id: gradingTask.knowledge_point_id,
-        total_score: gradingTask.total_score,
+        total_score: sql<number>`COALESCE(${gradingTask.teacher_override_score}, ${gradingTask.total_score})`,
       })
         .from(gradingTask)
         .where(and(

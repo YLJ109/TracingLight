@@ -41,14 +41,12 @@ export function getTeacherStudentIds(teacherId: number): number[] {
   return rows.map((r) => r.id);
 }
 
-/** 当前教师的作业 ID（作业所属课程为本人授课课程） */
+/** 当前教师的作业 ID（教师创建的作业；与作业列表 `assignment.teacher_id` 归口一致） */
 export function getTeacherAssignmentIds(teacherId: number): number[] {
   const db = getDb();
-  const courseIds = getTeacherCourseIds(teacherId);
-  if (courseIds.length === 0) return [];
   const rows = db.select({ id: assignment.id })
     .from(assignment)
-    .where(inArray(assignment.course_id, courseIds))
+    .where(eq(assignment.teacher_id, teacherId))
     .all();
   return rows.map((r) => r.id);
 }

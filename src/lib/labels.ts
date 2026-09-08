@@ -14,6 +14,7 @@ export const QUESTION_TYPE_LABELS: Record<string, string> = {
   programming: "编程题",
   code: "编程题",
   essay: "论述题",
+  attachment: "实验题",
 };
 
 /** 难度标签映射（英文 → 中文） */

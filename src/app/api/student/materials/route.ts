@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
-import { eq } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { learningMaterial, learningBehaviorLog, course } from '@/storage/database/shared/schema';
+import { getAccessibleCourseIds } from '@/lib/course-access';
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,9 +15,12 @@ export async function GET(request: NextRequest) {
     const courseId = sp.get('course_id') ? Number(sp.get('course_id')) : null;
     const kpId = sp.get('knowledge_point_id') ? Number(sp.get('knowledge_point_id')) : null;
 
+    // 仅返回学生自己班级课程的教材，杜绝跨课程可见
+    const accessibleIds = getAccessibleCourseIds(authUser);
+    const inScope = accessibleIds.length ? accessibleIds : [-1];
     const materials = courseId
-      ? db.select().from(learningMaterial).where(eq(learningMaterial.course_id, courseId)).all()
-      : db.select().from(learningMaterial).all();
+      ? db.select().from(learningMaterial).where(and(inArray(learningMaterial.course_id, inScope), eq(learningMaterial.course_id, courseId))).all()
+      : db.select().from(learningMaterial).where(inArray(learningMaterial.course_id, inScope)).all();
 
     // 按知识点过滤：knowledge_point_ids（JSON）
     const materialsFiltered = kpId

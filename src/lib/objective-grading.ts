@@ -1,5 +1,6 @@
 /**
- * 客观题规则引擎：单选题/判断题精确匹配、多选题部分给分、填空题容错。
+ * 客观题规则引擎（全对满分、错了零分，不给部分分）：
+ * 单选题/判断题精确匹配、多选题需「全部选对且无错选」才满分（漏选/错选一律 0 分）、填空题容错。
  * 返回 null 表示非客观题（应走 AI 批改）。
  */
 
@@ -145,28 +146,26 @@ export function gradeObjectiveQuestion(
     return result(0, false, `回答错误（参考答案：${referenceAnswer}）`);
   }
 
-  // 多选：半对给分（按「选对-选错」相对正确项的占比给分，不出现负分、不因个别错选而全扣）
+  // 多选：全对才满分（需全部选对且无错选）；漏选/错选/多选一律 0 分，不给部分分
   if (questionType === 'multiple_choice' || questionType === 'multi_choice') {
     const refSet = new Set(ref.split('').filter((c) => /[a-z]/.test(c)));
     const stuSet = new Set(stu.split('').filter((c) => /[a-z]/.test(c)));
     if (stuSet.size === 0) return result(0, false, '未作答');
 
     const correctPicks = [...stuSet].filter((c) => refSet.has(c)).length;
-    const wrongPicks = [...stuSet].filter((c) => !refSet.has(c)).length;
+    const wrongPicks = stuSet.size - correctPicks; // 学生选中但不在正确答案中的选项数
 
-    if (wrongPicks === 0 && correctPicks === refSet.size) {
+    // 唯一得分情形：与正确答案完全一致（不漏、不多、不错）
+    if (correctPicks === refSet.size && wrongPicks === 0 && stuSet.size === refSet.size) {
       return result(full, true, '回答正确');
     }
     if (correctPicks === 0) {
       return result(0, false, `未选对任何正确选项（正确答案：${referenceAnswer}）`);
     }
-    // 半对给分：占比 =（选对项数 - 选错项数）/ 正确项数，下限 0（漏选=纯选对比例，错选按比例扣，不直接归零）
-    const ratio = Math.max(0, (correctPicks - wrongPicks) / refSet.size);
-    const score = Math.round(full * ratio * 10) / 10;
-    const detail = wrongPicks > 0
-      ? `部分正确（含 ${wrongPicks} 项错选，正确答案：${referenceAnswer}），半对给分 ${score}/${full}`
-      : `漏选（正确答案：${referenceAnswer}），半对给分 ${score}/${full}`;
-    return result(score, false, detail);
+    // 漏选或错选：均为错误，本题不得分
+    return result(0, false, wrongPicks > 0
+      ? `选择错误（含 ${wrongPicks} 项错误选项，正确答案：${referenceAnswer}），本题不得分`
+      : `漏选（正确答案：${referenceAnswer}），本题不得分`);
   }
 
   // 填空：文本精确匹配 → 数值等价匹配 → 无法确定交 AI 语义判定（返回 null）

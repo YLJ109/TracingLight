@@ -25,7 +25,9 @@ import {
   Layers,
   Filter,
   MessagesSquare,
+  GraduationCap,
 } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Card,
   CardContent,
@@ -46,6 +48,8 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import * as echarts from "echarts";
+import TeacherAnnouncementCard from "@/components/teacher-announcement-card";
+import { getCurrentUser, type CurrentUser } from "@/lib/auth-helper";
 
 const levelConfig: Record<string, { label: string; color: string; bg: string }> = {
   top: { label: "学霸层", color: "text-blue-700", bg: "bg-blue-50 border-blue-200" },
@@ -84,6 +88,7 @@ export default function AnalyticsPage() {
   const searchParams = useSearchParams();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false); // 切换筛选维度时顶部细进度条，保留当前页面不刷新
   const [activeTab, setActiveTab] = useState("overview");
   // P2: 共性问题 + 临界生（AI 诊断）
   const [aiData, setAiData] = useState<any>(null);
@@ -95,6 +100,10 @@ export default function AnalyticsPage() {
   );
   const [courseId, setCourseId] = useState<string>(searchParams.get('course_id') || '');
   const [classId, setClassId] = useState<string>('');
+  // 教师本人信息（身份卡）
+  const [me, setMe] = useState<CurrentUser | null>(null);
+
+  useEffect(() => { getCurrentUser().then(setMe).catch(() => {}); }, []);
 
   const radarChartRef = useRef<echarts.ECharts | null>(null);
   const heatmapChartRef = useRef<echarts.ECharts | null>(null);
@@ -102,9 +111,11 @@ export default function AnalyticsPage() {
   const pieChartRef = useRef<echarts.ECharts | null>(null);
 
   useEffect(() => {
+    // 主数据：仅随筛选维度 / 课程 / 班级变化而重新拉取；切换分析 Tab 不重载页面
     const fetchData = async () => {
       try {
-        setLoading(true);
+        // 首次进入用整页骨架；后续筛选切换用顶部细条保持当前页面不刷新
+        if (!data) setLoading(true); else setRefreshing(true);
         let url = "/api/teacher/analytics";
         const params = new URLSearchParams();
         if (dimension === 'course' && courseId) params.set('course_id', courseId);
@@ -118,9 +129,15 @@ export default function AnalyticsPage() {
         console.error(e);
       } finally {
         setLoading(false);
+        setRefreshing(false);
       }
     };
-    // P2: 共性问题 + 临界生（仅在切到 AI tab 且未加载时拉取）
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dimension, courseId, classId]);
+
+  // P2: 共性问题 + 临界生（AI 诊断），仅切到 AI Tab 时惰性加载一次
+  useEffect(() => {
     const fetchAi = async () => {
       if (activeTab !== "ai" || aiData) return;
       setAiLoading(true);
@@ -137,9 +154,8 @@ export default function AnalyticsPage() {
         setAiLoading(false);
       }
     };
-    fetchData();
     fetchAi();
-  }, [dimension, courseId, classId, activeTab, aiData]);
+  }, [activeTab, courseId, aiData]);
 
   // Radar chart - only when tab is active
   useEffect(() => {
@@ -240,8 +256,8 @@ export default function AnalyticsPage() {
           data: heatmapData.map((h: any) => {
             const studentIdx = students.findIndex((s: any) => s.id === h.studentId);
             const kpIdx = kps.indexOf(h.kpName);
-            // 数据库中 mastery 存储为 10000 = 100%, 需要转换
-            return [kpIdx, studentIdx, Math.round(h.mastery / 100)];
+            // 掌握度 API 已按 0–100 百分比返回，直接作为热力值
+            return [kpIdx, studentIdx, Math.round(h.mastery)];
           }),
           label: { show: true, fontSize: 10 },
         }],
@@ -344,7 +360,7 @@ export default function AnalyticsPage() {
     return () => clearTimeout(timer);
   }, [data, activeTab]);
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600"></div>
@@ -360,10 +376,79 @@ export default function AnalyticsPage() {
     );
   }
 
-  const { students, classAvg, totalStudents, levelDistribution } = data;
+  const { students, classAvg, totalStudents, levelDistribution, overview, weakKnowledgePoints, strongKnowledgePoints, errorTypeDistribution, classBreakdown, classes, courses } = data;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* 切换筛选维度时顶部细进度条，保留当前页面、滚动位置与 Tab 状态，不整页刷新 */}
+      {refreshing && <div className="fixed top-0 left-0 right-0 z-[60] h-1 bg-gradient-to-r from-teal-400 via-emerald-400 to-teal-400 animate-pulse" />}
+
+      {/* 教师身份卡（对齐学生端「我的学情」顶部） */}
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-5">
+          <Avatar className="w-14 h-14 ring-2 ring-teal-100">
+            {me?.avatar_url ? (
+              <AvatarImage src={me.avatar_url} alt={me.real_name} className="object-cover" />
+            ) : (
+              <AvatarFallback className="bg-gradient-to-br from-violet-500 to-indigo-600 text-white text-xl font-bold">
+                {(me?.real_name || '师').slice(0, 1)}
+              </AvatarFallback>
+            )}
+          </Avatar>
+          <div>
+            <div className="flex items-center gap-2.5 mb-1.5 flex-wrap">
+              <h1 className="text-2xl font-bold text-slate-900">{me?.real_name || '老师'}</h1>
+              <Badge variant="outline" className="border-teal-200 text-teal-700 bg-teal-50">教师</Badge>
+            </div>
+            <div className="flex items-center gap-4 text-sm text-slate-500 flex-wrap">
+              <span className="inline-flex items-center gap-1"><GraduationCap className="w-3.5 h-3.5 text-violet-500" />授课班级 {classes.length > 0 ? classes.map((c: any) => c.name).join('、') : '—'}</span>
+              <span className="inline-flex items-center gap-1"><BookOpen className="w-3.5 h-3.5 text-violet-500" />授课 {courses.length} 门课</span>
+              <span className="inline-flex items-center gap-1"><Users className="w-3.5 h-3.5 text-violet-500" />学生 {overview?.totalStudents ?? totalStudents} 人</span>
+            </div>
+          </div>
+        </div>
+        <Badge className="bg-violet-50 text-violet-700 border-violet-200 font-medium self-start sm:self-center">
+          班级 {levelDistribution.top ?? 0} 学霸 · {levelDistribution.medium ?? 0} 中等 · {levelDistribution.weak ?? 0} 提升
+        </Badge>
+      </header>
+
+      {/* 绿色英雄大卡片（与学生端「我的学情」顶部横幅同款样式） */}
+      <Card className="border-0 bg-gradient-to-br from-violet-600 via-indigo-600 to-teal-600 text-white rounded-2xl shadow-lg overflow-hidden">
+        <CardContent className="p-5 sm:p-6">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-6">
+            <div className="flex items-center gap-5 flex-shrink-0">
+              <div className="text-center">
+                <div className="text-5xl font-black leading-none">{overview?.avgMasteryRate ?? 0}<span className="text-2xl font-bold">%</span></div>
+                <p className="text-xs text-white/80 mt-1.5">本班综合掌握率</p>
+              </div>
+              <div className="w-px h-12 bg-white/20" />
+              <div className="flex flex-col gap-1.5 text-sm">
+                <p className="text-white/90 font-medium flex items-center gap-1"><Award className="w-3.5 h-3.5" />班级分层</p>
+                <p className="text-white/75 text-xs">学霸 {levelDistribution.top ?? 0} · 中等 {levelDistribution.medium ?? 0} · 提升 {levelDistribution.weak ?? 0}</p>
+              </div>
+            </div>
+            <div className="flex-1 min-w-0 grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {([
+                { label: '平均得分率', value: `${overview?.avgScore ?? classAvg}%`, accent: '' },
+                { label: '学生总数', value: String(overview?.totalStudents ?? totalStudents), accent: '' },
+                { label: '作业参与率', value: `${overview?.participationRate ?? 0}%`, accent: '' },
+              ]).map((s) => (
+                <div key={s.label} className="rounded-lg bg-white/10 px-3 py-2.5">
+                  <div className="text-2xl font-bold leading-none">{s.value}</div>
+                  <div className="text-[11px] text-white/75 mt-1">{s.label}</div>
+                </div>
+              ))}
+            </div>
+            <div className="flex-shrink-0 lg:w-56 max-w-[240px]">
+              <p className="text-xs text-white/75 leading-relaxed">当前筛选范围下的班级整体学情概览，帮助快速把握教学重心；公告可在下方直接发布。</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 公告发布（内嵌于学情看板） */}
+      <TeacherAnnouncementCard courses={data.courses || []} />
+
       {/* 筛选栏：全部 / 按课程 / 按班级 + 右侧 讨论区/AI布置作业 */}
       <div className="flex flex-wrap items-center gap-3 justify-between rounded-xl border border-border bg-card p-3">
         <span className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
@@ -427,57 +512,160 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="py-0">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 bg-teal-50 rounded-lg">
-              <Users className="w-5 h-5 text-teal-600" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">学生总数</p>
-              <p className="text-xl font-bold">{totalStudents}</p>
-            </div>
+      {/* Summary Cards：渐变图标 + 充足上下内边距 + 悬浮抬升，营造呼吸感 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-5">
+        {([
+          { label: '学生总数', value: String(overview?.totalStudents ?? totalStudents), suffix: '', icon: Users, tile: 'from-teal-400 to-emerald-500', accent: 'text-teal-700' },
+          { label: '平均得分率', value: String(overview?.avgScore ?? classAvg), suffix: '%', icon: TrendingUp, tile: 'from-sky-400 to-blue-500', accent: 'text-sky-700' },
+          { label: '作业参与率', value: String(overview?.participationRate ?? 0), suffix: '%', icon: CheckCircle2, tile: 'from-emerald-400 to-green-500', accent: 'text-emerald-700' },
+          { label: '平均掌握度', value: String(overview?.avgMasteryRate ?? 0), suffix: '%', icon: Brain, tile: 'from-violet-400 to-purple-500', accent: 'text-violet-700' },
+          { label: '错题总数', value: String(overview?.totalErrors ?? 0), suffix: '', icon: XCircle, tile: 'from-rose-400 to-pink-500', accent: 'text-rose-700' },
+          { label: '错题解决率', value: String(overview?.errorResolutionRate ?? 0), suffix: '%', icon: Target, tile: 'from-amber-400 to-orange-500', accent: 'text-amber-700' },
+          { label: '学霸层', value: String(levelDistribution.top ?? 0), suffix: '', icon: Award, tile: 'from-yellow-400 to-amber-500', accent: 'text-yellow-700' },
+          { label: '提升层', value: String(levelDistribution.weak ?? 0), suffix: '', icon: AlertCircle, tile: 'from-red-400 to-rose-500', accent: 'text-red-700' },
+        ]).map((m) => {
+          const IconCmp = m.icon;
+          return (
+            <Card key={m.label} className="transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:shadow-slate-200/70 border-slate-200/70">
+              <CardContent className="px-4 sm:px-5 py-3 flex items-center gap-3">
+                <div className={`shrink-0 w-11 h-11 rounded-xl bg-gradient-to-br ${m.tile} flex items-center justify-center shadow-sm`}>
+                  <IconCmp className="w-5 h-5 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground truncate">{m.label}</p>
+                  <p className={`text-2xl font-bold leading-tight ${m.accent}`}>{m.value}<span className="text-sm font-medium text-slate-400 ml-0.5">{m.suffix}</span></p>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* 薄弱 / 优势知识点（班级级） */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="overflow-hidden border-amber-200/70 shadow-sm">
+          <CardHeader className="pb-3 pt-4 border-b border-amber-100/70">
+            <CardTitle className="flex items-center gap-2 text-sm font-bold text-slate-700"><span className="inline-flex w-6 h-6 items-center justify-center rounded-lg bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-sm"><Flame className="w-3.5 h-3.5" /></span> 薄弱知识点 TOP</CardTitle>
+            <CardDescription className="text-xs">平均掌握度最低的板块，建议优先布置针对性练习</CardDescription>
+          </CardHeader>
+          <CardContent className="px-5 pt-1 pb-5 space-y-3.5">
+            {(!weakKnowledgePoints || weakKnowledgePoints.length === 0) ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">暂无知识点掌握度数据</p>
+            ) : weakKnowledgePoints.map((k: any, i: number) => {
+              const pct = Math.max(0, k.avgMastery);
+              return (
+                <div key={k.kpId} className="flex items-center gap-3">
+                  <span className="w-5 text-center text-xs font-bold text-amber-600">#{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-slate-600 truncate">{k.kpName}</p>
+                    <Progress value={pct} className="h-2 mt-1.5 bg-amber-100 [&>div]:bg-amber-500" />
+                  </div>
+                  <button
+                    onClick={() => router.push(`/teacher/assignments/new?auto_ai=1&course_id=${courseId}&ai_kp_id=${k.kpId}`)}
+                    className="shrink-0 text-[11px] px-2 py-1 rounded-md border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors"
+                  >
+                    针对出题
+                  </button>
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
-        <Card className="py-0">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 bg-blue-50 rounded-lg">
-              <TrendingUp className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">班级平均分</p>
-              <p className="text-xl font-bold">{classAvg}</p>
-            </div>
+        <Card className="overflow-hidden border-emerald-200/70 shadow-sm">
+          <CardHeader className="pb-3 pt-4 border-b border-emerald-100/70">
+            <CardTitle className="flex items-center gap-2 text-sm font-bold text-slate-700"><span className="inline-flex w-6 h-6 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-sm"><Zap className="w-3.5 h-3.5" /></span> 优势知识点 TOP</CardTitle>
+            <CardDescription className="text-xs">平均掌握度最高的板块，可作为教学示范与巩固</CardDescription>
+          </CardHeader>
+          <CardContent className="px-5 pt-1 pb-5 space-y-3.5">
+            {(!strongKnowledgePoints || strongKnowledgePoints.length === 0) ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">暂无知识点掌握度数据</p>
+            ) : strongKnowledgePoints.map((k: any, i: number) => {
+              const pct = Math.max(0, k.avgMastery);
+              return (
+                <div key={k.kpId} className="flex items-center gap-3">
+                  <span className="w-5 text-center text-xs font-bold text-emerald-600">#{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-slate-600 truncate">{k.kpName}</p>
+                    <Progress value={pct} className="h-2 mt-1.5 bg-emerald-100 [&>div]:bg-emerald-500" />
+                  </div>
+                  <span className="text-xs font-semibold text-emerald-700 w-10 text-right">{pct}%</span>
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
-        <Card className="py-0">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 bg-yellow-50 rounded-lg">
-              <Award className="w-5 h-5 text-yellow-600" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">学霸层</p>
-              <p className="text-xl font-bold">{levelDistribution.top}</p>
-            </div>
+      </div>
+
+      {/* 错因分布 + 分班级横向对比 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="overflow-hidden border-indigo-200/70 shadow-sm">
+          <CardHeader className="pb-3 pt-4 border-b border-indigo-100/70">
+            <CardTitle className="flex items-center gap-2 text-sm font-bold text-slate-700"><span className="inline-flex w-6 h-6 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-400 to-violet-500 text-white shadow-sm"><AlertCircle className="w-3.5 h-3.5" /></span> 错因分布</CardTitle>
+            <CardDescription className="text-xs">班级错题的成因类型分布（来自错题本）</CardDescription>
+          </CardHeader>
+          <CardContent className="px-5 pt-1 pb-5 space-y-3.5">
+            {(!errorTypeDistribution || errorTypeDistribution.length === 0) ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">暂无错题数据</p>
+            ) : (
+              (() => {
+                const total = errorTypeDistribution.reduce((s: number, e: any) => s + e.count, 0);
+                return errorTypeDistribution.slice(0, 6).map((e: any) => (
+                  <div key={e.type} className="flex items-center gap-3">
+                    <span className="text-xs text-slate-600 w-20 shrink-0 truncate">{errorTypeLabel(e.type)}</span>
+                    <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-indigo-400 to-violet-500 rounded-full" style={{ width: `${total > 0 ? (e.count / total) * 100 : 0}%` }} />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-500 w-12 text-right">{e.count} 题</span>
+                  </div>
+                ));
+              })()
+            )}
           </CardContent>
         </Card>
-        <Card className="py-0">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 bg-red-50 rounded-lg">
-              <AlertCircle className="w-5 h-5 text-red-600" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">提升层</p>
-              <p className="text-xl font-bold">{levelDistribution.weak}</p>
-            </div>
+
+        <Card className="overflow-hidden border-cyan-200/70 shadow-sm">
+          <CardHeader className="pb-3 pt-4 border-b border-cyan-100/70">
+            <CardTitle className="flex items-center gap-2 text-sm font-bold text-slate-700"><span className="inline-flex w-6 h-6 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 to-sky-500 text-white shadow-sm"><Layers className="w-3.5 h-3.5" /></span> 班级横向对比</CardTitle>
+            <CardDescription className="text-xs">各班级在作业参与、得分、错题解决上的整体表现</CardDescription>
+          </CardHeader>
+          <CardContent className="px-5 pt-1 pb-5">
+            {(!classBreakdown || classBreakdown.length === 0) ? (
+              <p className="text-xs text-muted-foreground py-4 text-center">暂无班级数据</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[520px] text-xs">
+                  <thead>
+                    <tr className="text-left text-muted-foreground border-b">
+                      <th className="py-2 pr-2 font-medium">班级</th>
+                      <th className="py-2 pr-2 font-medium">人数</th>
+                      <th className="py-2 pr-2 font-medium">得分率</th>
+                      <th className="py-2 pr-2 font-medium">参与率</th>
+                      <th className="py-2 pr-2 font-medium">错题</th>
+                      <th className="py-2 font-medium">解决率</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {classBreakdown.map((c: any) => (
+                      <tr key={c.classId} className="border-b border-slate-50 last:border-0">
+                        <td className="py-2 pr-2 font-medium text-slate-700">{c.className}{c.grade ? <span className="text-slate-400"> · {c.grade}</span> : null}</td>
+                        <td className="py-2 pr-2 text-slate-600">{c.totalStudents}</td>
+                        <td className="py-2 pr-2 text-emerald-600 font-semibold">{c.avgScore}%</td>
+                        <td className="py-2 pr-2 text-slate-600">{c.participationRate}%</td>
+                        <td className="py-2 pr-2 text-rose-600">{c.totalErrors}</td>
+                        <td className="py-2 text-indigo-600 font-semibold">{c.errorResolutionRate}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
 
       {/* 学习投入 · 阅读时长概览（D6） */}
-      <Card className="border-violet-200/70 shadow-sm py-0">
-        <CardContent className="p-4 space-y-4">
+      <Card className="overflow-hidden border-violet-200/70 shadow-sm">
+        <CardContent className="px-5 py-4 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Clock className="w-4 h-4 text-violet-600" />
@@ -682,7 +870,7 @@ export default function AnalyticsPage() {
                             <Badge className="bg-amber-100 text-amber-800 border-amber-200">{i + 1}</Badge>
                             <span className="font-medium text-slate-800">{it.knowledgePointName}</span>
                             <Badge variant="outline" className="text-[10px] text-slate-500">{it.courseName}</Badge>
-                            <span className="text-xs text-rose-600 ml-auto">{it.affectedStudents} 名同学出错 · 平均掌握度 {Math.round(it.avgMastery * 100)}%</span>
+                            <span className="text-xs text-rose-600 ml-auto">{it.affectedStudents} 名同学出错 · 平均掌握度 {Math.round(it.avgMastery)}%</span>
                           </div>
                           <div className="flex flex-wrap gap-2 text-xs">
                             <Badge className="bg-slate-100 text-slate-600 border-slate-200">错题 {it.errorCount} 道</Badge>

@@ -172,8 +172,8 @@ export default function GradingConfigPage() {
       <SetActiveNav href="/teacher/assignments" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => router.push('/teacher/assignments')} className="text-slate-500 hover:text-slate-700">
-            <ArrowLeft className="w-4 h-4 mr-1" /> 返回作业管理
+          <Button variant="outline" size="sm" onClick={() => router.push('/teacher/assignments')} className="gap-1 text-indigo-700 border-indigo-200 bg-indigo-50 hover:bg-indigo-100 hover:border-indigo-300">
+            <ArrowLeft className="w-4 h-4" /> 返回作业管理
           </Button>
           <Button onClick={() => openForm()} className="gap-1.5 bg-violet-600 hover:bg-violet-700">
             <Plus className="w-4 h-4" /> 新建规则

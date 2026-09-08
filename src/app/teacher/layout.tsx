@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { getCurrentUser, signOut, setUserAvatar, type CurrentUser, USER_UPDATED_EVENT_NAME } from '@/lib/auth-helper';
 import { apiFetch } from '@/lib/api-fetch';
 import {
-  Users, BookOpen, BarChart3, Library, Wand2, Megaphone,
+  Users, BookOpen, BarChart3, Library, Wand2, ClipboardList, FileText,
 } from 'lucide-react';
 import AppShell, { type AppShellNavItem } from '@/components/app-shell';
 import { NotificationBell } from '@/components/notification-bell';
@@ -16,8 +16,9 @@ const navItems: AppShellNavItem[] = [
   { group: '学情', href: '/teacher/students', label: '学生管理', icon: Users },
   { group: '教学准备', href: '/teacher/questions/bank', label: '题库管理', icon: Library },
   { group: '教学准备', href: '/teacher/ai-generate', label: 'AI智能出题', icon: Wand2 },
+  { group: '教学准备', href: '/teacher/materials', label: '学习材料', icon: FileText },
   { group: '课堂执行', href: '/teacher/assignments', label: '作业管理', icon: BookOpen },
-  { group: '课堂执行', href: '/teacher/announcements', label: '公告发布', icon: Megaphone },
+  { group: '课堂执行', href: '/teacher/exams', label: '考试管理', icon: ClipboardList },
 ];
 
 export default function TeacherLayout({ children }: { children: React.ReactNode }) {

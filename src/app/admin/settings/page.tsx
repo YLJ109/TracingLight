@@ -66,7 +66,7 @@ export default function AdminSettings() {
       {message && <div className="p-3 rounded-lg bg-emerald-50 text-emerald-700 text-sm border border-emerald-200">{message}</div>}
 
       {/* AI 服务配置：支持在线切换 API/模型，立即生效 */}
-      <Card className="border-0 shadow-sm py-0">
+      <Card className="rounded-2xl border-0 shadow-sm py-0">
         <CardContent className="p-5">
           <div className="flex items-center gap-2 mb-1">
             <Sparkles className="w-4 h-4 text-violet-600" />
@@ -110,7 +110,7 @@ export default function AdminSettings() {
       {loading ? (
         <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-14 rounded-lg bg-muted skeleton-shimmer" />)}</div>
       ) : (
-        <Card className="border-0 shadow-sm py-0">
+        <Card className="rounded-2xl border-0 shadow-sm py-0">
           <CardContent className="p-0 divide-y divide-border">
             <div className="flex items-center gap-3 px-4 py-3">
               <Database className="w-4 h-4 text-slate-400" />

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
+import { readingMinutesFromSeconds, readingScoreFromMinutes } from '@/lib/reading-score';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import {
   errorBook, question, knowledgePoint, knowledgeMasteryLog,
-  studyPlan, studySession, course,
+  studyPlan, studySession, course, learningBehaviorLog,
 } from '@/storage/database/shared/schema';
 
 /**
@@ -159,6 +160,27 @@ export async function GET(request: NextRequest) {
       })),
     };
 
+    // ===== 4. 今日阅读投入（供页头实时反馈）=====
+    // 行为日志按 (student_id, material_id) 累计 watch_duration，last_watched_at 记录最近一次打开时间(UTC)。
+    const readingLogs = db.select({
+      watch_duration: learningBehaviorLog.watch_duration,
+      last_watched_at: learningBehaviorLog.last_watched_at,
+      is_completed: learningBehaviorLog.is_completed,
+    }).from(learningBehaviorLog)
+      .where(eq(learningBehaviorLog.student_id, studentId))
+      .all();
+    // 全时段累计阅读分钟 → 阅读投入得分（口径统一见 lib/reading-score：每 60 分钟 10 分，封顶 25）
+    const readingTotalSeconds = readingLogs.reduce((s, r) => s + (r.watch_duration || 0), 0);
+    const readingMinutesTotal = readingMinutesFromSeconds(readingTotalSeconds);
+    const readingScore = readingScoreFromMinutes(readingMinutesTotal);
+    // 今日活跃阅读：今天有学习行为的材料累计停留分钟（last_watched_at 为 UTC 日期）
+    const todayUTC = new Date().toISOString().slice(0, 10);
+    const todayReadingMinutes = readingMinutesFromSeconds(
+      readingLogs
+        .filter((r) => r.last_watched_at && r.last_watched_at.slice(0, 10) === todayUTC)
+        .reduce((s, r) => s + (r.watch_duration || 0), 0)
+    );
+
     return NextResponse.json({
       success: true,
       data: {
@@ -168,6 +190,11 @@ export async function GET(request: NextRequest) {
           practice: tasks.weakPractice.length,
           sessions: tasks.sessions.length,
           todo: tasks.dueReviews.length + tasks.weakPractice.length + tasks.sessions.filter((s) => !s.isCompleted).length,
+        },
+        reading: {
+          minutesTotal: readingMinutesTotal,
+          score: readingScore,
+          todayMinutes: todayReadingMinutes,
         },
         ...tasks,
       },

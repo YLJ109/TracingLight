@@ -72,6 +72,7 @@ export async function GET(request: NextRequest) {
       id: user.id,
       real_name: user.real_name,
       student_level: user.student_level,
+      class_id: user.class_id,
     }).from(user)
       .where(studentCond)
       .all();
@@ -165,6 +166,7 @@ export async function GET(request: NextRequest) {
       student_id: errorBook.student_id,
       review_status: errorBook.review_status,
       knowledge_point_id: errorBook.knowledge_point_id,
+      error_type: errorBook.error_type,
     }).from(errorBook)
       .where(and(...errorConds))
       .all();
@@ -213,6 +215,8 @@ export async function GET(request: NextRequest) {
       .all();
 
     // ============ Per-Student Analytics ============
+    // 完成率分母 = 当前范围内（选课→该课程作业；未选课→本人课程作业）作业总数，避免硬编码造成高估/失真
+    const completionDenom = (courseId ? (courseAssignmentIds?.length || 0) : myAssignmentIds.length) || 0;
     const analytics = students.map((student) => {
       const studentGradings = gradings.filter((g) => g.student_id === student.id);
       const totalScore = studentGradings.reduce((sum, g) => sum + (g.total_score || 0), 0);
@@ -244,18 +248,21 @@ export async function GET(request: NextRequest) {
       expressionClarity = Math.round(Math.min(100, (expressionClarity / Math.max(dimensionCount, 1)) * (100 / 10)));
       expansionAbility = Math.round(Math.min(100, (expansionAbility / Math.max(dimensionCount, 1)) * (100 / 10)));
 
-      const completionRate = distinctAssignments > 0 ? Math.min(100, (distinctAssignments / 3) * 100) : 0;
+      const completionRate = completionDenom > 0 ? Math.min(100, (distinctAssignments / completionDenom) * 100) : 0;
 
       const studentErrors = errors.filter((e) => e.student_id === student.id);
       const resolvedErrors = studentErrors.filter((e) => e.review_status === 'mastered').length;
       const errorResolutionRate = studentErrors.length > 0 ? Math.round((resolvedErrors / studentErrors.length) * 100) : 0;
 
       const behavior = behaviorMap.get(student.id) || { readonlySeconds: 0, completedMaterials: 0, totalMaterials: 0 };
+      const classMap = new Map(classes.map((c) => [c.id, c.name]));
 
       return {
         id: student.id,
         name: student.real_name,
         level: student.student_level,
+        class_id: student.class_id,
+        class_name: student.class_id != null ? (classMap.get(student.class_id) || '') : '',
         avgScore,
         completedAssignments: distinctAssignments,
         totalGradings: studentGradings.length,
@@ -300,7 +307,7 @@ export async function GET(request: NextRequest) {
       studentName: students.find((s) => s.id === m.student_id)?.real_name || '',
       kpName: kpMap.get(m.knowledge_point_id) || '',
       kpId: m.knowledge_point_id,
-      mastery: Math.round((m.mastery_rate || 0) * 100),
+      mastery: Math.round(m.mastery_rate || 0),
     })).filter((item) => item.kpName);
 
     // ============ Dynamic Trend Data ============
@@ -349,6 +356,73 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // ============ 班级级概览指标（升级：更细颗粒度） ============
+    const masteredErrors = errors.filter((e) => e.review_status === 'mastered').length;
+    const totalFullScore = gradings.reduce((s, g) => s + (g.full_score || 0), 0);
+    const totalScore = gradings.reduce((s, g) => s + (g.total_score || 0), 0);
+    const overallAvg = totalFullScore > 0 ? Math.round((totalScore / totalFullScore) * 100 * 10) / 10 : 0;
+    const participationRate = analytics.length > 0
+      ? Math.round(analytics.filter((s) => s.completedAssignments > 0).length / analytics.length * 100)
+      : 0;
+    const errorResolutionRate = errors.length > 0 ? Math.round((masteredErrors / errors.length) * 100) : 0;
+    const avgMasteryRate = masteryData.length > 0
+      ? Math.round(masteryData.reduce((s, m) => s + (m.mastery_rate || 0), 0) / masteryData.length)
+      : 0;
+    const overview = {
+      totalStudents: analytics.length,
+      avgScore: overallAvg,                       // 平均得分（相对满分百分比）
+      participationRate,                          // 作业参与率
+      errorResolutionRate,                        // 错题解决率
+      avgMasteryRate,                             // 平均知识掌握度
+      totalErrors: errors.length,
+      masteredErrors,
+      pendingErrors: errors.length - masteredErrors,
+    };
+
+    // ============ 薄弱 / 优势知识点（按平均掌握度） ============
+    const kpMasteryAcc: Record<number, { sum: number; count: number }> = {};
+    masteryData.forEach((m) => {
+      if (!kpMasteryAcc[m.knowledge_point_id]) kpMasteryAcc[m.knowledge_point_id] = { sum: 0, count: 0 };
+      kpMasteryAcc[m.knowledge_point_id].sum += m.mastery_rate || 0;
+      kpMasteryAcc[m.knowledge_point_id].count += 1;
+    });
+    const kpGapArr = Object.entries(kpMasteryAcc).map(([id, v]) => ({
+      kpId: Number(id),
+      kpName: kpMap.get(Number(id)) || '',
+      avgMastery: Math.round(v.sum / Math.max(v.count, 1)),
+    })).filter((x) => x.kpName);
+    const weakKnowledgePoints = [...kpGapArr].sort((a, b) => a.avgMastery - b.avgMastery).slice(0, 5);
+    const strongKnowledgePoints = [...kpGapArr].sort((a, b) => b.avgMastery - a.avgMastery).slice(0, 5);
+
+    // ============ 错因分布（按 error_type） ============
+    const errorTypeAcc: Record<string, number> = {};
+    errors.forEach((e) => {
+      if (e.error_type) errorTypeAcc[e.error_type] = (errorTypeAcc[e.error_type] || 0) + 1;
+    });
+    const errorTypeDistribution = Object.entries(errorTypeAcc)
+      .map(([type, count]) => ({ type, count }))
+      .sort((a, b) => b.count - a.count);
+
+    // ============ 分班级横向对比表 ============
+    const classBreakdown = classes.map((c) => {
+      const list = analytics.filter((s) => s.class_id === c.id);
+      if (list.length === 0) return null;
+      const avgScore = Math.round(list.reduce((s, x) => s + x.avgScore, 0) / list.length * 10) / 10;
+      const submittedCount = list.filter((s) => s.completedAssignments > 0).length;
+      const errs = list.reduce((s, x) => s + x.totalErrors, 0);
+      const mastered = list.reduce((s, x) => s + x.resolvedErrors, 0);
+      return {
+        classId: c.id,
+        className: c.name,
+        grade: c.grade,
+        totalStudents: list.length,
+        avgScore,
+        participationRate: Math.round(submittedCount / list.length * 100),
+        totalErrors: errs,
+        errorResolutionRate: errs > 0 ? Math.round(mastered / errs * 100) : 0,
+      };
+    }).filter((x): x is NonNullable<typeof x> => x != null);
+
     return NextResponse.json({
       success: true,
       data: {
@@ -361,6 +435,11 @@ export async function GET(request: NextRequest) {
         trendData,
         errorSummary,
         assignmentCompletion,
+        overview,
+        weakKnowledgePoints,
+        strongKnowledgePoints,
+        errorTypeDistribution,
+        classBreakdown,
         // 阅读时长概览（按学生维度聚合，班级级统计在前端汇总）
         readingStats: {
           anytimeCount: analytics.filter((s) => s.readonlySeconds > 0).length,

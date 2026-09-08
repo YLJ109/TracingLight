@@ -3,6 +3,7 @@ import { getDb, saveDb } from '@/storage/database/db';
 import { assignment, gradingTask } from '@/storage/database/shared/schema';
 import { requireAuth } from '@/lib/server-auth';
 import { eq, and } from 'drizzle-orm';
+import { writeAudit } from '@/lib/audit';
 
 async function getOwnedAssignment(userId: number, assignmentId: number) {
   const db = getDb();
@@ -57,6 +58,21 @@ export async function POST(
 
     getDb().update(assignment).set({ grades_published: true }).where(eq(assignment.id, assignmentId)).run();
     saveDb();
+
+    // 公布作业成绩埋点（静默，失败不影响响应）
+    try {
+      writeAudit({
+        operatorId: user.userId,
+        operatorName: user.username,
+        action: 'assignment_grades_published',
+        targetType: 'assignment',
+        targetId: assignmentId,
+        detail: `公布作业「${String(row.title).slice(0, 50)}」成绩`,
+      });
+    } catch (auditErr) {
+      console.error('Assignment publish-grades audit error:', auditErr);
+    }
+
     return NextResponse.json({ success: true, grades_published: true });
   } catch (e) {
     if (e && typeof (e as { status?: number }).status === 'number') return e as NextResponse;

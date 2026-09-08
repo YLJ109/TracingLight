@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, saveDb } from '@/storage/database/db';
+import { getDb } from '@/storage/database/db';
 import { assignment, question, answer, knowledgePoint, user, gradingTask } from '@/storage/database/shared/schema';
 import { eq, and, inArray } from 'drizzle-orm';
 import { requireAuth } from '@/lib/server-auth';
 import { isAssignmentInTeacherScope, isStudentInTeacherScope } from '@/lib/teacher-scope';
 import { gradeOneAndRecord, notifyGraded } from '@/services/grading.service';
-import { isObjectiveType } from '@/lib/objective-grading';
 import { aiErrorResponse } from '@/lib/ai/client';
+import { writeAudit } from '@/lib/audit';
 
 /**
  * 批量批改（教师端主链路）：
@@ -138,21 +138,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 发布策略：纯客观题作业在 AI 批改完成后自动发布成绩（含主观题需教师复核后手动发布）。
-    // 用「实际题目题型」判定是否纯客观：避免依赖创建时写入的 has_subjective（其判定曾用 'short'/'code' 取值，
-    // 与题库实际 short_answer/programming/multiple_choice 等不一致，可能把主观题作业误判为纯客观而自动发布），
-    // 此处直接基于本轮加载的 assignment.question_ids 对应题型判定，保证自动发布语义与真实题目一致。
-    if (results.length > 0) {
-      const hasSubjective = questions.some((q) => !isObjectiveType(q.question_type));
-      if (!hasSubjective) {
-        db.update(assignment).set({ grades_published: true }).where(eq(assignment.id, Number(assignment_id))).run();
-        saveDb();
-      }
-    }
+    // 成绩公布改为教师主导：批改完成仅落成绩，不自动公布；教师复核后在批改台手动「公布成绩」。
+    // 不再有任何自动置 grades_published 的副作用（含纯客观题作业提交即出分的旧兜底）。
 
     // P1-1：批量批改完成后发一条汇总通知（避免逐题刷屏）
     if (results.length > 0) {
       notifyGraded(Number(student_id), Number(assignment_id));
+
+      // AI 批量批改埋点（静默，失败不影响响应），批改成功后埋点一次
+      try {
+        writeAudit({
+          operatorId: userAuth.userId,
+          operatorName: userAuth.username,
+          action: 'ai_batch_grade',
+          targetType: 'assignment',
+          targetId: Number(assignment_id),
+          detail: `AI批改作业「${String(assignmentData.title).slice(0, 50)}」`,
+        });
+      } catch (auditErr) {
+        console.error('AI batch grade audit error:', auditErr);
+      }
     }
 
     return NextResponse.json({

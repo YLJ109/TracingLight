@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { apiFetch } from '@/lib/api-fetch';
 import {
   Send, Sparkles, User, Bot, Plus, MessageCircle,
-  Trash2, Pencil, Check, X, Eraser, Loader2, Paperclip, FileText,
+  Trash2, Pencil, Check, X, Eraser, Loader2, Paperclip, FileText, Copy,
 } from 'lucide-react';
 import AIMarkdown from '@/components/ai-markdown';
 import { toast } from 'sonner';
@@ -66,6 +66,7 @@ export default function AssistantPage() {
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [copiedId, setCopiedId] = useState<number | null>(null); // 已复制的消息下标（用于按钮瞬间反馈）
   const [pending, setPending] = useState<Attach[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -543,6 +544,23 @@ export default function AssistantPage() {
                   <AIMarkdown content={m.content} />
                 )}
               </div>
+              {m.role === 'assistant' && (
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(m.content);
+                      setCopiedId(i);
+                      setTimeout(() => setCopiedId((c) => (c === i ? null : c)), 1600);
+                    } catch {
+                      toast.error('复制失败');
+                    }
+                  }}
+                  title="复制回答"
+                  className={`self-start mt-1 shrink-0 p-1.5 rounded-md transition-colors ${copiedId === i ? 'bg-teal-50 text-teal-600' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+                >
+                  {copiedId === i ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              )}
               {m.role === 'user' && (
                 <div className="w-8 h-8 rounded-full bg-violet-100 flex items-center justify-center shrink-0">
                   <User className="w-4 h-4 text-violet-600" />

@@ -156,10 +156,34 @@ export const assignment = sqliteTable("assignment", {
   review_mode: text("review_mode").default("auto"), // auto / teacher_review
   has_subjective: integer("has_subjective", { mode: 'boolean' }).default(false),
   grades_published: integer("grades_published", { mode: 'boolean' }).default(false), // 成绩是否已发布给学生（发布前学生不可见批改分数）
+  question_scores: text("question_scores", { mode: 'json' }), // 布置时按难度/题型自动分配的每题分值 {questionId: score}
+  monitor_config: text("monitor_config", { mode: 'json' }), // 防作弊监督配置 JSON（禁用复制粘贴/强制全屏/最低时长等）
+  peer_review: text("peer_review", { mode: 'json' }), // 生生互评配置 { enabled: boolean, count: number, reveal_name?: boolean }（count=每份学生作业被几位同学互评，默认2）
   created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("asgn_course_id_idx").on(table.course_id),
   index("asgn_status_idx").on(table.status),
+]);
+
+/** 生生互评（peer review）：学生互评同学的主观题作答（盲评，默认匿名）。
+ * 只作「互评参考」信号，绝不改变学生的官方成绩（官方成绩仍以 grading_task 的 AI/教师批改为准）。 */
+export const peerReview = sqliteTable("peer_review", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  assignment_id: integer("assignment_id").notNull().references(() => assignment.id, { onDelete: "cascade" }),
+  question_id: integer("question_id").notNull().references(() => question.id),
+  reviewer_id: integer("reviewer_id").notNull().references(() => user.id), // 评阅同学（学生）
+  reviewee_id: integer("reviewee_id").notNull().references(() => user.id), // 被评同学（学生）
+  total_score: real("total_score"), // 互评得分（0 ~ 题目满分）
+  dimension_scores: text("dimension_scores", { mode: 'json' }), // 可选：四维度互评 {knowledge_accuracy,...}
+  comment: text("comment"),
+  status: text("status").default("completed"),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+}, (table) => [
+  index("pr_assignment_id_idx").on(table.assignment_id),
+  index("pr_question_id_idx").on(table.question_id),
+  index("pr_reviewer_id_idx").on(table.reviewer_id),
+  index("pr_reviewee_id_idx").on(table.reviewee_id),
+  uniqueIndex("pr_unique_idx").on(table.assignment_id, table.question_id, table.reviewer_id, table.reviewee_id),
 ]);
 
 export const answer = sqliteTable("answer", {
@@ -204,6 +228,7 @@ export const gradingTask = sqliteTable("grading_task", {
   error_message: text("error_message"),
   teacher_override_score: real("teacher_override_score"),
   teacher_override_comment: text("teacher_override_comment"),
+  ai_generated_probability: real("ai_generated_probability"), // AI率：疑似 AI 生成概率 0~1（仅主观题评估）
   created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
   completed_at: text("completed_at"),
 }, (table) => [
@@ -219,6 +244,7 @@ export const errorBook = sqliteTable("error_book", {
   knowledge_point_id: integer("knowledge_point_id").notNull().references(() => knowledgePoint.id),
   assignment_id: integer("assignment_id").references(() => assignment.id),
   grading_task_id: integer("grading_task_id").references(() => gradingTask.id),
+  exam_id: integer("exam_id").references(() => exam.id),
   content: text("content"),
   student_answer: text("student_answer"),
   correct_answer: text("correct_answer"),
@@ -249,6 +275,27 @@ export const knowledgeMasteryLog = sqliteTable("knowledge_mastery_log", {
   index("kml_student_id_idx").on(table.student_id),
   index("kml_recorded_at_idx").on(table.recorded_at),
   uniqueIndex("kml_unique_idx").on(table.student_id, table.knowledge_point_id, table.recorded_at),
+]);
+
+export const answerMonitor = sqliteTable("answer_monitor", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  assignment_id: integer("assignment_id").notNull().references(() => assignment.id, { onDelete: "cascade" }),
+  student_id: integer("student_id").notNull().references(() => user.id),
+  copy_count: integer("copy_count").default(0),          // 复制次数
+  paste_count: integer("paste_count").default(0),        // 粘贴次数
+  blur_count: integer("blur_count").default(0),          // 失焦/切屏次数
+  blur_seconds: integer("blur_seconds").default(0),      // 累计失焦秒数
+  time_spent_seconds: integer("time_spent_seconds").default(0), // 从开始到提交用时（秒）
+  paste_records: text("paste_records", { mode: 'json' }), // 粘贴明细 [{questionId, preview, at}] 供教师追溯
+  suspicious_flag: integer("suspicious_flag", { mode: 'boolean' }).default(false), // 系统判疑
+  suspicious_reason: text("suspicious_reason"),
+  monitor_snapshot: text("monitor_snapshot", { mode: 'json' }), // 其他快照数据
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+  updated_at: text("updated_at"),
+}, (table) => [
+  index("am_assignment_id_idx").on(table.assignment_id),
+  index("am_student_id_idx").on(table.student_id),
+  uniqueIndex("am_unique_idx").on(table.assignment_id, table.student_id),
 ]);
 
 // ===================== 互动管理层 =====================
@@ -705,4 +752,162 @@ export const discussionLike = sqliteTable("discussion_like", {
   created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   uniqueIndex("dl_unique_idx").on(table.target_type, table.target_id, table.user_id),
+]);
+
+// ===================== 考试系统（exams） =====================
+
+/** 考试主表：学习通式布置配置 + 防作弊策略（发布后固化） */
+export const exam = sqliteTable("exam", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  course_id: integer("course_id").notNull().references(() => course.id),
+  teacher_id: integer("teacher_id").notNull().references(() => user.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  exam_type: text("exam_type").default("unit"), // quiz / unit / midterm / final / makeup
+  time_mode: text("time_mode").default("fixed"), // fixed=定时开考+固定时长 / window=开放窗口+个人计时
+  start_at: text("start_at").notNull(), // 开考/窗口起始
+  end_at: text("end_at"),               // 窗口结束（time_mode=window 时使用）或固定止
+  duration: integer("duration").default(60), // 分钟；fixed=进入后限时，window=个人倒计时
+  auto_submit: integer("auto_submit", { mode: 'boolean' }).default(true), // 到时自动交卷
+  allow_resubmit: integer("allow_resubmit", { mode: 'boolean' }).default(false),
+  publish_mode: text("publish_mode").default("manual"), // manual / auto / at_time
+  publish_at: text("publish_at"),   // publish_mode=at_time 时指定公布时刻
+  grades_published: integer("grades_published", { mode: 'boolean' }).default(false),
+  question_ids: text("question_ids", { mode: 'json' }).notNull(),
+  question_scores: text("question_scores", { mode: 'json' }), // {questionId: score} 归一化合计 100
+  total_score: real("total_score").default(100),
+  has_subjective: integer("has_subjective", { mode: 'boolean' }).default(false),
+  proctor_config: text("proctor_config", { mode: 'json' }), // 防作弊/开考策略 JSON
+  randomized: integer("randomized", { mode: 'boolean' }).default(true), // 题目/选项乱序
+  status: text("status").default("draft"), // draft / scheduled / active / closed
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+  updated_at: text("updated_at"),
+}, (table) => [
+  index("exam_course_id_idx").on(table.course_id),
+  index("exam_status_idx").on(table.status),
+]);
+
+/** 考试名单：考试 × 学生（班级展开），含缺考/缓考标记 */
+export const examEnroll = sqliteTable("exam_enroll", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  exam_id: integer("exam_id").notNull().references(() => exam.id, { onDelete: "cascade" }),
+  student_id: integer("student_id").notNull().references(() => user.id),
+  class_id: integer("class_id").references(() => classInfo.id),
+  allow: integer("allow", { mode: 'boolean' }).default(true),
+  enroll_status: text("enroll_status").default("normal"), // normal / absent / deferred
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+}, (table) => [
+  index("ee_exam_id_idx").on(table.exam_id),
+  uniqueIndex("ee_unique_idx").on(table.exam_id, table.student_id),
+]);
+
+/** 考试尝试：学生进入即建/续，deadline 服务器权威，含设备指纹与风险分 */
+export const examAttempt = sqliteTable("exam_attempt", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  exam_id: integer("exam_id").notNull().references(() => exam.id),
+  enroll_id: integer("enroll_id").notNull().references(() => examEnroll.id),
+  student_id: integer("student_id").notNull().references(() => user.id),
+  started_at: text("started_at").notNull(),
+  deadline: text("deadline").notNull(), // 服务器权威到期时刻
+  submitted_at: text("submitted_at"),
+  status: text("status").default("in_progress"), // in_progress / submitted / auto_submitted / terminated / expired
+  device_fp: text("device_fp"), // 设备指纹（绑定，换设备标记异常）
+  ip: text("ip"),
+  face_verified: integer("face_verified", { mode: 'boolean' }).default(false),
+  face_verified_at: text("face_verified_at"),
+  face_strategy: text("face_strategy"), // once / continuous
+  risk_score: real("risk_score").default(0), // 作弊风险分 0~100
+  risk_flags: text("risk_flags", { mode: 'json' }), // 命中异常标记
+  switch_count: integer("switch_count").default(0), // 切屏/退全屏累计
+  fullscreen_exit_count: integer("fullscreen_exit_count").default(0),
+  submitted_via: text("submitted_via"), // manual / auto / terminate / exceed
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+  updated_at: text("updated_at"),
+}, (table) => [
+  index("ea_exam_id_idx").on(table.exam_id),
+  index("ea_student_id_idx").on(table.student_id),
+  uniqueIndex("ea_unique_idx").on(table.exam_id, table.student_id),
+]);
+
+/** 考试作答：每学生每题一行；提交后只读 */
+export const examAnswer = sqliteTable("exam_answer", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  attempt_id: integer("attempt_id").notNull().references(() => examAttempt.id, { onDelete: "cascade" }),
+  exam_id: integer("exam_id").notNull().references(() => exam.id),
+  student_id: integer("student_id").notNull().references(() => user.id),
+  question_id: integer("question_id").notNull().references(() => question.id),
+  student_answer: text("student_answer"),
+  is_answered: integer("is_answered", { mode: 'boolean' }).default(false),
+  revise_count: integer("revise_count").default(0), // 答题节奏分析
+  duration_ms: integer("duration_ms").default(0), // 该题累计停留毫秒
+  marked: integer("marked", { mode: 'boolean' }).default(false), // 答题卡"标记难题"
+  saved_at: text("saved_at"),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+}, (table) => [
+  index("xans_attempt_id_idx").on(table.attempt_id),
+  index("xans_exam_id_idx").on(table.exam_id),
+  uniqueIndex("xans_attempt_q_idx").on(table.attempt_id, table.question_id),
+]);
+
+/** 考试批改：每题一条；客观题即时、主观题 AI/人工；联动错题本与掌握度 */
+export const examGrading = sqliteTable("exam_grading", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  answer_id: integer("answer_id").notNull().references(() => examAnswer.id, { onDelete: "cascade" }),
+  exam_id: integer("exam_id").notNull().references(() => exam.id),
+  student_id: integer("student_id").notNull().references(() => user.id),
+  question_id: integer("question_id").notNull().references(() => question.id),
+  knowledge_point_id: integer("knowledge_point_id").notNull().references(() => knowledgePoint.id),
+  full_score: real("full_score").notNull(),
+  question_type: text("question_type").notNull(),
+  reference_answer: text("reference_answer"),
+  student_answer: text("student_answer"),
+  rubric_json: text("rubric_json", { mode: 'json' }),
+  total_score: real("total_score"),
+  dimension_scores: text("dimension_scores", { mode: 'json' }),
+  annotations: text("annotations", { mode: 'json' }),
+  unmastered_knowledge_ids: text("unmastered_knowledge_ids", { mode: 'json' }),
+  error_type: text("error_type"),
+  overall_comment: text("overall_comment"),
+  status: text("status").default("pending"), // pending / completed / failed
+  teacher_override_score: real("teacher_override_score"),
+  ai_generated_probability: real("ai_generated_probability"),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+  completed_at: text("completed_at"),
+}, (table) => [
+  index("xg_attempt_q_idx").on(table.answer_id),
+  index("xg_exam_id_idx").on(table.exam_id),
+  index("xg_student_id_idx").on(table.student_id),
+]);
+
+/** 防作弊事件流水：进入即记录切屏/退全屏/离席/换设备等（只追加） */
+export const examProctorEvent = sqliteTable("exam_proctor_event", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  exam_id: integer("exam_id").notNull().references(() => exam.id),
+  attempt_id: integer("attempt_id").references(() => examAttempt.id),
+  student_id: integer("student_id").notNull().references(() => user.id),
+  type: text("type").notNull(), // fullscreen_exit / fullscreen_revoke / blur / switch_away / devtools / copy / paste / device_change / face_absent / multi_face / zoom / resize
+  severity: text("severity").default("warn"), // warn / red / critical
+  detail: text("detail", { mode: 'json' }),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+}, (table) => [
+  index("xpe_exam_id_idx").on(table.exam_id),
+  index("xpe_attempt_id_idx").on(table.attempt_id),
+  index("xpe_student_id_idx").on(table.student_id),
+]);
+
+/** 成绩申诉：学生对单题发起，教师复核改分 */
+export const examAppeal = sqliteTable("exam_appeal", {
+  id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+  exam_id: integer("exam_id").notNull().references(() => exam.id),
+  student_id: integer("student_id").notNull().references(() => user.id),
+  question_id: integer("question_id").notNull().references(() => question.id),
+  grading_id: integer("grading_id").references(() => examGrading.id),
+  reason: text("reason").notNull(),
+  status: text("status").default("pending"), // pending / resolved / rejected
+  teacher_comment: text("teacher_comment"),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
+  handled_at: text("handled_at"),
+}, (table) => [
+  index("xap_exam_id_idx").on(table.exam_id),
+  index("xap_student_id_idx").on(table.student_id),
 ]);

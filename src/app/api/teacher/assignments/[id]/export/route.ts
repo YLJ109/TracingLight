@@ -4,7 +4,7 @@ import { requireAuth } from '@/lib/server-auth';
 import {
   assignment, question, answer, gradingTask, user, course, classInfo,
 } from '@/storage/database/shared/schema';
-import { getTeacherCourseIds, getTeacherClassIds } from '@/lib/teacher-scope';
+import { getTeacherClassIds } from '@/lib/teacher-scope';
 import { eq, and, inArray } from 'drizzle-orm';
 
 // POST /api/teacher/assignments/[id]/export - 导出成绩/作答/未交名单为 CSV（可被 Excel 打开）
@@ -27,9 +27,8 @@ export async function POST(
       return NextResponse.json({ error: '作业不存在' }, { status: 404 });
     }
 
-    // 跨租户隔离：作业必须属于本人授课课程（同 questions 路由）
-    const myCourseIds = getTeacherCourseIds(authUser.userId);
-    if (!myCourseIds.includes(asgn.course_id)) {
+    // 跨租户隔离：仅作业创建教师可访问（与作业列表归口一致）
+    if (asgn.teacher_id !== authUser.userId) {
       return NextResponse.json({ error: '无权访问该作业' }, { status: 403 });
     }
     const myClassIds = getTeacherClassIds(authUser.userId);

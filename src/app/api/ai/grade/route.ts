@@ -5,7 +5,7 @@ import { question, answer, user, knowledgePoint } from "@/storage/database/share
 import { eq, and } from "drizzle-orm";
 import { requireAuth } from "@/lib/server-auth";
 import { isAssignmentInTeacherScope, isStudentInTeacherScope } from "@/lib/teacher-scope";
-import { gradeOneAndRecord } from "@/services/grading.service";
+import { gradeOneAndRecord, maybeAutoPublishGrades } from "@/services/grading.service";
 
 export async function POST(request: NextRequest) {
   try {
@@ -62,6 +62,9 @@ export async function POST(request: NextRequest) {
       forwardHeaders: request.headers,
       notify: true,
     });
+
+    // 单题批改完成 → 若该作业所有已提交学生全部批改完成则自动公布成绩（老师无需手动确认）
+    maybeAutoPublishGrades(Number(assignment_id));
 
     return NextResponse.json({
       success: true,

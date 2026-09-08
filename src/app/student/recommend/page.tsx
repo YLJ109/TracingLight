@@ -259,7 +259,7 @@ export default function RecommendPage() {
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-xs font-medium text-violet-700 flex items-center gap-1"><BookOpen className="w-3 h-3" />推荐学习材料（{wp.materialCount}）</p>
                       <button
-                        onClick={() => router.push(`/student/materials?knowledge_point_id=${wp.knowledgePointId}&kpt=${encodeURIComponent(wp.name)}`)}
+                        onClick={() => router.push(`/student/learn?knowledge_point_id=${wp.knowledgePointId}`)}
                         className="text-xs font-medium text-violet-600 hover:text-violet-800 flex items-center gap-1"
                       >查看全部 <ChevronRight className="w-3 h-3" /></button>
                     </div>
@@ -267,7 +267,7 @@ export default function RecommendPage() {
                       {wp.materials.slice(0, 3).map((m) => (
                         <button
                           key={m.id}
-                          onClick={() => router.push(`/student/materials?knowledge_point_id=${wp.knowledgePointId}&kpt=${encodeURIComponent(wp.name)}`)}
+                          onClick={() => router.push(`/student/learn?knowledge_point_id=${wp.knowledgePointId}`)}
                           className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white border border-violet-100 hover:border-violet-300 transition-colors text-left"
                         >
                           <span className={`text-[11px] px-1.5 py-0.5 rounded shrink-0 ${m.type === "video" ? "bg-fuchsia-50 text-fuchsia-600" : m.type === "slide" ? "bg-teal-50 text-teal-600" : "bg-violet-100 text-violet-600"}`}>{materialTypeLabels[m.type] || "文档"}</span>
@@ -284,9 +284,9 @@ export default function RecommendPage() {
                 {/* 一键行动：真实跳转，路径直达 */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   <button
-                    onClick={() => router.push('/student/today')}
+                    onClick={() => router.push('/student/learn')}
                     className="text-xs py-2 rounded-lg bg-teal-50 text-teal-700 hover:bg-teal-100 transition-colors"
-                  >今日任务</button>
+                  >今日学习</button>
                   <button
                     onClick={() => router.push(`/student/errors?knowledge_point_id=${wp.knowledgePointId}`)}
                     className="text-xs py-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors"

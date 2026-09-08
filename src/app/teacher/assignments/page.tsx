@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Plus, Eye, CheckCircle2, Clock, AlertCircle, Sparkles, Loader2, BookOpen, X, Users, GraduationCap, FileText, BarChart3, ChevronRight, SlidersHorizontal } from 'lucide-react';
+import { Plus, Eye, CheckCircle2, Clock, AlertCircle, Sparkles, Loader2, BookOpen, X, Users, GraduationCap, FileText, BarChart3, ChevronRight, SlidersHorizontal, ShieldCheck, UserCheck } from 'lucide-react';
 
 interface AssignmentItem {
   id: number;
@@ -22,6 +22,7 @@ interface AssignmentItem {
   question_ids: number[];
   question_count: number;
   total_score: number;
+  full_score?: number;
   start_time: string;
   end_time: string;
   status: string;
@@ -77,7 +78,7 @@ function fmt(n: number): string {
 
 const typeLabels: Record<string, string> = {
   single_choice: '单选', multiple_choice: '多选', multi_choice: '多选', judgment: '判断',
-  fill_blank: '填空', short_answer: '简答', code: '编程', programming: '编程',
+  fill_blank: '填空', short_answer: '简答', code: '编程', programming: '编程', attachment: '实验',
 };
 
 const levelLabels: Record<string, { label: string; color: string }> = {
@@ -257,8 +258,8 @@ export default function TeacherAssignments() {
         <CardContent className="p-4">
           <div className="flex items-center gap-2 flex-wrap mb-3">
             <button
-              onClick={() => { setFilterCourseId('all'); setLoading(true); }}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${filterCourseId === 'all' ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+              onClick={() => { setFilterCourseId(''); setLoading(true); }}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${filterCourseId === '' ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
             >全部课程</button>
             {courses.map((c) => (
               <button
@@ -268,12 +269,12 @@ export default function TeacherAssignments() {
               >{c.name}</button>
             ))}
             <div className="border-l border-slate-200 h-5 mx-2" />
-            {(['all','published','closed','draft'] as const).map((s) => (
+            {(['', 'published', 'closed', 'draft'] as const).map((s) => (
               <button
                 key={s}
                 onClick={() => { setFilterStatus(s); setLoading(true); }}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${filterStatus === s ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-              >{{all: '全部', published: '进行中', closed: '已结束', draft: '草稿'}[s]}</button>
+              >{{'': '全部', published: '进行中', closed: '已结束', draft: '草稿'}[s]}</button>
             ))}
             <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'list' | 'student')} className="ml-auto">
               <TabsList className="bg-slate-100 p-1 rounded-lg">
@@ -343,7 +344,7 @@ export default function TeacherAssignments() {
                             </div>
                             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
                               <span>截止: {new Date(asgn.end_time).toLocaleDateString('zh-CN')}</span>
-                              <span>{asgn.question_count}题 · 满分{fmt(asgn.total_score)}</span>
+                              <span>{asgn.question_count}题 · 满分{fmt(asgn.full_score ?? asgn.total_score ?? 100)}</span>
                               {asgn.submitted_count > 0 ? (
                                 <span className="inline-flex items-center gap-2">
                                   <span>已交 {asgn.submitted_count}/{asgn.total_students}</span>
@@ -409,6 +410,12 @@ export default function TeacherAssignments() {
                             </Button>
                             <Button variant="outline" size="sm" onClick={() => router.push(`/teacher/assignments/${asgn.id}`)}>
                               <Eye className="w-4 h-4 mr-1" /> 详情
+                            </Button>
+                            <Button variant="outline" size="sm" className="border-amber-200 text-amber-700 hover:bg-amber-50" onClick={() => router.push(`/teacher/assignments/${asgn.id}/monitor`)}>
+                              <ShieldCheck className="w-4 h-4 mr-1" /> 监控
+                            </Button>
+                            <Button variant="outline" size="sm" className="border-teal-200 text-teal-700 hover:bg-teal-50" onClick={() => router.push(`/teacher/assignments/${asgn.id}/peer-review`)}>
+                              <UserCheck className="w-4 h-4 mr-1" /> 互评
                             </Button>
                             {asgn.submitted_count > 0 && asgn.graded_count < asgn.submitted_count && (
                               <Button

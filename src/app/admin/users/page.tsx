@@ -72,6 +72,17 @@ export default function AdminUsers() {
 
   return (
     <div className="space-y-4">
+      {/* 页头 */}
+      <div className="flex items-center gap-3">
+        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white shrink-0">
+          <Users className="w-5 h-5" />
+        </div>
+        <div>
+          <h1 className="text-lg font-bold">用户管理</h1>
+          <p className="text-xs text-muted-foreground">教师 · 学生 · 管理员 · 助教</p>
+        </div>
+      </div>
+
       <div className="flex items-center justify-between">
         <Button onClick={() => setShowCreate(true)} className="gap-1.5">
           <Plus className="w-4 h-4" />新增用户
@@ -82,8 +93,18 @@ export default function AdminUsers() {
 
       {loading ? (
         <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-12 rounded-lg bg-muted skeleton-shimmer" />)}</div>
+      ) : users.length === 0 ? (
+        <Card className="rounded-2xl border-0 shadow-sm">
+          <CardContent className="p-10 text-center">
+            <div className="mx-auto w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center mb-3">
+              <Users className="w-6 h-6 text-blue-400" />
+            </div>
+            <p className="text-sm font-medium text-foreground">暂无用户数据</p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">平台用户由注册或初始化数据导入产生，点击右上角「新增用户」即可创建。</p>
+          </CardContent>
+        </Card>
       ) : (
-        <Card className="border-0 shadow-sm py-0">
+        <Card className="rounded-2xl border-0 shadow-sm py-0">
           <CardContent className="p-0">
             <table className="w-full text-sm">
               <thead>

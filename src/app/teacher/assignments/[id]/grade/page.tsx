@@ -6,9 +6,11 @@ import { useParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { renderRichContent } from '@/lib/rich-text';
-import { ArrowLeft, CheckCircle, XCircle, AlertTriangle, Loader2, Sparkles, CheckCircle2, Clock } from 'lucide-react';
+import RichContentView from '@/components/rich-content-view';
+import { CheckCircle, XCircle, AlertTriangle, Loader2, Sparkles, CheckCircle2, Clock, ChevronLeft, ChevronRight, Users, FileText, Download, RefreshCw } from 'lucide-react';
+import { BackButton } from '@/components/ui/back-button';
 import { getCurrentUser } from '@/lib/auth-helper';
+import { isObjectiveType } from '@/lib/objective-grading';
 import { toast } from 'sonner';
 
 interface QuestionDetail {
@@ -35,6 +37,7 @@ interface QuestionDetail {
     status: string;
     teacher_override_score: number | null;
     teacher_override_comment: string | null;
+    ai_generated_probability: number | null;
   } | null;
 }
 
@@ -57,6 +60,22 @@ const levelColors: Record<string, string> = {
   weak: 'bg-red-100 text-red-800',
 };
 
+/** 客观题学生作答的紧凑展示（答题卡用） */
+function studentSelectionText(q: { question_type: string }, raw?: string | null): string {
+  const v = (raw || '').trim();
+  if (!v) return '未作答';
+  if (q.question_type === 'judgment') return v === '正确' ? '对' : v === '错误' ? '错' : v;
+  return v;
+}
+
+/** 评分细则四维度中文标签（与 dimension_scores 键一一对应） */
+const DIM_LABELS: Array<{ key: string; label: string }> = [
+  { key: 'knowledge_accuracy', label: '知识点准确性' },
+  { key: 'logic_completeness', label: '逻辑完整性' },
+  { key: 'expression_clarity', label: '表达条理性' },
+  { key: 'expansion', label: '拓展加分' },
+];
+
 function fmt(n: number): string {
   return Number.isInteger(n) ? n.toString() : parseFloat(n.toFixed(2)).toString();
 }
@@ -76,37 +95,196 @@ const typeLabels: Record<string, string> = {
   knowledge_missing: '知识缺失',
   careless: '粗心大意',
   empty: '未作答',
+  attachment: '实验题',
 };
+
+// ── 实验题/附件题：解析学生作答 JSON 并展示附件下载 + 实验报告字段 ──
+const ATTACH_FIELDS: Array<{ key: string; label: string }> = [
+  { key: 'experiment_name', label: '实验名称' },
+  { key: 'materials', label: '实验材料及器材' },
+  { key: 'purpose', label: '实验目的' },
+  { key: 'steps', label: '实验步骤' },
+  { key: 'data_record', label: '数据记录' },
+  { key: 'result_analysis', label: '结果与分析' },
+  { key: 'conclusion', label: '实验结论' },
+];
+
+function parseAttachAnswer(raw?: string | null): { files: Array<{ name: string; path: string; size: number; mime: string }>; template: Record<string, string> } {
+  try {
+    const o = JSON.parse(raw || '{}');
+    return {
+      files: Array.isArray(o.files) ? o.files : [],
+      template: (o.template && typeof o.template === 'object') ? o.template : {},
+    };
+  } catch {
+    return { files: [], template: {} };
+  }
+}
+
+function attachSize(n?: number): string {
+  if (n == null) return '';
+  if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + 'MB';
+  if (n >= 1024) return Math.round(n / 1024) + 'KB';
+  return n + 'B';
+}
+
+function AttachmentTeacherView({ value }: { value: string }) {
+  const { files, template } = parseAttachAnswer(value || '');
+  const filled = ATTACH_FIELDS.filter((f) => (template[f.key] || '').trim());
+  if (files.length === 0 && filled.length === 0) {
+    return <p className="text-sm italic text-red-400">未提交附件或实验报告</p>;
+  }
+  return (
+    <div className="space-y-2">
+      {files.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-slate-500 mb-1">附件（{files.length}）· 点击可下载</p>
+          <ul className="space-y-1">
+            {files.map((f, i) => (
+              <li key={i} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm">
+                <FileText className="w-4 h-4 text-indigo-500 shrink-0" />
+                <a href={`/${f.path}`} target="_blank" rel="noopener noreferrer" className="truncate flex-1 font-medium hover:text-indigo-700">{f.name}</a>
+                <span className="text-xs text-slate-400 shrink-0">{attachSize(f.size)}</span>
+                <a href={`/${f.path}`} download className="text-slate-400 hover:text-indigo-600 shrink-0" title="下载">
+                  <Download className="w-4 h-4" />
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {filled.length > 0 && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-2 space-y-1">
+          <p className="text-xs font-medium text-slate-500">实验报告</p>
+          {filled.map((f) => (
+            <p key={f.key} className="text-sm"><span className="text-slate-500">{f.label}：</span><span className="whitespace-pre-wrap text-slate-700">{template[f.key]}</span></p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function TeacherGradeDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
+  // 导出成绩 CSV：复用 /export（含每题得分、均分、未交清单）
+  const handleExport = async () => {
+    try {
+      const res = await apiFetch(`/api/teacher/assignments/${id}/export`);
+      if (!res.ok) { toast.error('导出失败：' + ((await res.json().catch(() => ({ error: '' }))).error || '')); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `作业成绩_${id}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('成绩已导出，请查收下载');
+    } catch {
+      toast.error('导出失败，请重试');
+    }
+  };
   const [studentId, setStudentId] = useState<string>('');
   const [data, setData] = useState<GradingData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [grading, setGrading] = useState(false);
+
+  // ── 批改台导航（上一份/下一份作业 + 上一人/下一人）──
+  const [nav, setNav] = useState<{
+    course_id: number;
+    course_title?: string;
+    sibling: { prev: { id: number; title: string } | null; next: { id: number; title: string } | null };
+    queue: Array<{ studentId: number; studentName: string; status: string; gradedCount: number; totalQuestions: number; index: number }>;
+    total_students: number;
+  } | null>(null);
+  const [navLoading, setNavLoading] = useState(true);
+  // 内容区过渡键：每次数据刷新递增，触发内容丝滑淡入（避免整页白屏刷新感）
+  const [transitionKey, setTransitionKey] = useState(0);
+
+  useEffect(() => {
+    apiFetch(`/api/teacher/assignments/${id}/nav`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success) setNav(j.data);
+      })
+      .catch((e) => console.error('load nav', e))
+      .finally(() => setNavLoading(false));
+  }, [id]);
+
+  // 默认进入第一个未批完学生的批改
+  useEffect(() => {
+    if (nav && !studentId) {
+      const first = nav.queue.find((s) => s.status !== 'completed') || nav.queue[0];
+      if (first) goToStudent(first.studentId);
+      else if (nav.queue.length > 0) goToStudent(nav.queue[0].studentId);
+      else setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nav]);
 
   // Get studentId from query params or localStorage
   useEffect(() => {
+    if (studentId) return;
     const searchParams = new URLSearchParams(window.location.search);
     const fromQuery = searchParams.get('studentId');
-    if (fromQuery) {
-      setStudentId(fromQuery);
-    }
+    if (fromQuery) setStudentId(fromQuery);
+  }, [studentId]);
+
+  const goToStudent = useCallback((sid: number) => {
+    const next = String(sid);
+    window.history.pushState({}, '', `${window.location.pathname}?studentId=${next}`);
+    setStudentId(next);
   }, []);
+
+  const goPrevStudent = useCallback(() => {
+    if (!nav || !studentId) return;
+    const cur = nav.queue.find((s) => s.studentId === Number(studentId));
+    if (!cur || cur.index <= 0) { toast.info('已经是第一份学生作业'); return; }
+    goToStudent(nav.queue[cur.index - 1].studentId);
+  }, [nav, studentId, goToStudent]);
+
+  const goNextStudent = useCallback(() => {
+    if (!nav || !studentId) return;
+    const cur = nav.queue.find((s) => s.studentId === Number(studentId));
+    if (!cur) { if (nav.queue.length) goToStudent(nav.queue[0].studentId); return; }
+    if (cur.index >= nav.queue.length - 1) { toast.info('已经是最后一份学生作业'); return; }
+    goToStudent(nav.queue[cur.index + 1].studentId);
+  }, [nav, studentId, goToStudent]);
+
+  // 键盘快捷键：←/→ 切换学生、Alt+←/→ 切作业
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.altKey && e.key === 'ArrowLeft' && nav?.sibling.prev) goToAssignment(nav.sibling.prev.id);
+      if (e.altKey && e.key === 'ArrowRight' && nav?.sibling.next) goToAssignment(nav.sibling.next.id);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nav]);
+
+  const goToAssignment = useCallback((aid: number) => {
+    // 切作业：先清空当前学生与内容，新作业 nav 就绪后自动进入第一个待批学生；
+    // 清空 data 展示骨架（导航条保持常显），而非整页白屏刷新。
+    setStudentId('');
+    setData(null);
+    setTransitionKey((k) => k + 1);
+    router.push(`/teacher/assignments/${aid}/grade`);
+  }, [router]);
 
   const fetchData = useCallback(async () => {
     if (!studentId) return;
-    setLoading(true);
     try {
       const res = await apiFetch(`/api/teacher/assignments/${id}/students/${studentId}`);
       const json = await res.json();
-      if (json.success) setData(json.data);
+      if (json.success) {
+        setData(json.data);
+        setTransitionKey((k) => k + 1); // 触发内容淡入过渡
+      }
     } catch (e) {
       console.error(e);
-    } finally {
-      setLoading(false);
     }
   }, [id, studentId]);
 
@@ -226,22 +404,138 @@ export default function TeacherGradeDetailPage() {
     }
   }, [data, fetchData]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64 text-muted-foreground">
-        <Loader2 className="w-6 h-6 animate-spin mr-2" />
-        加载中...
-      </div>
-    );
-  }
+  // 客观题按规则重算：重刷当前学生全部客观题为 0/满分（回刷历史部分分）
+  const [regradeLoading, setRegradeLoading] = useState(false);
+  const handleRegradeObjective = useCallback(async () => {
+    if (!studentId) { toast.info('请先选择学生'); return; }
+    setRegradeLoading(true);
+    try {
+      const res = await apiFetch(`/api/teacher/assignments/${id}/regrade-objective`, {
+        method: 'POST',
+        body: JSON.stringify({ studentId: Number(studentId) }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success(`已按规则重算 ${json.updated} 道客观题（归零 ${json.correctedToZero}，修正为满分 ${json.correctedToFull}）`);
+        fetchData();
+      } else {
+        toast.error('重算失败：' + (json.error || '未知错误'));
+      }
+    } catch {
+      toast.error('重算请求失败，请重试');
+    } finally {
+      setRegradeLoading(false);
+    }
+  }, [id, studentId, fetchData]);
 
+  // 顶部导航区：返回列表 + 上一份/下一份作业 + 上一人/下一人（恒常渲染，切换时保持不动、不整页刷新）
+  const navHeader = (
+    <>
+      <div className="flex items-center gap-3">
+        <BackButton to="/teacher/assignments" />
+        <div className="min-w-0">
+          <h1 className="text-base font-semibold tracking-tight text-slate-800 truncate">{nav?.course_title || '批改台'}</h1>
+          <p className="text-xs text-muted-foreground">作业批改 · 返回作业列表</p>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto shrink-0 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+          onClick={handleExport}
+          title="导出成绩 CSV（含每题得分、均分、未交清单）"
+        >
+          <Download className="w-3.5 h-3.5 mr-1" /> 导出成绩
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="shrink-0 border-amber-300 text-amber-700 hover:bg-amber-50"
+          onClick={handleRegradeObjective}
+          disabled={regradeLoading}
+          title="按客观题规则重算该生全部客观题：做错一律0分、做对满分（用于回刷历史部分分）"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 mr-1 ${regradeLoading ? 'animate-spin' : ''}`} /> 客观题按规则重算
+        </Button>
+      </div>
+
+      <div className={`rounded-2xl border bg-gradient-to-r from-indigo-50 to-sky-50 border-indigo-100 p-3 shadow-sm ${!nav ? 'opacity-60' : ''}`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-indigo-200 text-indigo-700 hover:bg-indigo-100"
+            onClick={() => nav?.sibling.prev ? goToAssignment(nav.sibling.prev.id) : toast.info('已经是第一份作业')}
+          >
+            <ChevronLeft className="w-4 h-4" /> 上一份作业
+          </Button>
+          <span className="text-xs text-indigo-500">{nav?.course_title || '作业'}</span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-indigo-200 text-indigo-700 hover:bg-indigo-100"
+            onClick={() => nav?.sibling.next ? goToAssignment(nav.sibling.next.id) : toast.info('已经是最后一份作业')}
+          >
+            下一份作业 <ChevronRight className="w-4 h-4" />
+          </Button>
+
+          <div className="flex-1" />
+
+          <div className="flex items-center gap-1.5">
+            <Button size="sm" variant="ghost" onClick={goPrevStudent} disabled={!nav}>
+              <ChevronLeft className="w-4 h-4" /> 上一人
+            </Button>
+            <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white/70 border border-indigo-100 text-sm text-indigo-700">
+              <Users className="w-4 h-4" />
+              {(() => {
+                const cur = nav?.queue.find((s) => s.studentId === Number(studentId));
+                return cur ? `${cur.index + 1} / ${nav?.total_students ?? '—'}` : `${nav?.total_students ?? '—'} 人`;
+              })()}
+            </div>
+            <Button size="sm" variant="ghost" onClick={goNextStudent} disabled={!nav}>
+              下一人 <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+        {/* 队列进度（未批完高亮） */}
+        {nav && nav.queue.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-3">
+            {nav.queue.map((s) => {
+              const active = Number(studentId) === s.studentId;
+              const done = s.status === 'completed';
+              const pending = s.status === 'part' || s.status === 'submitted';
+              return (
+                <button
+                  key={s.studentId}
+                  onClick={() => goToStudent(s.studentId)}
+                  title={`${s.studentName}：${s.gradedCount}/${s.totalQuestions} 题已批`}
+                  className={`px-2.5 py-1 rounded-md text-xs border transition ${
+                    active
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow'
+                      : done
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : pending
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-white text-slate-500 border-slate-200'
+                  }`}
+                >
+                  {s.studentName}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </>
+  );
+
+  // 首次加载 / 切换作业中：导航区保持常显，仅内容区显示轻量骨架，避免整页白屏刷新感
   if (!data) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-4">
-        <p>无法加载批改详情</p>
-        <Button variant="outline" onClick={() => router.back()}>
-          <ArrowLeft className="w-4 h-4 mr-2" />返回
-        </Button>
+      <div className="space-y-6">
+        {navHeader}
+        <div className="flex items-center justify-center h-40 text-muted-foreground">
+          <Loader2 className="w-6 h-6 animate-spin mr-2" /> 加载批改详情...
+        </div>
       </div>
     );
   }
@@ -251,14 +545,10 @@ export default function TeacherGradeDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
-        </div>
-      </div>
+      {navHeader}
+
+      {/* 内容区：切换学生/刷新数据时保留导航区，仅此处丝滑淡入过渡 */}
+      <div key={transitionKey} className="content-enter space-y-6">
 
       {/* Student Info + Score Summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -385,8 +675,9 @@ export default function TeacherGradeDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Question Details */}
-      <div className="space-y-4">
+      {/* 逐题详情 变两栏：左=题目，右=答题卡（学习通式竖栏，吸顶） */}
+      <div className="flex flex-col lg:flex-row gap-6">
+        <div className="flex-1 min-w-0 space-y-4">
         <h2 className="text-lg font-semibold text-slate-800">逐题详情</h2>
         {details.map((detail, idx) => {
           const q = detail.question;
@@ -396,7 +687,7 @@ export default function TeacherGradeDetailPage() {
           const isGraded = g && g.status === 'completed';
 
           return (
-            <Card key={q.id} className={isGraded ? (isCorrect ? 'border-l-4 border-l-emerald-400' : 'border-l-4 border-l-red-400') : ''}>
+            <Card key={q.id} id={`qcard-${q.id}`} className={isGraded ? (isCorrect ? 'border-l-4 border-l-emerald-400' : 'border-l-4 border-l-red-400') : ''}>
               <CardContent className="pt-6">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1">
@@ -408,9 +699,25 @@ export default function TeacherGradeDetailPage() {
                       {q.knowledge_point && (
                         <Badge variant="outline" className="text-xs">{q.knowledge_point.name}</Badge>
                       )}
+                      {(() => {
+                        const aiProb = g?.ai_generated_probability;
+                        if (!isGraded || typeof aiProb !== 'number' || aiProb == null || isObjectiveType(q.question_type)) return null;
+                        const pct = Math.round(aiProb * 100);
+                        const high = pct >= 70;
+                        const mid = pct >= 40;
+                        return (
+                          <Badge
+                            className={`text-xs ${high ? 'bg-red-50 text-red-700 border-red-200' : mid ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}
+                            title="该题由 AI 评估的学生作答疑似 AI 生成概率，仅供复核参考，不作定论"
+                          >
+                            <Sparkles className="w-3 h-3 mr-1" />
+                            AI疑似 {pct}%
+                          </Badge>
+                        );
+                      })()}
                     </div>
                     <p className="text-base font-medium text-slate-800 mt-2">{q.content}</p>
-                    {q.options && (
+                    {q.options && q.question_type !== 'attachment' && (
                       <div className="mt-2 space-y-1">
                         {(Array.isArray(q.options) ? q.options : Object.entries(q.options as Record<string, string>)).map((opt: string | [string, string], i: number) => (
                           <p key={i} className="text-sm text-slate-600">
@@ -441,12 +748,10 @@ export default function TeacherGradeDetailPage() {
                 <div className="grid grid-cols-2 gap-4 mt-4 p-3 bg-slate-50 rounded-lg">
                   <div className={`rounded-lg p-2 border ${!a?.student_answer ? 'border-red-200 bg-red-50' : isCorrect ? 'border-emerald-300 bg-emerald-50' : 'border-red-300 bg-red-50'}`}>
                     <p className="text-xs text-muted-foreground mb-1">学生作答</p>
-                    {a?.student_answer && /<(img|table|p|div|pre|ul|ol|h\d|br)[\s>]|<span[^>]*white-space:\s*pre[^>]*>/i.test(a.student_answer) ? (
-                      <div className="text-sm font-medium rich-view" dangerouslySetInnerHTML={{ __html: renderRichContent(a.student_answer) }} />
+                    {q.question_type === 'attachment' ? (
+                      <AttachmentTeacherView value={a?.student_answer || ''} />
                     ) : (
-                      <p className={`text-sm font-medium ${!a?.student_answer ? 'text-red-400 italic' : isCorrect ? 'text-emerald-700' : 'text-red-600'}`}>
-                        {a?.student_answer || '（未作答）'}
-                      </p>
+                      <div className="text-sm font-medium"><RichContentView content={a?.student_answer || ''} /></div>
                     )}
                   </div>
                   <div className="rounded-lg p-2 border border-emerald-300 bg-emerald-50">
@@ -468,6 +773,30 @@ export default function TeacherGradeDetailPage() {
                     ))}
                   </div>
                 )}
+
+                {/* 评分细则：已批主观题的四维度细化分（dimension_scores 缺失则隐藏） */}
+                {isGraded && g.dimension_scores && (() => {
+                  const dims = g.dimension_scores as Record<string, number>;
+                  const entries = DIM_LABELS.filter((dl) => Number.isFinite(Number(dims[dl.key])) && Number(dims[dl.key]) >= 0);
+                  if (entries.length === 0) return null;
+                  return (
+                    <details className="mt-3 rounded-lg border border-indigo-100 bg-indigo-50/40 p-2 group">
+                      <summary className="cursor-pointer text-sm font-medium text-indigo-700 list-none flex items-center justify-between">
+                        <span>评分细则（AI 四维度）</span>
+                        <span className="text-xs text-indigo-400 group-open:hidden">展开 ▾</span>
+                        <span className="hidden text-xs text-indigo-400 group-open:inline">收起 ▴</span>
+                      </summary>
+                      <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2">
+                        {entries.map((dl) => (
+                          <div key={dl.key} className="rounded-lg bg-white border border-indigo-100 p-2 text-center">
+                            <p className="text-[11px] text-slate-500">{dl.label}</p>
+                            <p className="text-base font-bold text-indigo-700">{fmt(Number(dims[dl.key]))}<span className="text-xs text-slate-400">/100</span></p>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  );
+                })()}
 
                 {/* 教师确认：改分提交后以教师分为准；留空则按 AI 分生效 */}
                 {isGraded && (
@@ -531,7 +860,58 @@ export default function TeacherGradeDetailPage() {
             </Card>
           );
         })}
+        </div>
+
+        {/* 答题卡（学习通式竖栏，吸顶）：客观题显对错与所选，主观题显待批状态 */}
+        <aside className="hidden lg:block w-56 xl:w-60 shrink-0">
+          <Card className="sticky top-4">
+            <CardHeader className="px-4 pt-4 pb-2">
+              <CardTitle className="text-sm text-muted-foreground">答题卡</CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 py-4">
+              {details.length === 0 ? (
+                <p className="text-sm text-slate-400">暂无题目</p>
+              ) : (
+                <div className="grid grid-cols-5 gap-2">
+                  {details.map((detail, i) => {
+                    const q = detail.question;
+                    const g = detail.grading;
+                    const obj = isObjectiveType(q.question_type);
+                    const isGraded = g && g.status === 'completed';
+                    const isCorrect = isGraded && g.total_score >= g.full_score * 0.6;
+                    const cls = obj
+                      ? (isCorrect
+                          ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                          : 'bg-red-100 text-red-600 border-red-200')
+                      : (isGraded
+                          ? 'bg-teal-100 text-teal-700 border-teal-200'
+                          : 'bg-amber-100 text-amber-600 border-amber-200');
+                    return (
+                      <button
+                        key={q.id}
+                        onClick={() => document.getElementById(`qcard-${q.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                        className={`aspect-square w-full rounded-md border text-xs font-bold flex items-center justify-center transition-shadow hover:shadow-md ${cls}`}
+                        title={`第${i + 1}题 · ${typeLabels[q.question_type] || '其他'}`}
+                      >
+                        {i + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </aside>
       </div>
+      </div>{/* /content-enter 内容区结束 */}
+
+      <style jsx>{`
+        @keyframes traeGradeContentEnter {
+          from { opacity: 0; transform: translateY(8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .content-enter { animation: traeGradeContentEnter 0.28s ease-out; }
+      `}</style>
     </div>
   );
 }

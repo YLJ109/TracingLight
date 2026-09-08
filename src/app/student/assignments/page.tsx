@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { getCurrentUser } from '@/lib/auth-helper';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { CheckCircle2, Clock, XCircle, Send, Eye, Loader2, BookOpen, Search, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Clock, XCircle, Send, Eye, Loader2, BookOpen, Search, AlertCircle, Users } from 'lucide-react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 interface AssignmentItem {
@@ -58,6 +58,7 @@ function fmt(n: number): string {
 const statusConfig: Record<string, { label: string; icon: typeof CheckCircle2; className: string }> = {
   graded: { label: '已批改', icon: CheckCircle2, className: 'bg-green-50 text-green-700' },
   submitted: { label: '待批改', icon: Clock, className: 'bg-amber-50 text-amber-700' },
+  expired: { label: '已截止', icon: Clock, className: 'bg-red-50 text-red-700' },
   pending: { label: '待提交', icon: XCircle, className: 'bg-slate-100 text-slate-600' },
   returned: { label: '已退回·需重做', icon: AlertCircle, className: 'bg-red-50 text-red-700' },
 };
@@ -81,6 +82,7 @@ const typeLabels: Record<string, string> = {
 const STATUS_TABS = [
   { key: 'all', label: '全部', color: 'bg-slate-600' },
   { key: 'pending', label: '待提交', color: 'bg-amber-500' },
+  { key: 'expired', label: '已截止', color: 'bg-red-500' },
   { key: 'submitted', label: '已提交', color: 'bg-blue-500' },
   { key: 'graded', label: '已批改', color: 'bg-teal-500' },
 ];
@@ -136,12 +138,28 @@ export default function StudentAssignments() {
   const [reviewAssignment, setReviewAssignment] = useState<any>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
 
+  // 生生互评待办数量（作为「我的作业」内的一项功能入口）
+  const [peerReviewCount, setPeerReviewCount] = useState(0);
+
   useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     getCurrentUser().then((user) => {
       if (user) setStudentId(user.id);
     });
+  }, []);
+
+  // 拉取「我需互评」的待办数
+  useEffect(() => {
+    apiFetch('/api/student/peer-review')
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.success) {
+          const pending = (j.data || []).reduce((s: number, item: any) => s + (item.targets?.length || 0), 0);
+          setPeerReviewCount(pending);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const fetchAssignments = useCallback(async () => {
@@ -211,10 +229,16 @@ export default function StudentAssignments() {
       });
       const data = await res.json();
       if (data.success) {
+        toast.success('作业提交成功！');
         setSubmitOpen(false);
         fetchAssignments();
+      } else {
+        toast.error(data.error || '提交失败，请重试');
       }
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      toast.error('提交失败，请检查网络后重试');
+    }
     finally { setSubmitting(false); }
   };
 
@@ -240,8 +264,13 @@ export default function StudentAssignments() {
       const data = await res.json();
       if (data.success) {
         toast.success('作业已保存！');
+      } else {
+        toast.error(data.error || '保存失败，请重试');
       }
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      toast.error('保存失败，请检查网络后重试');
+    }
     finally { setSaving(false); }
   };
 
@@ -252,6 +281,25 @@ export default function StudentAssignments() {
 
   return (
     <div className="space-y-6 animate-fade-in-up">
+      {/* 页头 + 生生互评入口（作为「我的作业」的一项功能，不占用侧栏） */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">我的作业</h1>
+          <p className="text-sm text-slate-500 mt-0.5">完成作业、互评同伴、查看批改</p>
+        </div>
+        <Button
+          variant="outline"
+          className="border-teal-200 text-teal-700 hover:bg-teal-50"
+          onClick={() => router.push('/student/peer-review')}
+        >
+          <Users className="w-4 h-4 mr-1.5" />
+          生生互评
+          {peerReviewCount > 0 && (
+            <Badge className="ml-1.5 bg-teal-600 text-white border-0">{peerReviewCount}</Badge>
+          )}
+        </Button>
+      </div>
+
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {/* 待提交 */}

@@ -1,4 +1,6 @@
 'use client';
+
+import { formatDateRange } from '@/lib/date';
 import { apiFetch } from '@/lib/api-fetch';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -13,9 +15,10 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  ArrowLeft, Clock, CheckCircle2, Users, FileText, Sparkles,
+  Clock, CheckCircle2, Users, FileText, Sparkles,
   BookOpen, TrendingUp, AlertCircle, Eye, Loader2, BarChart3, Send, BellRing, Download, RotateCcw
 } from 'lucide-react';
+import { BackButton } from '@/components/ui/back-button';
 import { toast } from 'sonner';
 
 interface AssignmentDetail {
@@ -139,7 +142,7 @@ export default function TeacherAssignmentDetailPage() {
     }
   }, [assignmentId]);
 
-  // 补考 / 重开提交（C6）：已截止作业可由教师开启补考，学生在截止时间后仍可提交
+  // 补交 / 重开提交（C6）：已截止作业可由教师开启补交，学生在截止时间后仍可提交
   const handleToggleReopen = useCallback(async () => {
     if (!detail) return;
     const next = !detail.allow_resubmit;
@@ -153,7 +156,7 @@ export default function TeacherAssignmentDetailPage() {
       const json = await res.json();
       if (json.success) {
         setDetail((d) => d ? { ...d, allow_resubmit: next } : d);
-        toast.success(next ? '已开启补考，学生可重新提交' : '已关闭补考，提交通道关闭');
+        toast.success(next ? '已开启补交，学生可继续提交' : '已关闭补交，提交通道关闭');
       } else {
         toast.error('操作失败：' + (json.error || '未知错误'));
       }
@@ -222,17 +225,12 @@ export default function TeacherAssignmentDetailPage() {
   const avgScore = detail.submissions
     .filter(s => s.total_score !== null)
     .reduce((sum, s) => sum + (s.total_score || 0), 0) / (gradedCount || 1);
-  // 是否含主观题（依据实际题目题型）：纯客观 → 批改完成自动发布；含主观 → 建议教师复核后手动发布
-  const hasSubjective = detail.questions.some(q => !OBJECTIVE_TYPES.has(q.question_type));
-
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
+          <BackButton />
           <div>
             <h1 className="page-title">{detail.title}</h1>
             <div className="flex items-center gap-3 mt-1">
@@ -240,7 +238,7 @@ export default function TeacherAssignmentDetailPage() {
                 <BookOpen className="w-3 h-3" /> {detail.course?.name}
               </Badge>
               <span className="text-sm text-slate-500">
-                {detail.start_time} ~ {detail.end_time}
+                {formatDateRange(detail.start_time, detail.end_time)}
               </span>
               <Badge className={detail.status === 'published' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}>
                 {detail.status === 'published' ? '进行中' : '已结束'}
@@ -258,7 +256,7 @@ export default function TeacherAssignmentDetailPage() {
               : "gap-2 border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100"}
           >
             {reopening ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-            {detail.allow_resubmit ? '补考中' : '开启补考'}
+            {detail.allow_resubmit ? '补交中' : '开启补交'}
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -327,17 +325,11 @@ export default function TeacherAssignmentDetailPage() {
         </div>
       </div>
 
-      {/* 发布策略提示：未发布时，按是否含主观题给出自动/手动发布指引 */}
+      {/* 发布策略提示：未发布时说明自动发布规则 */}
       {gradesPublished === false && (
-        hasSubjective ? (
-          <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            <AlertCircle className="w-4 h-4" /> 含主观题，建议教师复核后手动发布成绩
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-            <CheckCircle2 className="w-4 h-4" /> 纯客观题作业，AI 批改完成后将自动发布成绩
-          </div>
-        )
+        <div className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+          <CheckCircle2 className="w-4 h-4" /> 该作业所有已提交学生批改完成后将自动公布成绩，无需手动确认；如需提前公布可点击「发布成绩」
+        </div>
       )}
 
       {/* Stats Cards */}

@@ -5,6 +5,14 @@ import { eq, desc, and, inArray } from 'drizzle-orm';
 import { assignment, user, gradingTask, answer, course, classInfo, question, notification } from '@/storage/database/shared/schema';
 import { getTeacherCourseIds, getTeacherAssignmentIds, getTeacherClassIds } from '@/lib/teacher-scope';
 import { isObjectiveType } from '@/lib/objective-grading';
+import { allocateScores } from '@/lib/score-allocator';
+import { writeAudit } from '@/lib/audit';
+
+/** 作业配置的每题分值总和（question_scores 以 {questionId: score} 存储，key 为字符串） */
+function sumScores(qs: unknown): number {
+  if (!qs || typeof qs !== 'object') return 0;
+  return Object.values(qs as Record<string, number>).reduce((a, b) => a + (Number(b) || 0), 0);
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -76,13 +84,21 @@ export async function GET(request: NextRequest) {
       is_submitted: answer.is_submitted,
     }).from(answer).all();
 
-    // Get course list（跨租户：仅本人授课课程）
+    // Get course list（跨租户：取「授课课程 ∪ 本人创建的作业所覆盖课程」并集，
+    // 保证课程筛选/新建选择能覆盖到作业实际归属的课程，避免课程显示不全）
     const myCourseIdsDrop = getTeacherCourseIds(authUser.userId);
-    const courses = myCourseIdsDrop.length > 0
+    const myAssignmentCourseIds = db.selectDistinct({ course_id: assignment.course_id })
+      .from(assignment)
+      .where(eq(assignment.teacher_id, authUser.userId))
+      .all()
+      .map((r) => r.course_id)
+      .filter((v): v is number => v != null);
+    const unionCourseIds = [...new Set([...myCourseIdsDrop, ...myAssignmentCourseIds])];
+    const courses = unionCourseIds.length > 0
       ? db.select({
           id: course.id,
           name: course.name,
-        }).from(course).where(inArray(course.id, myCourseIdsDrop)).orderBy(course.id).all()
+        }).from(course).where(inArray(course.id, unionCourseIds)).orderBy(course.id).all()
       : [];
 
     // Get class list（跨租户：仅本人授课班级）
@@ -131,19 +147,30 @@ export async function GET(request: NextRequest) {
         ? studentStats.filter((s) => s.studentId === parseInt(studentId))
         : studentStats;
 
-      // Overall stats
+      // Overall stats — 均已按「去重后的学生」维度统计，避免把答题行数误当人数
       const submittedAnswers = asgnAnswers.filter((a) => a.is_submitted);
+      // 已交作业人数 = 去重后的已提交学生数（同一学生多题/多次提交只计 1 人）
+      const submittedStudentIds = new Set<number>();
+      for (const a of submittedAnswers) submittedStudentIds.add(a.student_id);
+      const submittedCount = submittedStudentIds.size;
+      // 已批人数 = 已提交且全部题目都批改完成的学生数
+      const gradedCount = studentStats.filter((s) => submittedStudentIds.has(s.studentId) && s.status === 'completed').length;
+      // 全班均分 = 各(有批改记录)学生的个人得分率百分比的平均值（学生维度，而非按批改行加权）
+      const graded = studentStats.filter((s) => s.totalFull > 0 && s.totalScore >= 0);
+      const avgScore = graded.length > 0
+        ? Math.round((graded.reduce((sum, s) => sum + s.avgScore, 0) / graded.length) * 10) / 10
+        : 0;
+      // 满分 = 该作业配置的每题分值总和（normalize 后恒为 100）；缺失时兜底 100
+      const fullScore = sumScores(asgn.question_scores) || 100;
 
       return {
         ...asgn,
+        full_score: fullScore,
         question_count: totalQuestions,
-        submitted_count: submittedAnswers.length,
-        graded_count: asgnGradings.length,
+        submitted_count: submittedCount,
+        graded_count: gradedCount,
         total_students: allStudents.length,
-        avg_score: asgnGradings.length > 0
-          ? Math.round((asgnGradings.reduce((s, g) => s + (g.teacher_override_score ?? (g.total_score || 0)), 0) /
-              asgnGradings.reduce((s, g) => s + (g.full_score || 0), 0)) * 1000) / 10
-          : 0,
+        avg_score: avgScore,
         student_stats: filteredStudentStats,
       };
     });
@@ -170,14 +197,27 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const questionIds: number[] = body.question_ids || [];
 
-    // 判断是否含主观题（简答/编程）
+    // 判断是否含主观题（简答/编程）+ 取题目用于自动分配分值
     let hasSubjective = false;
+    let questionScores: Record<number, number> | undefined = undefined;
     if (questionIds.length > 0) {
-      const questions = db.select({ question_type: question.question_type })
+      const qRows = db.select({
+        id: question.id,
+        question_type: question.question_type,
+        difficulty: question.difficulty,
+      })
         .from(question)
         .where(inArray(question.id, questionIds))
         .all();
-      hasSubjective = questions.some(q => !isObjectiveType(q.question_type));
+      hasSubjective = qRows.some(q => !isObjectiveType(q.question_type));
+      // 每题分值：前端可按难度/题型微调传入 question_scores；未传则服务端自动分配（合计=100）
+      if (body.question_scores && typeof body.question_scores === 'object') {
+        questionScores = body.question_scores;
+      } else if (qRows.length > 0) {
+        questionScores = allocateScores(qRows.map(q => ({
+          id: q.id, question_type: q.question_type, difficulty: q.difficulty,
+        }))).scores;
+      }
     }
     // 批改方式：教师显式指定 auto/teacher_review，否则按是否含主观题默认
     const reviewMode = (body.review_mode && body.review_mode !== 'auto_judge')
@@ -203,6 +243,27 @@ export async function POST(request: NextRequest) {
       status: body.status || 'published',
       review_mode: reviewMode,
       has_subjective: hasSubjective,
+      question_scores: questionScores,
+      // 生生互评配置：仅接受白名单字段
+      peer_review: body.peer_review && typeof body.peer_review === 'object'
+        ? {
+            enabled: !!body.peer_review.enabled,
+            count: Math.min(10, Math.max(1, Math.round(Number(body.peer_review.count) || 2))),
+            reveal_name: !!(body.peer_review as { reveal_name?: boolean }).reveal_name,
+          }
+        : undefined,
+      // 防作弊监督配置：仅接受白名单字段，杜绝任意字段注入
+      monitor_config: body.monitor_config && typeof body.monitor_config === 'object'
+        ? {
+            disable_copy: !!body.monitor_config.disable_copy,
+            disable_paste: !!body.monitor_config.disable_paste,
+            enable_fullscreen: !!body.monitor_config.enable_fullscreen,
+            disable_devtools: !!body.monitor_config.disable_devtools,
+            min_time_seconds: Math.max(0, Number(body.monitor_config.min_time_seconds) || 0),
+            max_blur_count: Math.max(0, Number(body.monitor_config.max_blur_count) || 5),
+            similarity_threshold: Math.min(1, Math.max(0, Number(body.monitor_config.similarity_threshold) || 0.8)),
+          }
+        : undefined,
     }).returning().all();
 
     const data = result[0];
@@ -229,6 +290,16 @@ export async function POST(request: NextRequest) {
     }
 
     saveDb();
+
+    // 教师发布作业埋点（静默，失败不影响响应）
+    writeAudit({
+      operatorId: authUser.userId,
+      operatorName: authUser.username,
+      action: 'assignment_create',
+      targetType: 'assignment',
+      targetId: data?.id,
+      detail: `发布作业「${body.title}」（${reviewMode === 'teacher_review' ? '教师批改' : '自动批改'}）`,
+    });
 
     return NextResponse.json({ success: true, data });
   } catch (e) {
