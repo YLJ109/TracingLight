@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import * as echarts from "echarts";
+import { initChart } from "@/lib/echarts-utils";
 import TeacherAnnouncementCard from "@/components/teacher-announcement-card";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth-helper";
 
@@ -170,7 +171,7 @@ export default function AnalyticsPage() {
         radarChartRef.current.dispose();
       }
       
-      const radarChart = echarts.init(container);
+      const radarChart = initChart(container);
       radarChartRef.current = radarChart;
       
       const radarData = data.students.map((s: any) => ({
@@ -230,7 +231,7 @@ export default function AnalyticsPage() {
         heatmapChartRef.current.dispose();
       }
       
-      const heatmapChart = echarts.init(container);
+      const heatmapChart = initChart(container);
       heatmapChartRef.current = heatmapChart;
       
       const students = data.students;
@@ -288,7 +289,7 @@ export default function AnalyticsPage() {
         trendChartRef.current.dispose();
       }
       
-      const trendChart = echarts.init(container);
+      const trendChart = initChart(container);
       trendChartRef.current = trendChart;
       
       trendChart.setOption({
@@ -329,7 +330,7 @@ export default function AnalyticsPage() {
         pieChartRef.current.dispose();
       }
       
-      const pieChart = echarts.init(container);
+      const pieChart = initChart(container);
       pieChartRef.current = pieChart;
       
       pieChart.setOption({

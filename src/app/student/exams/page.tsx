@@ -87,6 +87,17 @@ export default function StudentExamsPage() {
     return c;
   }, [exams]);
 
+  // 按课程分组（选中具体课程时仅一组）
+  const groups = useMemo(() => {
+    const map = new Map<string, ExamRow[]>();
+    filtered.forEach((e) => {
+      const k = e.course_name || '未知课程';
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(e);
+    });
+    return [...map.entries()];
+  }, [filtered]);
+
   const stateMeta = (s: string, deadline: string | null) => {
     switch (s) {
       case 'upcoming': return { badge: { label: '未开考', cls: 'bg-amber-100 text-amber-700' }, hint: `${formatDateTime(deadline)} 开考` };
@@ -154,8 +165,18 @@ export default function StudentExamsPage() {
       ) : filtered.length === 0 ? (
         <Card className="border-dashed"><CardContent className="py-14 text-center"><Search className="w-11 h-11 mx-auto mb-3 text-slate-300" /><p className="text-slate-400">没有符合筛选条件的考试</p></CardContent></Card>
       ) : (
-        <div className="space-y-3">
-          {filtered.map((e) => {
+        <div className="space-y-5">
+          {groups.map(([courseName, list]) => (
+            <div key={courseName}>
+              {/* 课程分组头 */}
+              <div className="flex items-center gap-2 mb-2.5">
+                <span className="w-2 h-2 rounded-full bg-gradient-to-r from-violet-500 to-teal-500" />
+                <span className="text-sm font-semibold text-slate-700">{courseName}</span>
+                <span className="text-xs text-slate-400">共 {list.length} 场</span>
+                <div className="h-px flex-1 bg-slate-100" />
+              </div>
+              <div className="space-y-3">
+              {list.map((e) => {
             const sm = stateMeta(e.state, e.attempt_deadline || e.start_at);
             return (
               <Card key={e.id} className="border-slate-200/60 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden">
@@ -193,7 +214,10 @@ export default function StudentExamsPage() {
                 </CardContent>
               </Card>
             );
-          })}
+            })}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

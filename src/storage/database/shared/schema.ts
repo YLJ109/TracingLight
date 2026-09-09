@@ -43,6 +43,14 @@ export const user = sqliteTable("user", {
   password: text("password"), // sha256 哈希（本地演示）
   class_id: integer("class_id").references(() => classInfo.id),
   student_level: text("student_level"), // top / medium / weak
+  student_no: text("student_no").unique(), // 学号（教师/管理员为 null）
+  email: text("email").unique(),
+  phone: text("phone"),
+  gender: text("gender"), // male / female
+  birth_date: text("birth_date"), // YYYY-MM-DD
+  entrance_year: integer("entrance_year"), // 入学年份
+  title: text("title"), // 教师职称：讲师 / 副教授 / 教授
+  bio: text("bio"), // 个人简介
   avatar_url: text("avatar_url"),
   is_active: integer("is_active", { mode: 'boolean' }).default(true),
   token_version: integer("token_version").default(0), // 改密/禁用时递增，使旧 JWT 全部失效

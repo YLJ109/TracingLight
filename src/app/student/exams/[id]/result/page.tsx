@@ -153,7 +153,7 @@ export default function ExamResultPage() {
 
       <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200/60 shadow-sm rounded-2xl px-3 py-2">
         {FILTER_TABS.map((t) => {
-          const count = filter === 'all' || t.key === 'all'
+          const count = t.key === 'all'
             ? data.items.length
             : data.items.filter((it) => {
                 const g = it.grading; const gf = g?.full_score ?? it.question?.full_score ?? 0;

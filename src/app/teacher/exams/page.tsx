@@ -212,6 +212,9 @@ export default function TeacherExamsPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-semibold text-slate-800 truncate">{e.title}</h3>
                         <Badge className={st.cls}>{st.label}</Badge>
+                        {e.status === 'closed' && !e.grades_published && (
+                          <Badge className="bg-amber-100 text-amber-700"><Clock className="w-3 h-3 mr-0.5" />待批改</Badge>
+                        )}
                         {e.grades_published && <Badge className="bg-emerald-100 text-emerald-700"><ShieldCheck className="w-3 h-3 mr-0.5" />成绩已公布</Badge>}
                       </div>
                       <p className="text-xs text-slate-500 mt-1">{e.course_name} · {TYPE_LABEL[e.exam_type] || '考试'} · {e.total_score ?? 100} 分</p>

@@ -10,8 +10,9 @@ import {
   AlertTriangle, Sparkles, PanelLeftClose, PanelLeftOpen, Sun, Moon, Maximize,
   Minimize, LocateFixed,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { SetActiveNav } from '@/components/app-shell';
+import { classifyMastery } from '@/lib/domain';
 
 function safeDarker(hex: string, amount: number): string {
   const c = d3.color(hex);
@@ -64,6 +65,7 @@ export default function KnowledgeGraphPage() {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
   const [courseId, setCourseId] = useState(1);
   const [courses, setCourses] = useState<CourseInfo[]>([]);
   const [viewMode, setViewMode] = useState<'radial' | 'tree'>('radial');
@@ -81,14 +83,40 @@ export default function KnowledgeGraphPage() {
   const posRef = useRef<Map<string, [number, number]>>(new Map());
   const pageRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const qFocusKp = searchParams.get('focus_kp');
+  const qCourse = searchParams.get('course_id');
+  const focusKpId = qFocusKp ? Number(qFocusKp) : null;
   const [searchTerm, setSearchTerm] = useState('');
 
   const T = (dark ? THEMES.dark : THEMES.light);
 
   useEffect(() => { getCurrentUser().then((u) => setStudentId(u?.id || 3)); }, []);
   useEffect(() => {
-    apiFetch('/api/student/courses').then((r) => r.json()).then((d) => { if (d.success) setCourses(d.data || []); }).catch(() => {});
+    apiFetch('/api/student/courses').then((r) => r.json()).then((d) => {
+      if (d.success) {
+        const list = (d.data || []) as CourseInfo[];
+        setCourses(list);
+        // 默认课程跟随学生可访问的第一门课；当前 courseId 不在列表（如硬编码 1）时自动切换，避免 404
+        setCourseId((cur) => (list.length && !list.some((c) => c.id === cur)) ? list[0].id : cur);
+      }
+    }).catch(() => {});
   }, []);
+
+  // 从错题本跳转：URL 携带 course_id 时，先切到对应课程
+  useEffect(() => {
+    if (qCourse && courses.some((c) => c.id === Number(qCourse))) setCourseId(Number(qCourse));
+  }, [qCourse, courses]);
+
+  // 从错题本跳转：focus_kp 定位到对应知识点（自动切课 + 展开路径 + 缩放 + 打开抽屉）
+  useEffect(() => {
+    if (focusKpId == null || !graphData || loading) return;
+    const target = graphData.nodes.find((n) => n.knowledge_point_id === focusKpId);
+    if (!target) return;
+    if (target.course_id !== courseId) { setCourseId(target.course_id); return; }
+    const t = setTimeout(() => locateNode(target.id), 60);
+    return () => clearTimeout(t);
+  }, [focusKpId, graphData, courseId, loading]);
 
   useEffect(() => {
     let cancelled = false; setLoading(true); setError(null);
@@ -104,7 +132,7 @@ export default function KnowledgeGraphPage() {
       if (!cancelled) { setError(err.message || '网络错误，请稍后重试'); setLoading(false); }
     });
     return () => { cancelled = true; };
-  }, [courseId, studentId]);
+  }, [courseId, studentId, retryTick]);
 
   function rebuildRoot(h: any): any {
     const r: any = { ...h.data, children: undefined };
@@ -113,13 +141,8 @@ export default function KnowledgeGraphPage() {
     return r;
   }
 
-  // 掌握度分类（null/<30 视为未学，与后端 stats 口径一致）
-  const catOf = (m: number | null): 'unlearned' | 'weak' | 'basic' | 'mastered' => {
-    if (m === null || m < 30) return 'unlearned';
-    if (m < 60) return 'weak';
-    if (m < 80) return 'basic';
-    return 'mastered';
-  };
+  // 掌握度分类（统一走单一事实源，未学=<30 且含 null，薄弱/基本/掌握阈值全局一致）
+  const catOf = (m: number | null): 'unlearned' | 'weak' | 'basic' | 'mastered' => classifyMastery(m);
 
   const renderGraph = useCallback(() => {
     if (!svgRef.current || !rootRef.current || !graphData || !containerRef.current) return;
@@ -451,14 +474,30 @@ export default function KnowledgeGraphPage() {
   const allKps = useMemo(() => graphData?.nodes.filter((n) => n.is_leaf) || [], [graphData]);
   const fKps = searchTerm ? allKps.filter((k) => k.name.includes(searchTerm)).slice(0, 10) : [];
 
-  const stat = graphData?.masteryStats;
+  // D4 · 命中集合重算：统计随掌握度筛选变化。filter==='all' 统计全部叶子；
+  // filter!=='all' 仅统计命中该类别的叶子（未命中段自然为 0，前端置灰隐藏）。
+  const stat = useMemo(() => {
+    if (!graphData) return null;
+    const leaves = graphData.nodes.filter((n) => n.is_leaf);
+    const hit = filter === 'all' ? leaves : leaves.filter((n) => catOf(n.mastery) === filter);
+    const t = { total: hit.length, mastered: 0, basics: 0, weak: 0, unlearned: 0 };
+    for (const n of hit) {
+      const lv = catOf(n.mastery);
+      if (lv === 'mastered') t.mastered += 1;
+      else if (lv === 'basic') t.basics += 1;
+      else if (lv === 'weak') t.weak += 1;
+      else t.unlearned += 1;
+    }
+    return t;
+  }, [graphData, filter]);
   const tooltipRef = useRef<HTMLDivElement>(null);
 
   // 全屏按键
   const [isFs, setIsFs] = useState(false);
 
   return (
-    <div ref={pageRef} style={{ background: T.bg, color: T.text }} className="flex flex-col h-full transition-colors">
+    <div className="h-full p-3" style={{ background: T.bg }}>
+      <div ref={pageRef} style={{ background: T.panel, color: T.text, border: `1px solid ${T.border}` }} className="flex flex-col h-full transition-colors rounded-2xl overflow-hidden shadow-sm">
       <SetActiveNav href="/student/knowledge-graph" />
       <style jsx>{`
         .kg-dim { opacity: 0.16; }
@@ -547,13 +586,16 @@ export default function KnowledgeGraphPage() {
               <div className="text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: T.sub }}>掌握度统计</div>
               {stat && (
                 <div className="space-y-1.5 text-xs">
-                  {[['已掌握', stat.mastered, '#10b981'], ['基本掌握', stat.basics, '#f59e0b'], ['薄弱', stat.weak, '#ef4444'], ['未学习', stat.unlearned, '#94a3b8']].map(([l, c, cl]) => (
-                    <div key={l as string} className="flex items-center gap-2" style={{ color: T.sub }}>
-                      <span className="w-2.5 h-2.5 rounded-full flex-none" style={{ background: cl as string }} />
-                      <span>{l}</span>
-                      <span className="ml-auto font-bold" style={{ color: T.text }}>{c as number}</span>
-                    </div>
-                  ))}
+                  {([['mastered', '已掌握', stat.mastered, '#10b981'], ['basic', '基本掌握', stat.basics, '#f59e0b'], ['weak', '薄弱', stat.weak, '#ef4444'], ['unlearned', '未学习', stat.unlearned, '#94a3b8']] as const).map(([tier, l, c, cl]) => {
+                    const active = filter === 'all' || tier === filter;
+                    return (
+                      <div key={tier} className="flex items-center gap-2" style={{ color: T.sub, opacity: active ? 1 : 0.35 }} title={active ? '' : '当前筛选未命中此层'}>
+                        <span className="w-2.5 h-2.5 rounded-full flex-none" style={{ background: cl }} />
+                        <span>{l}</span>
+                        <span className="ml-auto font-bold" style={{ color: active ? T.text : T.sub }}>{c}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -622,7 +664,7 @@ export default function KnowledgeGraphPage() {
               <div className="flex flex-col items-center gap-3 max-w-sm text-center" style={{ color: T.sub }}>
                 <AlertTriangle className="w-8 h-8 text-amber-500" />
                 <span className="text-sm font-medium">{error}</span>
-                <button onClick={() => { setError(null); setCourseId(courseId); }}
+                <button onClick={() => { setError(null); setRetryTick((t) => t + 1); }}
                   className="px-4 py-2 text-sm text-white rounded-lg bg-teal-500 hover:bg-teal-600 transition-colors">
                   重试
                 </button>
@@ -742,7 +784,7 @@ export default function KnowledgeGraphPage() {
                 </div>
                 {m.total > 0 && selectedNode.knowledge_point_id && (
                   <button
-                    onClick={() => router.push(`/student/errors?knowledge_point_id=${selectedNode.knowledge_point_id}`)}
+                    onClick={() => router.push(`/student/errors?knowledge_point_id=${selectedNode.knowledge_point_id}&course_id=${selectedNode.course_id}`)}
                     className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border text-sm font-medium transition-colors"
                     style={{ background: 'rgba(245,158,11,.12)', borderColor: 'rgba(245,158,11,.35)', color: '#d97706' }}>
                     <BookOpen className="w-4 h-4" />
@@ -766,6 +808,7 @@ export default function KnowledgeGraphPage() {
         </>,
         document.body
       )}
+      </div>
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, saveDb } from '@/storage/database/db';
-import { gradingTask, reviewRecord, assignment, notification } from '@/storage/database/shared/schema';
+import { gradingTask, reviewRecord, assignment, notification, errorBook } from '@/storage/database/shared/schema';
 import { requireAuth } from '@/lib/server-auth';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { htmlToPlainText } from '@/lib/rich-text';
 import { syncMasteryFromGrading } from '@/lib/mastery-sync';
 import { maybeAutoPublishGrades } from '@/services/grading.service';
@@ -120,13 +120,44 @@ export async function POST(request: NextRequest) {
     // 教师改分后回写掌握度：以确认后的得分为准，保持能力画像与最终成绩一致
     if (data.teacher_override_score !== undefined) {
       const finalScore = data.teacher_override_score as number;
+      const full = fullScore || task.full_score || 0;
+      const isCorrect = full > 0 ? finalScore / full >= 0.6 : false;
       syncMasteryFromGrading({
         studentId: task.student_id,
         knowledgePointId: task.knowledge_point_id,
         score: finalScore,
-        fullScore: fullScore || task.full_score,
-        isCorrect: (finalScore / (fullScore || task.full_score)) >= 0.6,
+        fullScore: full,
+        isCorrect,
       });
+
+      // 错题本口径对齐（与 recordGrading / regrade-objective 一致）：
+      // 改判为满分 → 移除该题错题，避免改对后废错题滞留；改判为低于满分且已作答 → 确保收录待复习。
+      // 仅在有作答时收录（空答只计 0 分不进错题本）。
+      if (task.question_id != null) {
+        const scope = and(
+          eq(errorBook.student_id, task.student_id),
+          eq(errorBook.question_id, task.question_id),
+          eq(errorBook.assignment_id, task.assignment_id),
+        );
+        const eb = db.select({ id: errorBook.id }).from(errorBook).where(scope).limit(1).all();
+        if (finalScore >= full && full > 0) {
+          if (eb[0]) db.delete(errorBook).where(eq(errorBook.id, eb[0].id)).run();
+        } else if (task.student_answer?.trim() && !eb[0]) {
+          db.insert(errorBook).values({
+            student_id: task.student_id,
+            question_id: task.question_id,
+            knowledge_point_id: task.knowledge_point_id,
+            assignment_id: task.assignment_id,
+            grading_task_id: task.id,
+            student_answer: task.student_answer || '',
+            correct_answer: task.reference_answer ?? '',
+            error_type: 'wrong',
+            review_status: 'pending',
+            review_count: 0,
+            next_review_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' '),
+          }).run();
+        }
+      }
     }
 
     // 成功写入后必定落盘（通知失败等不影响成绩持久化）

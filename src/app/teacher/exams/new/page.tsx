@@ -25,6 +25,18 @@ interface QBQuestion { id: number; question_type: string; difficulty: string; co
 const OBJ_TYPES = ['single_choice', 'multiple_choice', 'multi_choice', 'judgment', 'fill_blank'];
 const isSubjective = (t: string) => !OBJ_TYPES.includes(t);
 
+// 题库列表排序：先按题型分组次序，再按难度（简单→中等→困难）
+const BANK_TYPE_ORDER: Record<string, number> = {
+  single_choice: 0, multi_choice: 1, choice_single: 0, choice_multiple: 1,
+  judgment: 2, fill_blank: 3, short_answer: 4, essay: 5,
+  programming: 6, code: 6, attachment: 7,
+};
+const BANK_DIFF_WEIGHT: Record<string, number> = { easy: 0, medium: 1, hard: 2 };
+const sortBankByTypeThenDifficulty = (a: QBQuestion, b: QBQuestion) =>
+  (BANK_TYPE_ORDER[a.question_type] ?? 99) - (BANK_TYPE_ORDER[b.question_type] ?? 99) ||
+  (BANK_DIFF_WEIGHT[a.difficulty] ?? 1) - (BANK_DIFF_WEIGHT[b.difficulty] ?? 1) ||
+  a.id - b.id;
+
 /** 客观题选项预览：「A. … B. …」方便选题时直接核对答案项 */
 const OBJ_PREVIEW = ['single_choice', 'multiple_choice', 'multi_choice', 'judgment'];
 const optionPreview = (q: QBQuestion, max = 4) =>
@@ -231,7 +243,7 @@ export default function NewExamPage() {
             <div className="max-h-80 overflow-y-auto border rounded-xl divide-y">
               {bankLoading ? <div className="p-6 text-center text-slate-400">加载题库中…</div> :
                bank.length === 0 ? <div className="p-6 text-center text-slate-400">该课程暂无可用题目（需先在题库管理添加题目）</div> :
-               bank.map((q) => (
+               bank.slice().sort(sortBankByTypeThenDifficulty).map((q) => (
                 <div key={q.id} className="flex items-center gap-3 p-3 hover:bg-slate-50">
                   <Checkbox id={`bank-${q.id}`} checked={selected.some((x) => x.id === q.id)} onCheckedChange={() => toggleSelect(q)} />
                   <div className="flex-1 min-w-0">

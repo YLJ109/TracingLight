@@ -4,6 +4,7 @@ import { requireAuth } from '@/lib/server-auth';
 import { knowledgeMasteryLog, errorBook } from '@/storage/database/shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { gradeObjectiveQuestion, isObjectiveType } from '@/lib/objective-grading';
+import { invalidateKnowledgeGraph } from '../../knowledge-graph/route';
 
 /**
  * 举一反三 · 即时练习 —— 提交判分（P1-2）
@@ -117,6 +118,8 @@ export async function POST(request: NextRequest) {
       } catch (mErr) {
         console.error('Practice mastery update error:', mErr);
       }
+      // 掌握度已回写 → 失效该学生图谱缓存，使知识图谱立即同步
+      try { invalidateKnowledgeGraph(authUser.userId); } catch { /* */ }
     }
 
     return NextResponse.json({

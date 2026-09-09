@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
+import { getAccessibleCourseIds } from '@/lib/course-access';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import {
   abilityPoint, ideologyPoint, abilityKnowledge, ideologyKnowledge, knowledgePoint,
@@ -36,7 +37,8 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') || 'ability'; // ability | ideology
-    const courseId = parseInt(searchParams.get('course_id') || '1');
+    // 无 course_id 时自动取该学生第一门可访问课程，杜绝硬编码幻数 id
+    const courseId = parseInt(searchParams.get('course_id') || '', 10) || getAccessibleCourseIds(authUser)[0] || 0;
     // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
     const studentId = authUser.userId;
     const db = getDb();

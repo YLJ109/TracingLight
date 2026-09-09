@@ -83,7 +83,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import * as echarts from "echarts";
+import { initChart } from "@/lib/echarts-utils";
 
 const levelConfig: Record<string, { label: string; color: string; bg: string }> = {
   top: { label: "学霸层", color: "text-blue-700", bg: "bg-blue-50 border-blue-200" },
@@ -195,7 +195,7 @@ export default function StudentDetailPage() {
       const container = document.getElementById("student-radar-chart");
       if (!container) return;
 
-      const radarChart = echarts.init(container);
+      const radarChart = initChart(container);
       radarChart.setOption({
         tooltip: { trigger: "item" },
         radar: {
@@ -248,7 +248,7 @@ export default function StudentDetailPage() {
       const container = document.getElementById("assignment-bar-chart");
       if (!container) return;
 
-      const barChart = echarts.init(container);
+      const barChart = initChart(container);
       const assignments = data.assignmentHistory || [];
       barChart.setOption({
         tooltip: { trigger: "axis" },
@@ -290,7 +290,7 @@ export default function StudentDetailPage() {
       const container = document.getElementById("error-pie-chart");
       if (!container) return;
 
-      const pieChart = echarts.init(container);
+      const pieChart = initChart(container);
       const errorTypes = data.errorAnalysis?.errorTypeDistribution || [];
       pieChart.setOption({
         tooltip: { trigger: "item" },
@@ -330,7 +330,7 @@ export default function StudentDetailPage() {
       const container = document.getElementById("kp-bar-chart");
       if (!container) return;
 
-      const kpChart = echarts.init(container);
+      const kpChart = initChart(container);
       const kps = data.knowledgeMastery || [];
       kpChart.setOption({
         tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },

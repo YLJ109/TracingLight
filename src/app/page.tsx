@@ -9,28 +9,14 @@ import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { CheckCircle2, Eye, EyeOff, ShieldCheck, Users } from "lucide-react";
 import { clearUserCache } from "@/lib/auth-helper";
-
-interface DemoUser {
-  username: string;
-  real_name: string;
-  role: string;
-  level?: string;
-}
-
-const DEMO_USERS: DemoUser[] = [
-  { username: "teacher_wang", real_name: "王老师", role: "teacher" },
-  { username: "teacher_li", real_name: "李老师", role: "teacher" },
-  { username: "stu_zhang", real_name: "张同学", role: "student", level: "学霸层" },
-  { username: "stu_li", real_name: "李同学", role: "student", level: "学霸层" },
-  { username: "stu_wang", real_name: "王同学", role: "student", level: "学霸层" },
-  { username: "stu_zhao", real_name: "赵同学", role: "student", level: "学霸层" },
-  { username: "stu_chen", real_name: "陈同学", role: "student", level: "勤奋中等层" },
-  { username: "stu_liu", real_name: "刘同学", role: "student", level: "勤奋中等层" },
-  { username: "stu_zhou", real_name: "周同学", role: "student", level: "勤奋中等层" },
-  { username: "stu_wu", real_name: "吴同学", role: "student", level: "提升层" },
-  { username: "stu_sun", real_name: "孙同学", role: "student", level: "提升层" },
-  { username: "stu_ma", real_name: "马同学", role: "student", level: "提升层" },
-];
+import {
+  DEMO_ADMIN,
+  DEMO_TEACHERS,
+  DEMO_STUDENTS,
+  demoOfRole,
+  demoPassword,
+  type DemoUser,
+} from "@/lib/demo-accounts";
 
 const levelColors: Record<string, string> = {
   "全优层": "bg-yellow-100 text-yellow-700",
@@ -64,7 +50,8 @@ export default function LoginPage() {
     const code = generateCaptcha();
     setCaptchaCode(code);
     setCaptchaInput(code);
-    const firstStudent = DEMO_USERS[2];
+    // 默认进入学生端并填入首个学生账号
+    const firstStudent = demoOfRole("student");
     setUsername(firstStudent.username);
     setPassword(firstStudent.username);
   }, []);
@@ -128,18 +115,22 @@ export default function LoginPage() {
   };
 
   const handleSelectUser = (user: DemoUser) => {
+    // 管理员密码固定 123456，其余密码 = 用户名
     setUsername(user.username);
-    setPassword(user.username);
+    setPassword(demoPassword(user.username));
     setSelectedUser(user);
     setCaptchaInput(captchaCode);
+    // 自动切换到对应角色 tab
+    setActiveTab(user.role === "admin" ? "admin" : user.role === "teacher" ? "teacher" : "student");
     setSheetOpen(false);
   };
 
+  // 抽屉展示：按当前角色 tab 过滤，monitoring 完整展示该角色全部演示账号
   const filterUsers = activeTab === "teacher"
-    ? DEMO_USERS.filter((u) => u.role === "teacher")
-    : activeTab === "student"
-      ? DEMO_USERS.filter((u) => u.role === "student")
-      : [];
+    ? DEMO_TEACHERS
+    : activeTab === "admin"
+      ? [DEMO_ADMIN]
+      : DEMO_STUDENTS;
 
   return (
     <div className="app-shell min-h-screen relative flex items-center justify-center overflow-hidden px-4">
@@ -180,22 +171,11 @@ export default function LoginPage() {
                 <button
                   key={key}
                   onClick={() => {
-                    if (key === 'student') {
-                      setActiveTab('student');
-                      setSelectedUser(DEMO_USERS[2]);
-                      setUsername(DEMO_USERS[2].username);
-                      setPassword(DEMO_USERS[2].username);
-                    } else if (key === 'teacher') {
-                      setActiveTab('teacher');
-                      setSelectedUser(DEMO_USERS[0]);
-                      setUsername(DEMO_USERS[0].username);
-                      setPassword(DEMO_USERS[0].username);
-                    } else {
-                      setActiveTab('admin');
-                      setSelectedUser(null);
-                      setUsername('admin');
-                      setPassword('123456');
-                    }
+                    const d = demoOfRole(key);
+                    setActiveTab(key);
+                    setSelectedUser(d);
+                    setUsername(d.username);
+                    setPassword(demoPassword(d.username));
                   }}
                   className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${
                     activeTab === key
@@ -316,22 +296,22 @@ export default function LoginPage() {
       </div>
 
       {/* Floating user switch button */}
-      <div className={activeTab === "admin" ? "hidden" : "fixed left-6 bottom-6 z-50"}>
+      <div className="fixed left-6 bottom-6 z-50">
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetTrigger asChild>
             <button className="flex items-center gap-2 px-4 py-3 glass-strong rounded-xl shadow-soft hover:shadow-glass transition-all text-slate-600 hover:text-slate-800">
               <Users className="w-4 h-4" />
               <span className="text-sm font-medium">切换用户</span>
               <span className="text-xs text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md">
-                {activeTab === "teacher" ? "2" : "10"}
+                {activeTab === "teacher" ? "2" : activeTab === "admin" ? "1" : "20"}
               </span>
             </button>
           </SheetTrigger>
-          <SheetContent side="left" className="w-[340px] sm:w-[380px]">
-            <SheetHeader>
+          <SheetContent side="left" className="w-[340px] sm:w-[380px] flex flex-col overflow-y-auto">
+            <SheetHeader className="flex-shrink-0">
               <SheetTitle>切换演示用户</SheetTitle>
             </SheetHeader>
-            <div className="mt-6 space-y-1">
+            <div className="mt-6 space-y-1 overflow-y-auto flex-1 min-h-0 pr-1 pb-6">
               {filterUsers.map((user) => (
                 <button
                   key={user.username}

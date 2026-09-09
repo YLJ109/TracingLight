@@ -50,6 +50,17 @@ const typeLabels: Record<string, string> = {
 };
 
 const difficultyLabels: Record<string, string> = { easy: '简单', medium: '中等', hard: '困难' };
+// 选题列表排序：先按题型分组次序，再按难度（简单→中等→困难）
+const QUESTION_TYPE_ORDER: Record<string, number> = {
+  single_choice: 0, multi_choice: 1, choice_single: 0, choice_multiple: 1,
+  judgment: 2, fill_blank: 3, short_answer: 4, essay: 5,
+  programming: 6, code: 6, attachment: 7,
+};
+const QUESTION_DIFFICULTY_WEIGHT: Record<string, number> = { easy: 0, medium: 1, hard: 2 };
+const sortByTypeThenDifficulty = (a: QuestionItem, b: QuestionItem) =>
+  (QUESTION_TYPE_ORDER[a.question_type] ?? 99) - (QUESTION_TYPE_ORDER[b.question_type] ?? 99) ||
+  (QUESTION_DIFFICULTY_WEIGHT[a.difficulty] ?? 1) - (QUESTION_DIFFICULTY_WEIGHT[b.difficulty] ?? 1) ||
+  a.id - b.id;
 const difficultyConfig: Record<string, string> = {
   easy: 'bg-green-100 text-green-700',
   medium: 'bg-amber-100 text-amber-700',
@@ -165,13 +176,15 @@ export default function NewAssignmentPage() {
     setKnowledgePoints(courseKps);
   }, [aiCourseId, allKnowledgePoints]);
 
-  const filteredQuestions = questions.filter(q => {
-    if (filterType !== 'all' && q.question_type !== filterType) return false;
-    if (filterDifficulty !== 'all' && q.difficulty !== filterDifficulty) return false;
-    if (filterCourse && filterCourse !== 'all' && q.course_id !== parseInt(filterCourse)) return false;
-    if (searchTerm && !q.content.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-    return true;
-  });
+  const filteredQuestions = questions
+    .filter(q => {
+      if (filterType !== 'all' && q.question_type !== filterType) return false;
+      if (filterDifficulty !== 'all' && q.difficulty !== filterDifficulty) return false;
+      if (filterCourse && filterCourse !== 'all' && q.course_id !== parseInt(filterCourse)) return false;
+      if (searchTerm && !q.content.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+      return true;
+    })
+    .sort(sortByTypeThenDifficulty);
 
   // 选题分页：每页 10 题（筛选变化时回到第 1 页）
   const PAGE_SIZE = 10;
@@ -465,8 +478,21 @@ export default function NewAssignmentPage() {
                           <p className="text-sm text-slate-700 line-clamp-2">{q.content}</p>
                           <p className="text-xs text-green-600 mt-1 font-mono">答案：{q.answer}</p>
                           {q.options && (() => {
-                            const opts: string[] = typeof q.options === 'string' ? (() => { try { return JSON.parse(q.options as string); } catch { return []; } })() : (q.options as unknown as string[]);
-                            if (!Array.isArray(opts) || opts.length === 0) return null;
+                            const rawOpts: unknown = typeof q.options === 'string' ? (() => { try { return JSON.parse(q.options as string); } catch { return []; } })() : q.options;
+                            const opts: string[] = Array.isArray(rawOpts)
+                              ? rawOpts.map((o, i) => {
+                                  if (typeof o === 'string') return o;
+                                  if (o && typeof o === 'object') {
+                                    const t = (o as { text?: string }).text ?? '';
+                                    const l = (o as { label?: string; key?: string }).label || (o as { key?: string }).key || String.fromCharCode(65 + i);
+                                    return t ? `${l}. ${t}` : l;
+                                  }
+                                  return String(o);
+                                })
+                              : rawOpts && typeof rawOpts === 'object'
+                                ? Object.entries(rawOpts as Record<string, unknown>).map(([k, v]) => `${k}. ${String(v ?? '')}`)
+                                : [];
+                            if (opts.length === 0) return null;
                             return (
                               <div className="flex flex-wrap gap-1.5 mt-1.5">
                                 {opts.map((opt, i) => (

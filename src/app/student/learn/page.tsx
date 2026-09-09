@@ -676,7 +676,36 @@ export default function StudentLearnPage() {
                     <span className="inline-flex items-center gap-1.5 text-xs text-fuchsia-600">
                       <Timer className="w-3.5 h-3.5" /> 已观看 {videoSeconds} 秒
                     </span>
-                    <a href={readingEmb.externalUrl} target="_blank" rel="noreferrer" className="text-xs text-violet-600 hover:underline shrink-0">新窗口打开原视频</a>
+                    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-fuchsia-50 text-fuchsia-600 font-medium shrink-0">
+                      {readingEmb.kind === 'bilibili' ? '哔哩哔哩在线播放' : readingEmb.kind === 'youtube' ? 'YouTube 在线播放' : '站内视频直链'}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <a href={readingEmb.externalUrl} target="_blank" rel="noreferrer" className="text-xs text-violet-600 hover:underline">新窗口打开原视频</a>
+                    <a
+                      href={`https://search.bilibili.com/all?keyword=${encodeURIComponent(reading.title)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 hover:opacity-90 transition-opacity shrink-0"
+                    >
+                      <PlayCircle className="w-3.5 h-3.5" /> B站搜《{reading.title}》看相关视频
+                    </a>
+                  </div>
+                </div>
+              )}
+              {reading.type === 'video' && !readingEmb && (
+                <div className="mb-4">
+                  <div className="w-full aspect-video rounded-xl bg-slate-900 flex flex-col items-center justify-center gap-3 text-center px-6">
+                    <PlayCircle className="w-10 h-10 text-fuchsia-400" />
+                    <p className="text-sm text-slate-300">该视频暂未配置可内嵌的播放地址</p>
+                    <a
+                      href={`https://search.bilibili.com/all?keyword=${encodeURIComponent(reading.title)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-fuchsia-500 to-pink-500 hover:opacity-90 transition-opacity"
+                    >
+                      <PlayCircle className="w-4 h-4" /> 在哔哩哔哩搜索相关「{reading.title}」并播放
+                    </a>
                   </div>
                 </div>
               )}

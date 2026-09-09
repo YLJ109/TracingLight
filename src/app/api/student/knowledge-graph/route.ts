@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
-import { canAccessCourse } from '@/lib/course-access';
+import { canAccessCourse, getAccessibleCourseIds } from '@/lib/course-access';
 import { course, knowledgePoint, gradingTask, knowledgeMasteryLog, errorBook } from '@/storage/database/shared/schema';
 import { eq, and, inArray, sql } from 'drizzle-orm';
 
@@ -26,6 +26,14 @@ function setCache(key: string, data: any) {
   if (cache.size > 50) {
     const oldest = [...cache.entries()].sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
     if (oldest) cache.delete(oldest[0]);
+  }
+}
+
+// 掌握度数据变更后调用：清除某学生的图谱缓存，使标记掌握/练习等立即反映到图谱
+export function invalidateKnowledgeGraph(studentId: number): void {
+  const suffix = `:${studentId}`;
+  for (const key of [...cache.keys()]) {
+    if (key.startsWith('kg:') && key.endsWith(suffix)) cache.delete(key);
   }
 }
 
@@ -197,7 +205,9 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const user = await requireAuth(req, 'student');
   if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
-  const courseId = parseInt(searchParams.get('course_id') || '1', 10);
+  const courseIdParam = parseInt(searchParams.get('course_id') || '', 10);
+  // 无 course_id 时自动取该学生第一门可访问课程，杜绝硬编码幻数 id（课程 id 由种子自增，非从 1 起）
+  const courseId = courseIdParam || getAccessibleCourseIds(user)[0] || 0;
   // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
   const studentId = user.userId;
 

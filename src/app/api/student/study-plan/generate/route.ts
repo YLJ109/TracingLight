@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/server-auth";
 import { createAIClient, aiErrorResponse, invokeStructured } from "@/lib/ai/client";
 import { studentSchedule, knowledgeMasteryLog, knowledgePoint, examSchedule, user, studyPlan } from "@/storage/database/shared/schema";
 import { eq, and, gte, desc, asc } from "drizzle-orm";
+import { isWeakMastery } from "@/lib/domain";
 
 interface StudyPlanItem {
   day: string;
@@ -80,7 +81,7 @@ export async function POST(request: NextRequest) {
     if (masteryLogs.length > 0) {
       const seen = new Set<number>();
       for (const m of masteryLogs) {
-        if (!seen.has(m.knowledge_point_id) && (m.mastery_rate || 0) < 70) {
+        if (!seen.has(m.knowledge_point_id) && isWeakMastery(m.mastery_rate)) {
           seen.add(m.knowledge_point_id);
           // Look up knowledge point name
           const kpRow = db.select({ name: knowledgePoint.name })

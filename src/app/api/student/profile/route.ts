@@ -3,6 +3,7 @@ import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
 import { user, gradingTask, assignment, course, knowledgeMasteryLog, knowledgePoint, errorBook, answer, examSchedule, abilityPoint, abilityKnowledge, learningBehaviorLog, qaSession, classInfo, major, exam, examAttempt, examGrading } from '@/storage/database/shared/schema';
 import { eq, and, sql, inArray } from 'drizzle-orm';
+import { classifyMastery, isWeakMastery } from '@/lib/domain';
 
 export async function GET(request: NextRequest) {
   try {
@@ -35,8 +36,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 课程列表（供筛选下拉）
-    const courses = db.select({ id: course.id, name: course.name }).from(course).all();
+    // 课程列表（供筛选下拉）：仅返回本班课程，避免“我的学情”出现非本班课程
+    const courses = stuClassId
+      ? db.select({ id: course.id, name: course.name }).from(course).where(eq(course.class_id, stuClassId)).all()
+      : [];
 
     // ============ 真实数据覆盖（全部维度）：平均分 + 薄弱知识点 ============
     const allGradings = db.select({ total_score: sql<number>`COALESCE(${gradingTask.teacher_override_score}, ${gradingTask.total_score})`, full_score: gradingTask.full_score })
@@ -47,7 +50,7 @@ export async function GET(request: NextRequest) {
     const realTotalFull = allGradings.reduce((s, g) => s + (g.full_score || 0), 0);
     const realAvgScore = realTotalFull > 0 ? Math.round((realTotalScore / realTotalFull) * 1000) / 10 : 0;
 
-    // 真实薄弱知识点（每个知识点取最新掌握度，<70 视为薄弱）
+    // 真实薄弱知识点（每个知识点取最新掌握度，统一口径 isWeakMastery：弱 = [30,60)）
     const allMastery = db.select({ knowledge_point_id: knowledgeMasteryLog.knowledge_point_id, mastery_rate: knowledgeMasteryLog.mastery_rate, recorded_at: knowledgeMasteryLog.recorded_at })
       .from(knowledgeMasteryLog)
       .where(eq(knowledgeMasteryLog.student_id, studentId))
@@ -61,7 +64,7 @@ export async function GET(request: NextRequest) {
       }
     }
     const weakEntries = [...kpMasteryMap.entries()]
-      .filter(([, rate]) => rate < 70)
+      .filter(([, rate]) => isWeakMastery(rate))
       .sort((a, b) => a[1] - b[1])
       .slice(0, 5);
     // 批量查询知识点名，消除 N+1
@@ -216,7 +219,7 @@ export async function GET(request: NextRequest) {
         ? Math.round(courseRates.reduce((s, x) => s + x.rate, 0) / courseRates.length)
         : 0;
       const weakKps = courseRates
-        .filter((x) => x.rate < 70)
+        .filter((x) => isWeakMastery(x.rate))
         .sort((a, b) => a.rate - b.rate)
         .map((x) => ({ name: x.name, masteryRate: x.rate }))
         .slice(0, 8);
@@ -271,9 +274,11 @@ export async function GET(request: NextRequest) {
         avgScore: v.tf > 0 ? Math.round((v.ts / v.tf) * 100) : 0,
       }));
 
-    // 课程对比：按课程聚合真实掌握度 + 平均分 + 错题数
-    const allCourses = db.select({ id: course.id, name: course.name, short_name: course.short_name })
-      .from(course).all();
+    // 课程对比：按课程聚合真实掌握度 + 平均分 + 错题数（仅本班课程）
+    const allCourses = stuClassId
+      ? db.select({ id: course.id, name: course.name, short_name: course.short_name })
+        .from(course).where(eq(course.class_id, stuClassId)).all()
+      : [];
     const realCourseComparison = allCourses.map((c) => {
       const cAssignments = db.select({ id: assignment.id }).from(assignment).where(eq(assignment.course_id, c.id)).all();
       const cAssignmentIds = cAssignments.map((a) => a.id);
@@ -340,13 +345,16 @@ export async function GET(request: NextRequest) {
       return l.length ? Math.round(l.reduce((a, b) => a + b.s, 0) / l.length) : overallAvg;
     })();
 
-    // 知识掌握分层统计（真实）
+    // 知识掌握分层统计（真实，统一走 domain.classifyMastery：未学<30 / 薄弱[30,60) / 基本[60,80) / 掌握>=80）
     const kpTotal = scoreArr.length;
+    const tierMap = { unlearned: 0, weak: 0, basic: 0, mastered: 0 };
+    for (const x of scoreArr) tierMap[classifyMastery(x.s)] += 1;
     const knowledgeStats = {
-      mastered: scoreArr.filter((x) => x.s >= 80).length,
+      mastered: tierMap.mastered,
+      weak: tierMap.weak,
+      basic: tierMap.basic,
+      unlearned: tierMap.unlearned,
       total: kpTotal,
-      weak: scoreArr.filter((x) => x.s < 70).length,
-      basic: scoreArr.filter((x) => x.s < 60).length,
     };
 
     // 错题类型分布（真实 errorBook）

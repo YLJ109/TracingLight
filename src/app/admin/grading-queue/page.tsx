@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as echarts from 'echarts';
+import { initChart } from '@/lib/echarts-utils';
 import { apiFetch } from '@/lib/api-fetch';
 import { toast } from 'sonner';
 import { Card, CardContent } from '@/components/ui/card';
@@ -79,7 +80,7 @@ export default function AdminGradingQueue() {
   // 趋势图
   useEffect(() => {
     if (!data || !trendRef.current) return;
-    const chart = echarts.init(trendRef.current);
+    const chart = initChart(trendRef.current);
     trendChart.current = chart;
     chart.setOption({
       backgroundColor: 'transparent',

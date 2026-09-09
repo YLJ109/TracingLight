@@ -14,14 +14,13 @@ export async function GET(request: NextRequest) {
     // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
     const sid = user.userId;
 
-    // 仅返回本班课程的作业，且隐藏 draft/closed（草稿/已关闭）
+    // 仅返回本班课程的作业；隐藏纯「草稿」；已截止/已批改公布(closed)须对学生可见
     const accessibleIds = getAccessibleCourseIds(user);
     const assignments = db.select()
       .from(assignment)
       .where(and(
         inArray(assignment.course_id, accessibleIds.length ? accessibleIds : [-1]),
         ne(assignment.status, 'draft'),
-        ne(assignment.status, 'closed'),
       ))
       .orderBy(desc(assignment.created_at))
       .all();

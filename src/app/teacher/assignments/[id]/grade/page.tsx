@@ -80,6 +80,19 @@ function fmt(n: number): string {
   return Number.isInteger(n) ? n.toString() : parseFloat(n.toFixed(2)).toString();
 }
 
+/** 选项展示归一化：兼容「字符串」「{A:'..'}`对象」「{label,key,text,isCorrect}」三种存法，避免把对象当 React 子元素渲染 */
+function optDisplay(opt: unknown, index: number): string {
+  if (opt == null) return '';
+  if (typeof opt === 'string') return opt;
+  if (typeof opt === 'object') {
+    const o = opt as { label?: string; key?: string; text?: string };
+    const label = o.label || o.key || String.fromCharCode(65 + index);
+    const text = o.text ?? '';
+    return text ? `${label}. ${text}` : label;
+  }
+  return String(opt);
+}
+
 const typeLabels: Record<string, string> = {
   single_choice: '单选题',
   multiple_choice: '多选题',
@@ -685,6 +698,8 @@ export default function TeacherGradeDetailPage() {
           const g = detail.grading;
           const isCorrect = g && g.total_score >= g.full_score * 0.6;
           const isGraded = g && g.status === 'completed';
+          // 题型标签旁的满分统一采用“归一化后”的实评分 full_score，与评分区一致，避免显示 default_score 造成“15分 vs 18分”偏差
+          const displayFull = g?.full_score ?? q.default_score;
 
           return (
             <Card key={q.id} id={`qcard-${q.id}`} className={isGraded ? (isCorrect ? 'border-l-4 border-l-emerald-400' : 'border-l-4 border-l-red-400') : ''}>
@@ -695,7 +710,7 @@ export default function TeacherGradeDetailPage() {
                       <span className="text-sm font-medium text-muted-foreground">
                         第{idx + 1}题 · {typeLabels[q.question_type] || '其他题型'}
                       </span>
-                      <span className="text-sm text-muted-foreground">({q.default_score}分)</span>
+                      <span className="text-sm text-muted-foreground">({displayFull}分)</span>
                       {q.knowledge_point && (
                         <Badge variant="outline" className="text-xs">{q.knowledge_point.name}</Badge>
                       )}
@@ -719,11 +734,11 @@ export default function TeacherGradeDetailPage() {
                     <p className="text-base font-medium text-slate-800 mt-2">{q.content}</p>
                     {q.options && q.question_type !== 'attachment' && (
                       <div className="mt-2 space-y-1">
-                        {(Array.isArray(q.options) ? q.options : Object.entries(q.options as Record<string, string>)).map((opt: string | [string, string], i: number) => (
-                          <p key={i} className="text-sm text-slate-600">
-                            {Array.isArray(opt) ? `${opt[0]}. ${opt[1]}` : opt}
-                          </p>
-                        ))}
+                        {(Array.isArray(q.options) ? q.options : Object.entries((q.options ?? {}) as Record<string, unknown>))
+                          .map((opt: unknown, i: number) => (Array.isArray(opt) ? `${opt[0]}. ${opt[1]}` : optDisplay(opt, i)))
+                          .map((text: string, i: number) => (
+                            <p key={i} className="text-sm text-slate-600">{text}</p>
+                          ))}
                       </div>
                     )}
                   </div>

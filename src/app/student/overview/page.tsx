@@ -9,6 +9,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { DashboardSkeleton } from '@/components/ui/dashboard-skeleton';
 import DiscussionZone from '@/components/discussion-zone';
 import * as echarts from 'echarts';
+import { initChart } from '@/lib/echarts-utils';
 import {
   BookOpen, Target, TrendingUp, FileText, ChevronRight, AlertCircle, Clock, Zap, Trophy, Loader2,
   Activity, BarChart3, Sparkles, CalendarDays, RefreshCcw, Layers, GraduationCap, Brain, CheckCircle2,
@@ -84,7 +85,7 @@ export default function StudentDashboard() {
   useEffect(() => {
     if (tab !== 'ability' || !profile?.radarData || !radarRef.current) return;
     const t = setTimeout(() => {
-      const chart = echarts.init(radarRef.current!);
+      const chart = initChart(radarRef.current!);
       const rd = profile.radarData;
       chart.setOption({
         tooltip: { backgroundColor: '#fff', borderColor: '#e2e8f0', textStyle: { color: '#334155' }, extraCssText: 'border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.08);' },
@@ -104,7 +105,7 @@ export default function StudentDashboard() {
   useEffect(() => {
     if (tab !== 'homework' || !profile?.trendData || !trendRef.current) return;
     const t = setTimeout(() => {
-      const chart = echarts.init(trendRef.current!);
+      const chart = initChart(trendRef.current!);
       const td = profile.trendData;
       chart.setOption({
         tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: '#e2e8f0', textStyle: { color: '#334155' }, extraCssText: 'border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.08);' },
@@ -124,7 +125,7 @@ export default function StudentDashboard() {
   useEffect(() => {
     if (tab !== 'homework' || !profile?.errorData?.errorTypeDistribution || !pieRef.current) return;
     const t = setTimeout(() => {
-      const chart = echarts.init(pieRef.current!);
+      const chart = initChart(pieRef.current!);
       const dist = profile.errorData.errorTypeDistribution;
       chart.setOption({
         tooltip: { trigger: 'item', formatter: '{b}: {c} 题 ({d}%)', backgroundColor: '#fff', borderColor: '#e2e8f0', textStyle: { color: '#334155' } },
@@ -147,7 +148,7 @@ export default function StudentDashboard() {
   useEffect(() => {
     if (tab !== 'behavior' || !profile?.learningBehavior || !behaviorRef.current) return;
     const t = setTimeout(() => {
-      const chart = echarts.init(behaviorRef.current!);
+      const chart = initChart(behaviorRef.current!);
       const lb = profile.learningBehavior;
       const days = lb.days.map((d) => d.date.slice(5));
       const mins = lb.days.map((d) => Math.round(d.seconds / 60));
@@ -169,7 +170,7 @@ export default function StudentDashboard() {
   useEffect(() => {
     if (tab !== 'ability' || !profile?.courseComparison || !compareRef.current) return;
     const t = setTimeout(() => {
-      const chart = echarts.init(compareRef.current!);
+      const chart = initChart(compareRef.current!);
       const cd = profile.courseComparison;
       chart.setOption({
         tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: '#e2e8f0', textStyle: { color: '#334155' }, extraCssText: 'border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.08);', formatter: (params: any) => { const p = params[0]; return `<strong>${p.name}</strong><br/>掌握度：${p.value}%<br/>知识点：${cd[p.dataIndex].kpCount} 个<br/>错题：${cd[p.dataIndex].errorCount} 题`; } },
@@ -196,7 +197,7 @@ export default function StudentDashboard() {
     { label: '平均掌握率', value: profile.avgMastery, unit: '%', color: 'teal', Icon: Activity },
     { label: '作业完成率', value: findInd('completionRate')?.value ?? 0, unit: '%', color: 'blue', Icon: Target },
     { label: '按时提交率', value: findInd('onTimeRate')?.value ?? 0, unit: '%', color: 'indigo', Icon: Clock },
-    { label: '薄弱知识点', value: profile.masteryTiers.weak + profile.masteryTiers.none, unit: '个', color: 'red', Icon: AlertCircle },
+    { label: '薄弱知识点', value: profile.masteryTiers.weak, unit: '个', color: 'red', Icon: AlertCircle },
     { label: '待复习错题', value: profile.pendingErrors, unit: '题', color: 'amber', Icon: RefreshCcw },
   ];
   const kpiColor: Record<string, { bg: string; val: string; grad: string }> = {

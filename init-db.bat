@@ -66,7 +66,7 @@ echo.
 echo  ============================================
 echo    Database reset complete!
 echo    Next: run start.bat  ^(http://localhost:5000^)
-echo    Demo accounts: teacher_wang / stu_zhang
+echo    Demo accounts: admin/123456, teacher_0_0, stu_0_2
 echo  ============================================
 echo.
 pause

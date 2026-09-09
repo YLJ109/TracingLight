@@ -12,6 +12,18 @@ import { course, user } from '@/storage/database/shared/schema';
 import { eq } from 'drizzle-orm';
 import type { ServerUser } from '@/lib/server-auth';
 
+/**
+ * 学生课程作用域解析（单一事实源）
+ * 决策 D1：以 DB 行 `user.class_id` 为准；会话 `authUser.classId` 仅作缓存，
+ * 不一致时以 DB 值覆盖，杜绝「学情 vs 作业课程数不一致」。
+ */
+export function resolveStudentClassId(authUser: ServerUser): number | null {
+  const db = getDb();
+  const row = db.select({ class_id: user.class_id }).from(user).where(eq(user.id, authUser.userId)).limit(1).all()[0];
+  const dbClassId = row?.class_id ?? null;
+  return dbClassId ?? authUser.classId ?? null;
+}
+
 /** 判断当前用户是否有权访问指定课程 */
 export function canAccessCourse(authUser: ServerUser, courseId: number): boolean {
   const db = getDb();
@@ -20,7 +32,7 @@ export function canAccessCourse(authUser: ServerUser, courseId: number): boolean
   if (!row) return false;
   if (authUser.role === 'teacher') return row.teacher_id === authUser.userId;
   if (authUser.role === 'student') {
-    return row.class_id != null && row.class_id === authUser.classId;
+    return row.class_id != null && row.class_id === resolveStudentClassId(authUser);
   }
   return false;
 }
@@ -35,7 +47,9 @@ export function getAccessibleCourseIds(authUser: ServerUser): number[] {
     return db.select({ id: course.id }).from(course).where(eq(course.teacher_id, authUser.userId)).all().map((r) => r.id);
   }
   if (authUser.role === 'student') {
-    return db.select({ id: course.id }).from(course).where(eq(course.class_id, authUser.classId ?? -1)).all().map((r) => r.id);
+    const classId = resolveStudentClassId(authUser);
+    if (classId == null) return [];
+    return db.select({ id: course.id }).from(course).where(eq(course.class_id, classId)).all().map((r) => r.id);
   }
   return [];
 }

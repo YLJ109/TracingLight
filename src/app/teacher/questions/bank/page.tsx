@@ -39,6 +39,8 @@ interface Question {
   max_select?: number | null;
   accuracy?: number | null;
   accuracy_attempts?: number;
+  used_count?: number;
+  is_used?: boolean;
   course?: { id: number; name: string; short_name: string };
   knowledge_point?: { id: number; name: string };
 }
@@ -82,6 +84,23 @@ const difficultyLabels: Record<string, string> = {
   medium: '中等',
   hard: '困难',
 };
+
+// 题型分组展示次序（决定题库列表里分组先后）
+const TYPE_ORDER: Record<string, number> = {
+  single_choice: 0, multi_choice: 1, choice_single: 0, choice_multiple: 1,
+  judgment: 2, fill_blank: 3, short_answer: 4, essay: 5,
+  programming: 6, code: 6, attachment: 7,
+};
+
+// 难度排序权重：简单 → 中等 → 困难（组内升序）
+const DIFFICULTY_WEIGHT: Record<string, number> = { easy: 0, medium: 1, hard: 2 };
+
+function typeOrder(t: string): number {
+  return TYPE_ORDER[t] ?? 99;
+}
+function difficultyWeight(d: string): number {
+  return DIFFICULTY_WEIGHT[d] ?? 1;
+}
 
 const difficultyColors: Record<string, string> = {
   easy: 'bg-emerald-100 text-emerald-700',
@@ -159,6 +178,7 @@ export default function QuestionBankPage() {
   const [filterKp, setFilterKp] = useState('all');
   const [filterType, setFilterType] = useState('all');
   const [filterDifficulty, setFilterDifficulty] = useState('all');
+  const [filterUsage, setFilterUsage] = useState('all'); // all | used | unused
   const [searchText, setSearchText] = useState('');
 
   // Dialog
@@ -192,6 +212,7 @@ export default function QuestionBankPage() {
     if (filterKp && filterKp !== 'all') params.set('knowledge_point_id', filterKp);
     if (filterType && filterType !== 'all') params.set('question_type', filterType);
     if (filterDifficulty && filterDifficulty !== 'all') params.set('difficulty', filterDifficulty);
+    if (filterUsage && filterUsage !== 'all') params.set('usage', filterUsage);
 
     const res = await apiFetch(`/api/teacher/questions/bank?${params}`);
     const json = await res.json();
@@ -206,7 +227,7 @@ export default function QuestionBankPage() {
 
   useEffect(() => {
     fetchQuestions();
-  }, [page, filterCourse, filterKp, filterType, filterDifficulty]);
+  }, [page, filterCourse, filterKp, filterType, filterDifficulty, filterUsage]);
 
   const handleCourseFilterChange = async (val: string) => {
     setFilterCourse(val);
@@ -400,6 +421,22 @@ export default function QuestionBankPage() {
 
   const totalPages = Math.ceil(total / pageSize);
 
+  // 列表按题型分组、组内按难度排序（简单→中等→困难）
+  const filteredForDisplay = questions.filter((q) => !searchText || q.content.includes(searchText));
+  const grouped: Array<{ typeKey: string; typeLabel: string; items: Question[] }> = [];
+  const byType = new Map<string, Question[]>();
+  for (const q of filteredForDisplay) {
+    const key = Object.prototype.hasOwnProperty.call(TYPE_ORDER, q.question_type) ? q.question_type : 'other';
+    const arr = byType.get(key) || [];
+    arr.push(q);
+    byType.set(key, arr);
+  }
+  for (const [key, items] of byType) {
+    items.sort((a, b) => difficultyWeight(a.difficulty) - difficultyWeight(b.difficulty) || b.id - a.id);
+    grouped.push({ typeKey: key, typeLabel: questionTypeLabels[key] || '其他题型', items });
+  }
+  grouped.sort((a, b) => typeOrder(a.typeKey) - typeOrder(b.typeKey));
+
   return (
     <div className="space-y-6">
       {/* Filters */}
@@ -458,6 +495,16 @@ export default function QuestionBankPage() {
               ))}
             </SelectContent>
           </Select>
+          <Select value={filterUsage} onValueChange={(v) => { setFilterUsage(v); setPage(1); }}>
+            <SelectTrigger className="w-[130px]">
+              <SelectValue placeholder="布置状态" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部布置状态</SelectItem>
+              <SelectItem value="used">已布置过</SelectItem>
+              <SelectItem value="unused">未布置过</SelectItem>
+            </SelectContent>
+          </Select>
           <Button onClick={openCreate} className="gap-2 ml-auto shrink-0">
             <Plus className="w-4 h-4" />
             新增题目
@@ -495,67 +542,87 @@ export default function QuestionBankPage() {
       <div className="bg-white rounded-xl border divide-y">
         {loading ? (
           <div className="p-12 text-center text-slate-400">加载中...</div>
-        ) : questions.length === 0 ? (
+        ) : filteredForDisplay.length === 0 ? (
           <div className="p-12 text-center text-slate-400">
             <BookOpen className="w-12 h-12 mx-auto mb-3 text-slate-300" />
             <p className="font-medium text-slate-500">还没有题目</p>
             <p className="text-sm text-slate-400 mt-1">去&ldquo;AI 出题&rdquo;用大模型快速生成高质量题库</p>
           </div>
         ) : (
-          questions
-            .filter((q) => !searchText || q.content.includes(searchText))
-            .map((q) => (
-              <div key={q.id} className={`p-4 transition-colors ${selectedIds.includes(q.id) ? 'bg-indigo-50/40 hover:bg-indigo-50' : 'hover:bg-slate-50'}`}>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <Checkbox
-                      className="mt-1"
-                      data-state={selectedIds.includes(q.id) ? 'checked' : 'unchecked'}
-                      checked={selectedIds.includes(q.id)}
-                      onCheckedChange={() => toggleSelect(q.id)}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <Badge variant="outline" className="text-xs">
-                          {questionTypeLabels[q.question_type] || '其他题型'}
-                        </Badge>
-                        <Badge className={`text-xs ${difficultyColors[q.difficulty] || ''}`}>
-                          {difficultyLabels[q.difficulty] || q.difficulty}
-                        </Badge>
-                        <span className="text-xs text-slate-400">{q.default_score}分</span>
-                        <Badge className={`text-xs ${accuracyColor(q.accuracy)}`}>
-                          正确率 {q.accuracy != null ? `${q.accuracy}%` : '—'}{q.accuracy_attempts ? `(${q.accuracy_attempts}次)` : ''}
-                        </Badge>
-                        {q.locked && (
-                          <Badge className="text-xs bg-slate-700 text-white gap-1">
-                            <Lock className="w-3 h-3" /> 已锁定
-                          </Badge>
-                        )}
-                        {q.course && (
-                          <span className="text-xs text-slate-500">{q.course.short_name || q.course.name}</span>
-                        )}
-                        {q.knowledge_point && (
-                          <span className="text-xs text-teal-600">{q.knowledge_point.name}</span>
-                        )}
+          grouped.map((grp) => (
+            <section key={grp.typeKey}>
+              <div className="px-4 py-2.5 bg-slate-50/80 flex items-center gap-2 border-b">
+                <span className="text-xs font-semibold text-slate-700">{grp.typeLabel}</span>
+                <span className="text-xs text-slate-400">共 {grp.items.length} 题</span>
+                <span className="text-[11px] text-slate-400 ml-1 flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1"><i className="w-2 h-2 rounded-full bg-emerald-400 inline-block" />简单</span>
+                  <span className="inline-flex items-center gap-1"><i className="w-2 h-2 rounded-full bg-amber-400 inline-block" />中等</span>
+                  <span className="inline-flex items-center gap-1"><i className="w-2 h-2 rounded-full bg-rose-400 inline-block" />困难</span>
+                </span>
+              </div>
+              <div className="divide-y">
+                {grp.items.map((q) => (
+                  <div key={q.id} className={`p-4 transition-colors ${selectedIds.includes(q.id) ? 'bg-indigo-50/40 hover:bg-indigo-50' : 'hover:bg-slate-50'}`}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <Checkbox
+                          className="mt-1"
+                          data-state={selectedIds.includes(q.id) ? 'checked' : 'unchecked'}
+                          checked={selectedIds.includes(q.id)}
+                          onCheckedChange={() => toggleSelect(q.id)}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+                            <Badge variant="outline" className="text-xs">
+                              {questionTypeLabels[q.question_type] || '其他题型'}
+                            </Badge>
+                            <Badge className={`text-xs ${difficultyColors[q.difficulty] || ''}`}>
+                              {difficultyLabels[q.difficulty] || q.difficulty}
+                            </Badge>
+                            <span className="text-xs text-slate-400">{q.default_score}分</span>
+                            <Badge className={`text-xs ${accuracyColor(q.accuracy)}`}>
+                              正确率 {q.accuracy != null ? `${q.accuracy}%` : '—'}{q.accuracy_attempts ? `(${q.accuracy_attempts}次)` : ''}
+                            </Badge>
+                            {q.is_used ? (
+                              <Badge className="text-xs bg-violet-50 text-violet-700 border border-violet-200 gap-1">
+                                已布置 {q.used_count || 0} 次
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs text-slate-400 gap-1">未布置</Badge>
+                            )}
+                            {q.locked && (
+                              <Badge className="text-xs bg-slate-700 text-white gap-1">
+                                <Lock className="w-3 h-3" /> 已锁定
+                              </Badge>
+                            )}
+                            {q.course && (
+                              <span className="text-xs text-slate-500">{q.course.short_name || q.course.name}</span>
+                            )}
+                            {q.knowledge_point && (
+                              <span className="text-xs text-teal-600">{q.knowledge_point.name}</span>
+                            )}
+                          </div>
+                          <p className="text-sm text-slate-800 line-clamp-2">{q.content}</p>
+                          <p className="text-xs text-slate-400 mt-1">答案：{q.answer}</p>
+                        </div>
                       </div>
-                      <p className="text-sm text-slate-800 line-clamp-2">{q.content}</p>
-                      <p className="text-xs text-slate-400 mt-1">答案：{q.answer}</p>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" disabled={batchBusy} onClick={() => toggleLockSingle(q)} title={q.locked ? '解锁' : '锁定'}>
+                          {q.locked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(q)}>
+                          <Edit2 className="w-4 h-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-rose-500" onClick={() => handleDelete(q.id)}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" disabled={batchBusy} onClick={() => toggleLockSingle(q)} title={q.locked ? '解锁' : '锁定'}>
-                      {q.locked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(q)}>
-                      <Edit2 className="w-4 h-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-rose-500" onClick={() => handleDelete(q.id)}>
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
+                ))}
               </div>
-            ))
+            </section>
+          ))
         )}
       </div>
 

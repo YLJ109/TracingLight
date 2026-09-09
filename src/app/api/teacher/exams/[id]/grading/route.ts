@@ -120,11 +120,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!g || g.exam_id !== examId) continue;
     const score = Number(it.score);
     const comment = it.comment || g.overall_comment; // 未填评语则保留 AI 评语
-    const correct = score >= (g.full_score || 1);
     db.update(examGrading).set({
       total_score: score, status: 'completed', overall_comment: comment, completed_at: now,
     }).where(eq(examGrading.id, g.id)).run();
 
+    // 幂等守卫：已批改且分值未变的重放（教师复核存档/接口重放），
+    // 仅保留评语而不再重复回写掌握度与错题本，避免 error_count/掌握度被重复叠加；
+    // 错题本本就带 !exist 幂等，但掌握度没有，故在此拉齐。
+    const scoreUnchanged = g.status === 'completed' && Math.abs((g.total_score ?? 0) - score) < 1e-6;
+    if (scoreUnchanged) continue;
+
+    const correct = score >= (g.full_score || 1);
     // 统一掌握度回写（与作业/申诉同一口径：指数平滑，按得分率计，答错累计错误计数）
     syncMasteryFromGrading({ studentId: g.student_id, knowledgePointId: g.knowledge_point_id, score, fullScore: g.full_score || 0, isCorrect: correct });
 

@@ -263,20 +263,16 @@ npx tsx src/server.ts
 | 角色 | 用户名 | 密码 |
 |------|--------|------|
 | 管理员 | `admin` | `123456` |
-| 教师 | `teacher_wang` | `teacher_wang` |
-| 教师 | `teacher_li` | `teacher_li` |
-| 学生 | `stu_zhang` | `stu_zhang` |
-| 学生 | `stu_li` | `stu_li` |
-| 学生 | `stu_wang` | `stu_wang` |
-| 学生 | `stu_zhao` | `stu_zhao` |
-| 学生 | `stu_chen` | `stu_chen` |
-| 学生 | `stu_liu` | `stu_liu` |
-| 学生 | `stu_zhou` | `stu_zhou` |
-| 学生 | `stu_wu` | `stu_wu` |
-| 学生 | `stu_sun` | `stu_sun` |
-| 学生 | `stu_ma` | `stu_ma` |
+| 教师 | `teacher_0_0`（萧涵棋） | `teacher_0_0` |
+| 教师 | `teacher_0_1`（郑洁） | `teacher_0_1` |
+| 学生 | `stu_0_1`（赵妍·学霸层） | `stu_0_1` |
+| 学生 | `stu_0_0`（蒋哲·勤奋中等层） | `stu_0_0` |
+| 学生 | `stu_1_5`（曹松·提升层） | `stu_1_5` |
 
-> 不同角色登录后进入各自界面。重置数据后账号恢复为默认密码。
+> 不同角色登录后进入各自界面。重置数据后账号恢复为默认密码（密码 = 用户名，管理员固定 `123456`）。
+> 登录页也可通过左下角「切换用户」一键填入其他演示账号。
+> 种子数据为 2 班级 × 10 学生、2 教师（各负责 2 门课程）、1 管理员；学生账号形如 `stu_{班级}_{序号}`（`stu_0_0`~`stu_0_9`、`stu_1_0`~`stu_1_9`）。
+> 种子内容包括 100 知识点 / 160 道真实题目（每知识点各 2 道，题干·选项·答案·解析齐备、全库不重复）/ 24 作业 / 24 考试，作业与考试均按「章节 → 知识点」组织，每卷满分统一归一为 100。
 
 ---
 
@@ -319,8 +315,10 @@ suguang_projects/
 │   │
 │   ├── storage/database/             # 数据层
 │   │   ├── db.ts                     # better-sqlite3 + Drizzle 客户端（实时落盘 + 迁移）
-│   │   ├── seed.ts                   # 种子数据（2教师+10学生+1管理员+1助教，276题，24作业，152知识点）
-│   │   └── shared/schema.ts          # Drizzle 表结构
+│   │   ├── seed.ts                   # 种子数据协调器（2教师+10学生+1管理员，100知识点+160题+24作业+24考试）
+│   │   └── shared/schema.ts          # Drizzle 表结构 + 建表 DDL
+│   │
+│   ├── seed/                         # 种子模块化生成（org组织/知识/knowledge知识图谱/questions题库/assignments作业/exams考试/social互动）
 │   │
 │   └── services/                     # 业务服务（grading/participation/points 等）
 │

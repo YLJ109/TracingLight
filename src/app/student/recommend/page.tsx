@@ -2,7 +2,9 @@
 
 import { useRouter, usePathname } from "next/navigation";
 import { apiFetch } from "@/lib/api-fetch";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import * as echarts from "echarts";
+import { initChart } from "@/lib/echarts-utils";
 import { StudyPlanPanel } from "@/components/study-plan-panel";
 import {
   BookOpen, Target, Calendar, Sparkles, TrendingUp,
@@ -42,6 +44,13 @@ interface RecommendData {
   masteryByCourse: Record<number, KnowledgeMastery[]>;
   weakPoints: WeakPoint[];
   totalErrors: number;
+  overallMastery: number;
+  strongCount: number;
+  mediumCount: number;
+  weakCount: number;
+  radarData: Array<{ dimension: string; label: string; score: number }>;
+  trendData: Array<{ date: string; mastery: number }>;
+  courseComparison: Array<{ courseId: number; name: string; shortName: string; avgMastery: number; kpCount: number; errorCount: number }>;
   upcomingExams: UpcomingExam[]; aiInsights: AiInsight[]; courses: Array<{ id: number; name: string; short_name: string }>;
 }
 
@@ -78,6 +87,66 @@ export default function RecommendPage() {
   }, [studentId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const radarRef = useRef<HTMLDivElement>(null);
+  const trendRef = useRef<HTMLDivElement>(null);
+  const courseRef = useRef<HTMLDivElement>(null);
+
+  // 总览驾驶舱：雷达 + 趋势 + 课程对比（真实数据，全部来自 /api/student/recommend）
+  useEffect(() => {
+    if (activeTab !== "overview" || !data) return;
+    const cleanups: Array<() => void> = [];
+    const t = setTimeout(() => {
+      // —— 能力雷达（radarData 8 维）——
+      if (radarRef.current && data.radarData?.length) {
+        const chart = initChart(radarRef.current);
+        chart.setOption({
+          tooltip: { backgroundColor: "#fff", borderColor: "#e2e8f0", textStyle: { color: "#334155" }, extraCssText: "border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.08);" },
+          radar: { center: ["50%", "54%"], radius: "60%", indicator: data.radarData.map((r) => ({ name: r.label, max: 100 })), axisName: { color: "#475569", fontSize: 11 }, splitArea: { areaStyle: { color: ["#f8fafc", "#f1f5f9"] } }, splitLine: { lineStyle: { color: "#e2e8f0" } } },
+          series: [{ type: "radar", data: [{ value: data.radarData.map((r) => r.score), name: "能力画像", areaStyle: { color: "rgba(13,148,136,0.18)" }, lineStyle: { color: "#0d9488", width: 2 }, itemStyle: { color: "#0d9488" }, symbol: "circle", symbolSize: 5 }] }],
+        });
+        const h = () => chart.resize();
+        window.addEventListener("resize", h);
+        cleanups.push(() => { window.removeEventListener("resize", h); chart.dispose(); });
+      }
+      // —— 成绩趋势（trendData）——
+      if (trendRef.current && data.trendData?.length) {
+        const chart = initChart(trendRef.current);
+        const dates = data.trendData.map((d) => d.date);
+        const vals = data.trendData.map((d) => d.mastery);
+        chart.setOption({
+          tooltip: { trigger: "axis", backgroundColor: "#fff", borderColor: "#e2e8f0", textStyle: { color: "#334155" }, extraCssText: "border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.08);" },
+          grid: { left: 40, right: 16, top: 24, bottom: 30 },
+          xAxis: { type: "category", boundaryGap: false, data: dates, axisLabel: { color: "#94a3b8", fontSize: 10 }, axisLine: { lineStyle: { color: "#e2e8f0" } }, axisTick: { show: false } },
+          yAxis: { type: "value", min: 0, max: 100, axisLabel: { color: "#94a3b8", fontSize: 10 }, splitLine: { lineStyle: { color: "#f1f5f9" } } },
+          series: [{ name: "掌握度", type: "line", smooth: true, symbol: "circle", symbolSize: 6, data: vals,
+            lineStyle: { color: "#0d9488", width: 2.5 },
+            itemStyle: { color: "#0d9488" },
+            areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: "rgba(13,148,136,0.25)" }, { offset: 1, color: "rgba(13,148,136,0.02)" }]) } }],
+        });
+        const h = () => chart.resize();
+        window.addEventListener("resize", h);
+        cleanups.push(() => { window.removeEventListener("resize", h); chart.dispose(); });
+      }
+      // —— 课程对比（courseComparison 横向条形）——
+      if (courseRef.current && data.courseComparison?.length) {
+        const chart = initChart(courseRef.current);
+        const cc = [...data.courseComparison].sort((a, b) => a.avgMastery - b.avgMastery);
+        chart.setOption({
+          tooltip: { trigger: "axis", backgroundColor: "#fff", borderColor: "#e2e8f0", textStyle: { color: "#334155" }, extraCssText: "border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.08);",
+            formatter: (p: any) => { const d = cc[p[0]?.dataIndex]; return d ? `${d.name}<br/>平均掌握度 <b>${d.avgMastery}%</b><br/>知识点 ${d.kpCount} 个 · 错题 ${d.errorCount} 道` : ""; } },
+          grid: { left: 90, right: 30, top: 12, bottom: 24 },
+          xAxis: { type: "value", min: 0, max: 100, axisLabel: { color: "#94a3b8", fontSize: 10 }, splitLine: { lineStyle: { color: "#f1f5f9" } } },
+          yAxis: { type: "category", data: cc.map((c) => c.shortName), axisLabel: { color: "#475569", fontSize: 11 }, axisLine: { show: false }, axisTick: { show: false } },
+          series: [{ type: "bar", barWidth: 16, data: cc.map((c) => ({ value: c.avgMastery, itemStyle: { borderRadius: [0, 8, 8, 0], color: c.avgMastery >= 80 ? "#10b981" : c.avgMastery >= 60 ? "#f59e0b" : "#ef4444" } })), label: { show: true, position: "right", color: "#334155", fontSize: 11, formatter: "{c}%" } }],
+        });
+        const h = () => chart.resize();
+        window.addEventListener("resize", h);
+        cleanups.push(() => { window.removeEventListener("resize", h); chart.dispose(); });
+      }
+    }, 80);
+    return () => { clearTimeout(t); cleanups.forEach((fn) => fn()); };
+  }, [activeTab, data]);
 
   const getPriorityStyle = (p: string) => {
     if (p === "P0") return "bg-red-50 text-red-700 border-red-200";
@@ -122,6 +191,68 @@ export default function RecommendPage() {
       {/* ===== 总览 Tab ===== */}
       {activeTab === "overview" && data && (
         <div className="space-y-6">
+          {/* KPI 指标条 */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="rounded-2xl p-4 bg-gradient-to-br from-teal-500 to-cyan-500 text-white shadow-lg shadow-teal-200">
+              <div className="flex items-center gap-2 text-white/85 text-xs"><Target className="w-3.5 h-3.5" />综合掌握度</div>
+              <div className="text-3xl font-bold mt-1">{data.overallMastery ?? 0}<span className="text-base font-medium text-white/80">%</span></div>
+              <div className="text-[11px] text-white/70 mt-0.5">能力雷达 | 作业 | 巩固的综合得分</div>
+            </div>
+            <div className="rounded-2xl p-4 bg-white border border-slate-200 shadow-sm">
+              <div className="flex items-center gap-2 text-slate-400 text-xs"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />已掌握</div>
+              <div className="text-3xl font-bold text-emerald-600 mt-1">{data.strongCount ?? 0}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">掌握度 ≥ 80% 的知识点</div>
+            </div>
+            <div className="rounded-2xl p-4 bg-white border border-slate-200 shadow-sm">
+              <div className="flex items-center gap-2 text-slate-400 text-xs"><TrendingUp className="w-3.5 h-3.5 text-amber-500" />需加强</div>
+              <div className="text-3xl font-bold text-amber-500 mt-1">{data.mediumCount ?? 0}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">{'60% ≤ 掌握度 < 80%'}</div>
+            </div>
+            <div className="rounded-2xl p-4 bg-white border border-slate-200 shadow-sm">
+              <div className="flex items-center gap-2 text-slate-400 text-xs"><AlertTriangle className="w-3.5 h-3.5 text-red-500" />薄弱 / 累计错题</div>
+              <div className="text-3xl font-bold text-red-500 mt-1">{data.weakCount ?? 0}<span className="text-sm font-medium text-slate-300 mx-1">/</span>{data.totalErrors ?? 0}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">薄弱点 {data.weakCount} 个 · 错题 {data.totalErrors} 道</div>
+            </div>
+          </div>
+
+          {/* 图表区：雷达 + 趋势 + 课程对比 */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+              <h3 className="text-sm font-semibold text-slate-900 mb-2 flex items-center gap-2"><Target className="w-4 h-4 text-teal-600" />能力雷达</h3>
+              {data.radarData?.length ? <div ref={radarRef} className="h-60 w-full" /> : <p className="text-sm text-slate-400 h-60 flex items-center justify-center">暂无能力数据</p>}
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+              <h3 className="text-sm font-semibold text-slate-900 mb-2 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-teal-600" />成绩趋势</h3>
+              {data.trendData?.length ? <div ref={trendRef} className="h-60 w-full" /> : <p className="text-sm text-slate-400 h-60 flex items-center justify-center">完成作业后展示成绩趋势</p>}
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+              <h3 className="text-sm font-semibold text-slate-900 mb-2 flex items-center gap-2"><BookOpen className="w-4 h-4 text-teal-600" />课程对比</h3>
+              {data.courseComparison?.length ? <div ref={courseRef} className="h-60 w-full" /> : <p className="text-sm text-slate-400 h-60 flex items-center justify-center">暂无课程数据</p>}
+            </div>
+          </div>
+
+          {/* 优先级行动区（P0 薄弱点一键处置） */}
+          {data.weakPoints.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+              <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2"><Flame className="w-4 h-4 text-red-500" />优先攻克 <span className="text-xs font-normal text-slate-400">（P0 薄弱点，点击即走专项通道）</span></h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {data.weakPoints.slice(0, 3).map((wp) => (
+                  <div key={wp.knowledgePointId} className="rounded-xl p-4 bg-gradient-to-br from-red-50 to-orange-50 border border-red-100 flex flex-col gap-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium text-slate-900 truncate">{wp.name}</span>
+                      <span className="text-xs font-bold text-red-600 shrink-0">{wp.masteryRate}%</span>
+                    </div>
+                    <div className="h-1.5 bg-white rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-red-400 to-orange-400" style={{ width: `${wp.masteryRate}%` }} /></div>
+                    <div className="grid grid-cols-2 gap-1.5 mt-auto">
+                      <button onClick={() => router.push(`/student/errors?knowledge_point_id=${wp.knowledgePointId}`)} className="text-[11px] py-1.5 rounded-lg bg-white text-red-600 hover:bg-red-100 transition-colors">专项错题</button>
+                      <button onClick={() => router.push('/student/assistant?q=' + encodeURIComponent(`请帮我详细讲解「${wp.name}」这个薄弱知识点，给出学习方法和例题`))} className="text-[11px] py-1.5 rounded-lg bg-white text-violet-600 hover:bg-violet-100 transition-colors">问 AI</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* AI 智能洞察 */}
           {data.aiInsights.length > 0 && (
             <div className="space-y-2">

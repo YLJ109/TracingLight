@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as echarts from 'echarts';
+import { initChart } from '@/lib/echarts-utils';
 import { apiFetch } from '@/lib/api-fetch';
 import { getCurrentUser } from '@/lib/auth-helper';
 import { SetActiveNav } from '@/components/app-shell';
@@ -50,7 +51,7 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     if (!data || !distRef.current) return;
     distChart.current?.dispose();
-    distChart.current = echarts.init(distRef.current);
+    distChart.current = initChart(distRef.current);
     distChart.current.setOption({
       tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
       legend: { bottom: 0, textStyle: { color: '#94a3b8', fontSize: 11 } },
@@ -72,7 +73,7 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     if (!data || !courseRef.current) return;
     courseChart.current?.dispose();
-    courseChart.current = echarts.init(courseRef.current);
+    courseChart.current = initChart(courseRef.current);
     courseChart.current.setOption({
       tooltip: { trigger: 'axis', formatter: (p: any) => `${p[0].name}<br/>掌握度: ${p[0].value}%` },
       grid: { top: 10, right: 30, bottom: 20, left: 50 },
@@ -94,7 +95,7 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     if (!data || !heatRef.current) return;
     heatChart.current?.dispose();
-    heatChart.current = echarts.init(heatRef.current);
+    heatChart.current = initChart(heatRef.current);
     heatChart.current.setOption({
       tooltip: { trigger: 'axis', formatter: (p: any) => `${p[0].name}<br/>签到: ${p[0].value} 人` },
       grid: { top: 10, right: 20, bottom: 24, left: 40 },

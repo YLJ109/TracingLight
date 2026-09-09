@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, saveDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
-import { errorBook, question, knowledgePoint, course, assignment } from '@/storage/database/shared/schema';
+import { errorBook, question, knowledgePoint, course, assignment, knowledgeMasteryLog } from '@/storage/database/shared/schema';
 import { eq, desc, inArray, and } from 'drizzle-orm';
+import { invalidateKnowledgeGraph } from '../knowledge-graph/route';
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,10 +12,13 @@ export async function GET(request: NextRequest) {
     const db = getDb();
     const { searchParams } = new URL(request.url);
     const reviewStatus = searchParams.get('review_status');
+    const kpId = searchParams.get('kp_id') ? parseInt(searchParams.get('kp_id')!, 10) : null;
+    const courseId = searchParams.get('course_id') ? parseInt(searchParams.get('course_id')!, 10) : null;
 
     // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
     const conditions = [eq(errorBook.student_id, user.userId)];
     if (reviewStatus) conditions.push(eq(errorBook.review_status, reviewStatus));
+    if (kpId) conditions.push(eq(errorBook.knowledge_point_id, kpId));
 
     const errors = db.select()
       .from(errorBook)
@@ -128,6 +132,8 @@ export async function GET(request: NextRequest) {
         question_options: q?.options || null,
         knowledge_point_name: kp?.name || '未知知识点',
         course_name: courseData?.name || '未知课程',
+        course_id: courseId || null,
+        knowledge_point_id: e.knowledge_point_id,
         assignment_title: asgn?.title || '',
         question_no: e.assignment_id && e.question_id
           ? (questionNo.get(`${e.assignment_id}_${e.question_id}`) ?? null)
@@ -139,7 +145,10 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({ success: true, data: result });
+    // 课程维度过滤（course_id 不在 error_book 上，用知识点/题目所属课程派生后过滤）
+    const scoped = courseId ? result.filter((r) => r.course_id === courseId) : result;
+
+    return NextResponse.json({ success: true, data: scoped });
   } catch (e) {
     if (e && typeof (e as { status?: number }).status === "number") return e as NextResponse;
     console.error('Get errors error:', e);
@@ -200,6 +209,50 @@ export async function PATCH(request: NextRequest) {
       .set(updateSet)
       .where(eq(errorBook.id, Number(error_id)))
       .run();
+
+    // 掌握 → 把该错题知识点的掌握度回写入 knowledgeMasteryLog（拉到≥80 掌握线），
+    // 使知识图谱/推荐/学情等掌握度数据源同步更新，不再出现「错题本已掌握、图谱不变」。
+    if (finalStatus === 'mastered') {
+      try {
+        const kpRow = db.select({ knowledge_point_id: errorBook.knowledge_point_id })
+          .from(errorBook)
+          .where(eq(errorBook.id, Number(error_id)))
+          .limit(1)
+          .all()[0];
+        const kpId = kpRow?.knowledge_point_id;
+        if (kpId != null) {
+          const MODULE_MASTERY = 0.5;
+          const existing = db.select({ id: knowledgeMasteryLog.id, mastery_rate: knowledgeMasteryLog.mastery_rate })
+            .from(knowledgeMasteryLog)
+            .where(and(
+              eq(knowledgeMasteryLog.student_id, user.userId),
+              eq(knowledgeMasteryLog.knowledge_point_id, kpId)
+            ))
+            .limit(1)
+            .all()[0];
+          const today = new Date().toISOString().split('T')[0];
+          if (existing) {
+            const newRate = Math.max(existing.mastery_rate || 0, Math.round((existing.mastery_rate || 0) * (1 - MODULE_MASTERY) + 100 * MODULE_MASTERY));
+            db.update(knowledgeMasteryLog)
+              .set({ mastery_rate: newRate, recorded_at: today })
+              .where(eq(knowledgeMasteryLog.id, existing.id))
+              .run();
+          } else {
+            db.insert(knowledgeMasteryLog).values({
+              student_id: user.userId,
+              knowledge_point_id: kpId,
+              mastery_rate: MODULE_MASTERY * 100,
+              error_count: 0,
+              recorded_at: today,
+            }).run();
+          }
+        }
+      } catch (mErr) {
+        console.error('Mastered mastery-log write error:', mErr);
+      }
+      // 失效该学生的图谱缓存，立即反映到知识图谱
+      try { invalidateKnowledgeGraph(user.userId); } catch { /* */ }
+    }
 
     // 关键写路径即时落盘（T-2）
     try { saveDb(); } catch { /* 定时持久化兜底 */ }

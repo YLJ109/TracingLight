@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -19,7 +19,7 @@ import { SetActiveNav } from '@/components/app-shell';
 import { questionTypeLabel } from '@/lib/labels';
 import { formatDateTime } from '@/lib/date';
 import { BackButton } from '@/components/ui/back-button';
-import { RefreshCw, Megaphone, Trophy, AlertTriangle, CheckCircle2, Search, ShieldAlert, Target } from 'lucide-react';
+import { RefreshCw, Megaphone, Trophy, AlertTriangle, CheckCircle2, Search, ShieldAlert, Target, Eye } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ReportStudent {
@@ -49,6 +49,7 @@ const SUBMIT_VIA_LABEL: Record<string, string> = {
 
 export default function ExamReportPage() {
   const { id } = useParams() as { id: string };
+  const router = useRouter();
   const [payload, setPayload] = useState<ReportPayload | null>(null);
   const [appeals, setAppeals] = useState<Appeal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -279,6 +280,7 @@ export default function ExamReportPage() {
                     <TableHead>得分率</TableHead>
                     <TableHead>交卷方式</TableHead>
                     <TableHead>交卷时间</TableHead>
+                    <TableHead className="text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -301,10 +303,20 @@ export default function ExamReportPage() {
                       </TableCell>
                       <TableCell className="text-slate-500">{SUBMIT_VIA_LABEL[s.submitted_via || ''] || s.submitted_via || '-'}</TableCell>
                       <TableCell className="text-slate-500">{s.submitted_at ? formatDateTime(s.submitted_at) : '-'}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="cursor-pointer gap-1"
+                          onClick={() => router.push(`/teacher/exams/${id}/students/${s.student.id}`)}
+                        >
+                          <Eye className="w-3.5 h-3.5" />查看卷子
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                   {detailRows.length === 0 && (
-                    <TableRow><TableCell colSpan={8} className="text-center text-slate-400 py-8">暂无可展示的分数明细</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={9} className="text-center text-slate-400 py-8">暂无可展示的分数明细</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>

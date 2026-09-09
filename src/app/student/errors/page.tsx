@@ -3,7 +3,7 @@ import RichContent from '@/components/rich-content';
 import { createPortal } from 'react-dom';
 import { apiFetch } from '@/lib/api-fetch';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -49,6 +49,19 @@ const questionTypeLabels: Record<string, string> = {
 };
 const ALL_QUESTION_TYPES = ['single_choice', 'multiple_choice', 'fill_blank', 'judgment', 'code', 'attachment'];
 
+/** 选项展示归一化：兼容「字符串」与「{label,key,text,isCorrect}」两种存法，避免把对象当 React 子元素渲染 */
+function optText(opt: unknown, index: number): string {
+  if (opt == null) return '';
+  if (typeof opt === 'string') return opt;
+  if (typeof opt === 'object') {
+    const o = opt as { label?: string; key?: string; text?: string };
+    const label = o.label || o.key || String.fromCharCode(65 + index);
+    const text = o.text ?? '';
+    return text ? `${label}. ${text}` : (o.label || '');
+  }
+  return String(opt);
+}
+
 interface AIAnalysisResult {
   error_analysis: string;
   knowledge_explanation: string;
@@ -78,6 +91,7 @@ interface ErrorItem {
   question_options: string[] | null;
   knowledge_point_name: string;
   course_name: string;
+  course_id: number | null;
   assignment_title: string;   // 来源作业名
   question_no: number | null; // 在该作业中的题号（第几题）
   aiAnalysis: AIAnalysisResult | null;
@@ -86,7 +100,8 @@ interface ErrorItem {
 export default function StudentErrors() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const kpIdFromQuery = searchParams.get('knowledge_point_id');
+  const kpIdFromQuery = searchParams.get('knowledge_point_id') || searchParams.get('kp_id');
+  const courseIdFromQuery = searchParams.get('course_id');
   const [mounted, setMounted] = useState(false);
   const [errors, setErrors] = useState<ErrorItem[]>([]);
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
@@ -117,7 +132,20 @@ export default function StudentErrors() {
     error: string;
   } | null>(null);
 
+  // 举一反三缓存：同一道错题生成过一次后，后续打开直接复用，不重复调用 AI 出题
+  const practiceCacheRef = useRef<Map<number, {
+    kpId: number | null; kpName: string; practiceId: string;
+    questions: typeof practice extends null ? never : NonNullable<typeof practice>['questions'];
+    answers: Record<number, string>; result: NonNullable<typeof practice>['result']; error: string;
+  }>>(new Map());
+  const [cachedPracticeIds, setCachedPracticeIds] = useState<Set<number>>(new Set());
+
   const startPractice = async (err: ErrorItem) => {
+    const cached = practiceCacheRef.current.get(err.id);
+    if (cached) {
+      setPractice({ loading: false, errorId: err.id, kpId: cached.kpId, kpName: cached.kpName, practiceId: cached.practiceId, step: 0, questions: cached.questions, answers: cached.answers, result: cached.result, error: cached.error });
+      return;
+    }
     setPractice({ loading: true, errorId: err.id, kpId: err.knowledge_point_id, kpName: err.knowledge_point_name, practiceId: '', step: 0, questions: [], answers: {}, result: null, error: '' });
     try {
       const res = await apiFetch('/api/student/practice/generate', {
@@ -127,9 +155,14 @@ export default function StudentErrors() {
       });
       const d = await res.json();
       if (!d.success) throw new Error(d.error || '生成失败');
+      const entry = { kpId: err.knowledge_point_id, kpName: err.knowledge_point_name, practiceId: d.data.practice_id, questions: d.data.questions, answers: {}, result: null, error: '' };
+      practiceCacheRef.current.set(err.id, entry);
+      setCachedPracticeIds((prev) => new Set(prev).add(err.id));
       setPractice((p) => p ? { ...p, loading: false, practiceId: d.data.practice_id, questions: d.data.questions, step: 0 } : p);
     } catch (e) {
-      setPractice((p) => p ? { ...p, loading: false, error: (e as Error).message || 'AI 出题失败，请稍后重试' } : p);
+      const errMsg = (e as Error).message || 'AI 出题失败，请稍后重试';
+      practiceCacheRef.current.set(err.id, { kpId: err.knowledge_point_id, kpName: err.knowledge_point_name, practiceId: '', questions: [], answers: {}, result: null, error: errMsg });
+      setPractice((p) => p ? { ...p, loading: false, error: errMsg } : p);
     }
   };
 
@@ -148,6 +181,11 @@ export default function StudentErrors() {
       const d = await res.json();
       if (!d.success) throw new Error(d.error || '提交失败');
       setPractice((p) => p ? { ...p, result: d.data } : p);
+      // 结果写回缓存，下次打开该错题的举一反三直接显示结果，不再重新出题
+      if (practice.errorId != null) {
+        const cur = practiceCacheRef.current.get(practice.errorId);
+        if (cur) practiceCacheRef.current.set(practice.errorId, { ...cur, result: d.data });
+      }
     } catch (e) {
       setPractice((p) => p ? { ...p, error: (e as Error).message || '提交失败' } : p);
     }
@@ -162,7 +200,8 @@ export default function StudentErrors() {
         if (cancelled) return;
         const studentId = String(user?.id || 3);
         let url = `/api/student/errors?student_id=${studentId}`;
-        if (kpIdFromQuery) url += `&knowledge_point_id=${kpIdFromQuery}`;
+        if (kpIdFromQuery) url += `&kp_id=${kpIdFromQuery}`;
+        if (courseIdFromQuery) url += `&course_id=${courseIdFromQuery}`;
         apiFetch(url)
           .then(r => r.json())
           .then(data => {
@@ -296,6 +335,13 @@ export default function StudentErrors() {
     }
   }, [errors]);
 
+  // 错因分布（用于概览统计卡）——必须在任何 early return 之前声明（hook 顺序稳定性）
+  const errorTypeDist = useMemo(() => {
+    const m = new Map<string, number>();
+    errors.forEach((e) => { const k = errorTypeLabels[e.error_type] || '其他'; m.set(k, (m.get(k) || 0) + 1); });
+    return [...m.entries()].map(([name, count]) => ({ name, count, pct: errors.length ? count / errors.length * 100 : 0 })).sort((a, b) => b.count - a.count);
+  }, [errors]);
+
   if (!mounted) return null;
 
   if (loading) {
@@ -340,7 +386,16 @@ export default function StudentErrors() {
             <Badge variant="outline" className="text-xs text-slate-500 border-slate-200">{questionTypeLabels[err.question_type] || '其他题型'}</Badge>
           </div>
           <div className="flex gap-2">
-            {!err.aiAnalysis && (
+            {err.aiAnalysis ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs border-teal-200 text-teal-700 hover:bg-teal-50"
+                onClick={() => setExpandedId(expandedId === err.id ? null : err.id)}
+              >
+                {expandedId === err.id ? <><ChevronUp className="w-3 h-3 mr-1" />收起解析</> : <><Sparkles className="w-3 h-3 mr-1" />查看 AI 解析</>}
+              </Button>
+            ) : (
               <Button
                 variant="outline"
                 size="sm"
@@ -355,12 +410,16 @@ export default function StudentErrors() {
                 )}
               </Button>
             )}
+            <Button variant="outline" size="sm" className="text-xs border-slate-200 text-slate-600" title="在知识图谱中定位该知识点"
+              onClick={() => router.push(`/student/knowledge-graph?focus_kp=${err.knowledge_point_id}&course_id=${err.course_id ?? ''}`)}>
+              <Brain className="w-3 h-3 mr-1" /> 图谱定位
+            </Button>
             <Button variant="outline" size="sm" className="text-xs" onClick={() => setExpandedId(expandedId === err.id ? null : err.id)}>
               {expandedId === err.id ? <ChevronUp className="w-3 h-3 mr-1" /> : <ChevronDown className="w-3 h-3 mr-1" />}
               {expandedId === err.id ? '收起' : '展开'}
             </Button>
-            <Button size="sm" className="text-xs bg-teal-600 hover:bg-teal-700" onClick={() => startPractice(err)}>
-              <Dumbbell className="w-3 h-3 mr-1" /> 举一反三
+            <Button size="sm" className="text-xs bg-teal-600 hover:bg-teal-700" onClick={() => startPractice(err)} title={cachedPracticeIds.has(err.id) ? '已生成，可直接查看，不会重复出题' : 'AI 生成 3 道变式题'}>
+              <Dumbbell className="w-3 h-3 mr-1" /> {cachedPracticeIds.has(err.id) ? '查看练习' : '举一反三'}
             </Button>
             {err.review_status !== 'mastered' && isDue(err.next_review_at) && (
               <Button size="sm" className="text-xs bg-amber-500 hover:bg-amber-600 text-white" onClick={() => handleCompleteReview(err.id)}>
@@ -384,8 +443,8 @@ export default function StudentErrors() {
           <RichContent content={err.question_content} className="text-sm text-slate-800" />
           {err.question_options && err.question_options.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-2">
-              {err.question_options.map((opt: string, oi: number) => (
-                <span key={oi} className="text-xs px-2 py-0.5 bg-white border rounded">{opt}</span>
+              {(err.question_options as unknown[]).map((opt, oi) => (
+                <span key={oi} className="text-xs px-2 py-0.5 bg-white border rounded">{optText(opt, oi)}</span>
               ))}
             </div>
           )}
@@ -565,6 +624,30 @@ export default function StudentErrors() {
           ))}
         </div>
       </div>
+
+      {/* 错因分布概览 */}
+      {errorTypeDist.length > 0 && (
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Brain className="w-4 h-4 text-indigo-500" />
+            <span className="text-sm font-semibold text-slate-700">错因分布</span>
+            <span className="text-xs text-slate-400">· 帮你定位最该优先纠正的错误类型</span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {errorTypeDist.slice(0, 8).map((t) => (
+              <div key={t.name} className="rounded-xl bg-slate-50 p-3">
+                <div className="flex items-center justify-between text-sm mb-1.5">
+                  <span className="text-slate-700 font-medium">{t.name}</span>
+                  <span className="text-slate-500 text-xs">{t.count} 道 · {Math.round(t.pct)}%</span>
+                </div>
+                <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-teal-400" style={{ width: `${t.pct}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {errors.length === 0 ? (
         <Card className="border-0 shadow-sm py-0">

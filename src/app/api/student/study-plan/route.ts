@@ -3,6 +3,7 @@ import { getDb } from "@/storage/database/db";
 import { requireAuth } from "@/lib/server-auth";
 import { studyPlan, studentSchedule, examSchedule, knowledgePoint, knowledgeMasteryLog } from "@/storage/database/shared/schema";
 import { eq, and, gte, asc } from "drizzle-orm";
+import { isWeakMastery } from "@/lib/domain";
 
 export async function GET(request: NextRequest) {
   try {
@@ -84,7 +85,7 @@ export async function GET(request: NextRequest) {
       .limit(5)
       .all();
 
-    // 真实薄弱知识点：每个知识点取最新掌握度，<70 按薄弱，升序取前 10
+    // 真实薄弱知识点：每个知识点取最新掌握度，按统一口径 isWeakMastery([30,60)) 判定，升序取前 10
     const masteryRows = db.select({
       knowledge_point_id: knowledgeMasteryLog.knowledge_point_id,
       mastery_rate: knowledgeMasteryLog.mastery_rate,
@@ -100,7 +101,7 @@ export async function GET(request: NextRequest) {
     }
     const kpIdToName = new Map(kpRows.map((k) => [k.id, k.name]));
     const weakKnowledgePoints = [...latestMastery.entries()]
-      .filter(([, rate]) => rate < 70)
+      .filter(([, rate]) => isWeakMastery(rate))
       .sort((a, b) => a[1] - b[1])
       .slice(0, 10)
       .map(([kpId, rate]) => ({ name: kpIdToName.get(kpId) || `知识点${kpId}`, mastery: rate }));

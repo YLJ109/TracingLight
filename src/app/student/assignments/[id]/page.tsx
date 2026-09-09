@@ -27,6 +27,20 @@ import {
 } from 'lucide-react';
 import { BackButton } from '@/components/ui/back-button';
 
+// 选项归一化：兼容 seed 存入的「{label,key,text}」对象数组与「A.xxx」字符串数组两种格式
+function optLabel(opt: unknown, idx: number): string {
+  if (opt == null) return String.fromCharCode(65 + idx);
+  if (typeof opt === 'string') return opt.charAt(0) || String.fromCharCode(65 + idx);
+  const o = opt as { label?: string; key?: string };
+  return o.label || o.key || String.fromCharCode(65 + idx);
+}
+function optText(opt: unknown, idx: number): string {
+  if (opt == null) return '';
+  if (typeof opt === 'string') return opt;
+  const o = opt as { text?: string; label?: string; key?: string };
+  return o.text || o.label || o.key || '';
+}
+
 interface QuestionDetail {
   id: number;
   content: string;
@@ -767,8 +781,8 @@ export default function StudentAssignmentDetailPage() {
                                   </p>
                                 )}
                               <div className="grid grid-cols-2 gap-2">
-                                {(typeof q.options === 'string' ? JSON.parse(q.options) : q.options)!.map((opt: string, oi: number) => {
-                                  const optLetter = opt.charAt(0);
+                                {(typeof q.options === 'string' ? JSON.parse(q.options) : q.options)!.map((opt: unknown, oi: number) => {
+                                  const optLetter = optLabel(opt, oi);
                                   const isSelected = selectedLetters.includes(optLetter);
                                   const isCorrectOpt = correctLetters.includes(optLetter);
                                   let border = 'border-slate-200 hover:border-slate-300';
@@ -810,7 +824,7 @@ export default function StudentAssignmentDetailPage() {
                                         }}
                                         className="text-indigo-600 rounded"
                                       />
-                                      <span className="text-sm">{opt}</span>
+                                      <span className="text-sm">{optText(opt, oi)}</span>
                                       {icon}
                                     </label>
                                   );
@@ -822,8 +836,8 @@ export default function StudentAssignmentDetailPage() {
                             // Radio for single choice
                             return (
                               <div className="grid grid-cols-2 gap-2 mb-3">
-                                {(typeof q.options === 'string' ? JSON.parse(q.options) : q.options)!.map((opt: string, oi: number) => {
-                                  const optLetter = opt.charAt(0);
+                                {(typeof q.options === 'string' ? JSON.parse(q.options) : q.options)!.map((opt: unknown, oi: number) => {
+                                  const optLetter = optLabel(opt, oi);
                                   const isSelected = answers[q.id] === optLetter;
                                   const isCorrectOpt = correctAnswer && correctAnswer === optLetter;
                                   let border = 'border-slate-200 hover:border-slate-300';
@@ -853,7 +867,7 @@ export default function StudentAssignmentDetailPage() {
                                         disabled={isGraded}
                                         className="text-indigo-600"
                                       />
-                                      <span className="text-sm">{opt}</span>
+                                      <span className="text-sm">{optText(opt, oi)}</span>
                                       {icon}
                                     </label>
                                   );

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, saveDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
-import { eq, desc, and, sql, inArray } from 'drizzle-orm';
-import { question, course, knowledgePoint, gradingTask } from '@/storage/database/shared/schema';
+import { eq, desc, and, sql, inArray, notInArray } from 'drizzle-orm';
+import { question, course, knowledgePoint, gradingTask, assignment, exam } from '@/storage/database/shared/schema';
 import { getTeacherCourseIds } from '@/lib/teacher-scope';
 
 // 解析某题归属课程
@@ -33,11 +33,28 @@ export async function GET(req: NextRequest) {
     const question_type = searchParams.get('question_type');
     const difficulty = searchParams.get('difficulty');
     const excludeLocked = searchParams.get('exclude_locked') === '1';
+    const usage = searchParams.get('usage'); // used | unused
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
     const offset = (page - 1) * pageSize;
 
     const myCourseIds = getTeacherCourseIds(authUser.userId);
+    // 计算每题「已布置」次数：扫描本人课程下所有作业与考试的 question_ids
+    const usedCounts = new Map<number, number>();
+    const scanRefs = (qids: unknown) => {
+      if (!Array.isArray(qids)) return;
+      qids.forEach((id) => {
+        const n = Number(id);
+        if (Number.isFinite(n)) usedCounts.set(n, (usedCounts.get(n) || 0) + 1);
+      });
+    };
+    if (myCourseIds.length > 0) {
+      db.select({ q: assignment.question_ids }).from(assignment)
+        .where(inArray(assignment.course_id, myCourseIds)).all().forEach((r) => scanRefs(r.q));
+      db.select({ q: exam.question_ids }).from(exam)
+        .where(inArray(exam.course_id, myCourseIds)).all().forEach((r) => scanRefs(r.q));
+    }
+    const usedIds = [...usedCounts.keys()];
     // 越权指定他人课程 → 403
     if (course_id && !myCourseIds.includes(parseInt(course_id))) {
       return NextResponse.json({ error: '无权访问该课程' }, { status: 403 });
@@ -63,6 +80,9 @@ export async function GET(req: NextRequest) {
     if (difficulty) filters.push(eq(question.difficulty, difficulty));
     // 选题/组卷场景：排除已锁定题目
     if (excludeLocked) filters.push(eq(question.locked, false));
+    // 布置状态筛选：used=已被作业/考试布置过；unused=从未布置
+    if (usage === 'used') filters.push(inArray(question.id, usedIds.length ? usedIds : [-1]));
+    if (usage === 'unused') filters.push(notInArray(question.id, usedIds));
 
     // Get total count
     const countResult = db.select({ count: sql<number>`count(*)` })
@@ -129,6 +149,8 @@ export async function GET(req: NextRequest) {
         knowledge_point: kpMap.get(q.knowledge_point_id) || null,
         accuracy_attempts: acc?.attempts ?? 0,
         accuracy: acc && acc.attempts > 0 ? Math.round((acc.correct / acc.attempts) * 1000) / 10 : null,
+        used_count: usedCounts.get(q.id) || 0,
+        is_used: usedCounts.has(q.id),
       };
     });
 
