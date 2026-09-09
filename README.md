@@ -254,6 +254,19 @@ npx tsx src/server.ts
 
 ---
 
+### 方式三：Linux 服务器部署（物理机 + PM2，常驻运行）
+
+```bash
+git clone https://github.com/YLJ109/TracingLight.git && cd TracingLight
+sudo ./deploy/setup-linux.sh        # 一键：依赖→.env→种子→next build→pm2 启动
+# 日常热更新
+sudo ./deploy/setup-linux.sh deploy
+```
+
+详见 [docs/部署指南-Linux.md](deploy/部署指南-Linux.md)（含 AI 配置、备份/重置、Nginx 对外、pm2 开机自启）。
+
+---
+
 ### 验证部署 & 测试账号
 
 浏览器访问 `http://localhost:5000`，看到登录页即部署成功。
