@@ -40,10 +40,10 @@ export async function POST(request: NextRequest) {
     writeFileSync(join(dir, filename), buf);
 
     const avatarUrl = `/uploads/avatars/${filename}`;
-    getDb().update(userTable)
+    await getDb().update(userTable)
       .set({ avatar_url: avatarUrl })
       .where(eq(userTable.id, authUser.userId))
-      .run();
+      .execute();
 
     return NextResponse.json({ success: true, avatar_url: avatarUrl });
   } catch (e) {

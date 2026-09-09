@@ -46,8 +46,8 @@ export async function GET(request: NextRequest) {
     if (!authUser) return NextResponse.json({ error: '未登录' }, { status: 401 });
     const db = getDb();
 
-    const myCourseIds = getTeacherCourseIds(authUser.userId);
-    const myClassIds = getTeacherClassIds(authUser.userId);
+    const myCourseIds = await getTeacherCourseIds(authUser.userId);
+    const myClassIds = await getTeacherClassIds(authUser.userId);
     const sp = request.nextUrl.searchParams;
     const courseId = sp.get('course_id') ? Number(sp.get('course_id')) : null;
     if (courseId != null && !myCourseIds.includes(courseId)) {
@@ -59,9 +59,9 @@ export async function GET(request: NextRequest) {
 
     // 学生集合（本人班级）
     const myStudentIds = myClassIds.length > 0
-      ? db.select({ id: user.id }).from(user)
+      ? (await db.select({ id: user.id }).from(user)
           .where(and(eq(user.role, 'student'), eq(user.is_active, true), inArray(user.class_id, myClassIds)))
-          .all().map((u) => u.id)
+          .execute()).map((u) => u.id)
       : [];
     if (myStudentIds.length === 0) {
       return NextResponse.json({ success: true, data: { issues: [], atRisk: [], summary: '暂无学生数据', aiGenerated: false } });
@@ -72,71 +72,71 @@ export async function GET(request: NextRequest) {
       ? inArray(knowledgePoint.course_id, myCourseIds)
       : eq(knowledgePoint.id, -1);
     if (courseId) kpCond = eq(knowledgePoint.course_id, courseId);
-    const allKps = db.select({
+    const allKps = await db.select({
       id: knowledgePoint.id, name: knowledgePoint.name,
       course_id: knowledgePoint.course_id, description: knowledgePoint.description,
-    }).from(knowledgePoint).where(kpCond).all();
+    }).from(knowledgePoint).where(kpCond).execute();
     const kpIds = allKps.map((k) => k.id);
     const kpMap = new Map(allKps.map((k) => [k.id, k]));
     const courseMap = new Map<number, string>(
-      db.select({ id: course.id, name: course.name }).from(course)
+      (await db.select({ id: course.id, name: course.name }).from(course)
         .where(myCourseIds.length > 0 ? inArray(course.id, myCourseIds) : eq(course.id, -1))
-        .all().map((c) => [c.id, c.name])
+        .execute()).map((c) => [c.id, c.name])
     );
 
     // 学生详情
-    const studentRows = db.select({
+    const studentRows = await db.select({
       id: user.id, real_name: user.real_name, student_level: user.student_level,
-    }).from(user).where(inArray(user.id, myStudentIds)).all();
+    }).from(user).where(inArray(user.id, myStudentIds)).execute();
     const studentMap = new Map(studentRows.map((s) => [s.id, s]));
 
     // 错题按知识点聚合
     const errConds: SQL[] = [inArray(errorBook.student_id, myStudentIds)];
     if (courseId) errConds.push(inArray(errorBook.knowledge_point_id, kpIds));
-    const errors = db.select({
+    const errors = await db.select({
       student_id: errorBook.student_id,
       knowledge_point_id: errorBook.knowledge_point_id,
       error_type: errorBook.error_type,
       review_status: errorBook.review_status,
       question_id: errorBook.question_id,
-    }).from(errorBook).where(and(...errConds)).all();
+    }).from(errorBook).where(and(...errConds)).execute();
 
     // 掌握度（按知识点平均）
     const masteryConds: SQL[] = [inArray(knowledgeMasteryLog.student_id, myStudentIds)];
     if (courseId) masteryConds.push(inArray(knowledgeMasteryLog.knowledge_point_id, kpIds));
-    const masteryRows = db.select({
+    const masteryRows = await db.select({
       student_id: knowledgeMasteryLog.student_id,
       knowledge_point_id: knowledgeMasteryLog.knowledge_point_id,
       mastery_rate: knowledgeMasteryLog.mastery_rate,
-    }).from(knowledgeMasteryLog).where(and(...masteryConds)).all();
+    }).from(knowledgeMasteryLog).where(and(...masteryConds)).execute();
 
     // 成绩（本人课程作业）
     const myAssignmentIds = myCourseIds.length > 0
-      ? db.select({ id: assignment.id }).from(assignment)
-          .where(inArray(assignment.course_id, myCourseIds)).all().map((a) => a.id)
+      ? (await db.select({ id: assignment.id }).from(assignment)
+          .where(inArray(assignment.course_id, myCourseIds)).execute()).map((a) => a.id)
       : [];
     let gradingCond: SQL | undefined = myAssignmentIds.length > 0
       ? inArray(gradingTask.assignment_id, myAssignmentIds)
       : eq(gradingTask.id, -1);
     if (courseId) {
-      const courseAssignments = db.select({ id: assignment.id }).from(assignment)
-        .where(eq(assignment.course_id, courseId)).all().map((a) => a.id);
+      const courseAssignments = (await db.select({ id: assignment.id }).from(assignment)
+        .where(eq(assignment.course_id, courseId)).execute()).map((a) => a.id);
       gradingCond = and(gradingCond, courseAssignments.length > 0
         ? inArray(gradingTask.assignment_id, courseAssignments)
         : eq(gradingTask.id, -1));
     }
-    const gradings = db.select({
+    const gradings = await db.select({
       student_id: gradingTask.student_id,
       total_score: gradingTask.total_score,
       full_score: gradingTask.full_score,
-    }).from(gradingTask).where(and(eq(gradingTask.status, 'completed'), gradingCond)).all();
+    }).from(gradingTask).where(and(eq(gradingTask.status, 'completed'), gradingCond)).execute();
 
     // 行为（阅读）
-    const behaviorRows = db.select({
+    const behaviorRows = await db.select({
       student_id: learningBehaviorLog.student_id,
       watch_duration: learningBehaviorLog.watch_duration,
       is_completed: learningBehaviorLog.is_completed,
-    }).from(learningBehaviorLog).where(inArray(learningBehaviorLog.student_id, myStudentIds)).all();
+    }).from(learningBehaviorLog).where(inArray(learningBehaviorLog.student_id, myStudentIds)).execute();
     const behaviorMap = new Map<number, { readonlySeconds: number; completedMaterials: number }>();
     behaviorRows.forEach((b) => {
       const cur = behaviorMap.get(b.student_id) || { readonlySeconds: 0, completedMaterials: 0 };
@@ -167,9 +167,9 @@ export async function GET(request: NextRequest) {
     const sampleQMap = new Map<number, string>();
     const sampleQIds = [...new Set([...issueAgg.values()].map((v) => v.qid).filter(Boolean))] as number[];
     if (sampleQIds.length > 0) {
-      db.select({ id: question.id, content: question.content })
+      (await db.select({ id: question.id, content: question.content })
         .from(question).where(inArray(question.id, sampleQIds))
-        .all().forEach((q) => sampleQMap.set(q.id, q.content));
+        .execute()).forEach((q) => sampleQMap.set(q.id, q.content));
     }
 
     const issues: CommonIssue[] = [...issueAgg.entries()]
@@ -239,8 +239,8 @@ export async function GET(request: NextRequest) {
     const fp = 'issues:' + issues.map((i) => `${i.knowledgePointId}:${i.errorCount}:${i.affectedStudents}`).join('|')
       + ';risk:' + atRisk.map((s) => `${s.studentId}:${s.avgScore}:${s.errorCount}:${s.reasons.join(',')}`).join('|');
     const cacheKey = `teacher_common_issues:${authUser.userId}:${courseId ?? 'all'}`;
-    const cachedRow = db.select({ value: systemConfig.value }).from(systemConfig)
-      .where(eq(systemConfig.key, cacheKey)).limit(1).all()[0];
+    const cachedRow = (await db.select({ value: systemConfig.value }).from(systemConfig)
+      .where(eq(systemConfig.key, cacheKey)).limit(1).execute())[0];
     let cached: {
       fingerprint?: string;
       summary?: string;
@@ -264,7 +264,7 @@ export async function GET(request: NextRequest) {
       aiGenerated = true;
     } else {
       try {
-        const client = createAIClient();
+        const client = await createAIClient();
         const result = await invokeStructured<{
           issues: Array<{ knowledgePointName: string; actionSuggestion: string }>;
           atRisk: Array<{ studentName: string; aiDiagnosis: string }>;
@@ -294,7 +294,7 @@ export async function GET(request: NextRequest) {
               riskMap: Object.fromEntries(riskMap),
               generatedAt: new Date().toISOString(),
             });
-            db.insert(systemConfig).values({
+            await db.insert(systemConfig).values({
               key: cacheKey,
               value: payload,
               description: 'AI共性/临界生缓存（指纹命中复用，数据变化自动刷新）',
@@ -302,7 +302,7 @@ export async function GET(request: NextRequest) {
             }).onConflictDoUpdate({
               target: systemConfig.key,
               set: { value: payload, description: 'AI共性/临界生缓存（指纹命中复用，数据变化自动刷新）', updated_at: new Date().toISOString() },
-            }).run();
+            }).execute();
             saveDb();
           } catch { /* 缓存写入失败不影响本次返回 */ }
         }

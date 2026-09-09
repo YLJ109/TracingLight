@@ -24,29 +24,29 @@ const COURSES_BY_CLASS: Array<Array<{ name: string; short: string; desc: string 
 
 const TEACHER_TITLES = ['讲师', '副教授', '教授'] as const;
 
-export function seedOrg(db: Drizzle, ctx: SeedCtx) {
+export async function seedOrg(db: Drizzle, ctx: SeedCtx) {
   const { rng, nextId } = ctx;
 
   // ========== 学校 ==========
   const schoolId = nextId();
   ctx.schoolId = schoolId;
-  db.insert(schema.school).values({ id: schoolId, name: '福州理工学院', short_name: '福理', logo_url: null }).run();
+  await db.insert(schema.school).values({ id: schoolId, name: '福州理工学院', short_name: '福理', logo_url: null }).execute();
 
   // ========== 学院 / 专业 / 班级 ==========
   const collegeId = nextId();
   ctx.collegeIds = [collegeId];
-  db.insert(schema.college).values({ id: collegeId, school_id: schoolId, name: '计算机与信息工程学院', short_name: '计信学院' }).run();
+  await db.insert(schema.college).values({ id: collegeId, school_id: schoolId, name: '计算机与信息工程学院', short_name: '计信学院' }).execute();
   const majorIds: number[] = [];
   const classIdByTeacher = new Map<number, number>(); // teacherIdx -> classId
   const classMajorId: number[] = [];
 
-  const buildClass = (majorName: string, majorShort: string, grade: string, suffix: string) => {
+  const buildClass = async (majorName: string, majorShort: string, grade: string, suffix: string) => {
     const mid = nextId();
     majorIds.push(mid);
-    db.insert(schema.major).values({ id: mid, college_id: collegeId, name: majorName, short_name: majorShort }).run();
+    await db.insert(schema.major).values({ id: mid, college_id: collegeId, name: majorName, short_name: majorShort }).execute();
     const clsId = nextId();
     const name = `${majorShort}${String(grade).slice(2)}${suffix}`;
-    db.insert(schema.classInfo).values({ id: clsId, major_id: mid, name, grade }).run();
+    await db.insert(schema.classInfo).values({ id: clsId, major_id: mid, name, grade }).execute();
     ctx.classId.push(clsId);
     ctx.classMajor.set(clsId, mid);
     ctx.classGrade.set(clsId, grade);
@@ -55,19 +55,19 @@ export function seedOrg(db: Drizzle, ctx: SeedCtx) {
   };
 
   // 班级0（计科2501） + 班级1（软工2501）
-  const class0 = buildClass('计算机科学与技术', '计科', '2025', '1');
-  const class1 = buildClass('软件工程', '软工', '2025', '1');
+  const class0 = await buildClass('计算机科学与技术', '计科', '2025', '1');
+  const class1 = await buildClass('软件工程', '软工', '2025', '1');
   ctx.majorIds = majorIds;
   const clsIds = [class0, class1];
 
   // ========== 用户 ==========
-  const insertUser = (u: { username: string; role: string; class_id?: number | null; student_level?: string | null; title?: string | null; student_no?: string | null }) => {
+  const insertUser = async (u: { username: string; role: string; class_id?: number | null; student_level?: string | null; title?: string | null; student_no?: string | null }) => {
     const id = nextId();
     const gender: 'male' | 'female' = rng.bool(0.55) ? 'male' : 'female';
     const realName = generateChineseName(rng, gender);
     const pwd = hashPassword(u.username === 'admin' ? '123456' : u.username);
     const entranceYear = u.class_id ? Number(ctx.classGrade.get(u.class_id)) ?? null : null;
-    db.insert(schema.user).values({
+    await db.insert(schema.user).values({
       id, username: u.username, real_name: realName, role: u.role,
       password: pwd, class_id: u.class_id ?? null, student_level: u.student_level ?? null,
       title: u.title ?? null, student_no: u.student_no ?? null,
@@ -78,7 +78,7 @@ export function seedOrg(db: Drizzle, ctx: SeedCtx) {
       entrance_year: entranceYear,
       bio: u.role === 'teacher' ? '从事相关课程教学与科研工作。' : null,
       is_active: true, token_version: 0,
-    } as any).run();
+    } as any).execute();
     ctx.classMap.set(u.username, id);
     ctx.userName.set(id, realName);
     return id;
@@ -89,12 +89,12 @@ export function seedOrg(db: Drizzle, ctx: SeedCtx) {
   const teachers: number[] = [];
   const students: number[] = [];
 
-  admins.push(insertUser({ username: 'admin', role: 'admin' }));
-  assistants.push(insertUser({ username: 'assistant1', role: 'assistant' }));
+  admins.push(await insertUser({ username: 'admin', role: 'admin' }));
+  assistants.push(await insertUser({ username: 'assistant1', role: 'assistant' }));
 
   // 2 名教师：teacher_0_0 → 班级0，teacher_0_1 → 班级1
   for (let t = 0; t < 2; t++) {
-    const tid = insertUser({ username: `teacher_0_${t}`, role: 'teacher', title: TEACHER_TITLES[t] });
+    const tid = await insertUser({ username: `teacher_0_${t}`, role: 'teacher', title: TEACHER_TITLES[t] });
     teachers.push(tid);
     ctx.teacherMajor.set(tid, t);
     classIdByTeacher.set(t, clsIds[t]);
@@ -107,7 +107,7 @@ export function seedOrg(db: Drizzle, ctx: SeedCtx) {
       const username = `stu_${ci}_${s}`;
       const z = rng.clampedNormal(0, 1, -2.5, 2.5);
       const level: string = z >= 0.5 ? 'top' : z >= -0.9 ? 'medium' : 'weak';
-      const sid = insertUser({
+      const sid = await insertUser({
         username, role: 'student', class_id: clsId, student_level: level,
         student_no: String(20250000 + ci * 1000 + s * 3 + rng.int(0, 2)),
       });
@@ -132,10 +132,10 @@ export function seedOrg(db: Drizzle, ctx: SeedCtx) {
     const teacherId = teachers[clsIdx];
     for (const cName of courses) {
       const cid = nextId();
-      db.insert(schema.course).values({
+      await db.insert(schema.course).values({
         id: cid, name: cName.name, short_name: cName.short, description: cName.desc,
         teacher_id: teacherId, class_id: bindCls, semester,
-      }).run();
+      }).execute();
       courseIds.push(cid);
       ctx.courseTeacher.set(cid, teacherId);
       ctx.courseClass.set(cid, bindCls);

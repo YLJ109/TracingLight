@@ -21,7 +21,7 @@ export async function GET(
     const db = getDb();
     const assignmentId = parseInt(id);
 
-    const asgn = db.select().from(assignment).where(eq(assignment.id, assignmentId)).limit(1).all()[0] || null;
+    const asgn = (await db.select().from(assignment).where(eq(assignment.id, assignmentId)).limit(1).execute())[0] || null;
     if (!asgn) return NextResponse.json({ error: '作业不存在' }, { status: 404 });
     if (asgn.teacher_id !== authUser.userId) {
       return NextResponse.json({ error: '无权访问该作业' }, { status: 403 });
@@ -30,24 +30,24 @@ export async function GET(
     const monitorConfig = (asgn.monitor_config as Record<string, unknown> | null) || {};
 
     // 授课学生
-    const classIds = getTeacherClassIds(authUser.userId);
+    const classIds = await getTeacherClassIds(authUser.userId);
     const studentFilters = [eq(user.role, 'student'), eq(user.is_active, true)];
     if (classIds.length > 0) studentFilters.push(inArray(user.class_id, classIds));
-    const students = db.select({ id: user.id, real_name: user.real_name, student_level: user.student_level })
-      .from(user).where(and(...studentFilters)).all();
+    const students = await db.select({ id: user.id, real_name: user.real_name, student_level: user.student_level })
+      .from(user).where(and(...studentFilters)).execute();
 
     // 已交监控
-    const monitors = db.select()
+    const monitors = await db.select()
       .from(answerMonitor)
       .where(eq(answerMonitor.assignment_id, assignmentId))
-      .all();
+      .execute();
     const monitorByStudent = new Map(monitors.map((m) => [m.student_id, m]));
 
     // 是否已提交
-    const submitted = db.select({ student_id: answerTable.student_id })
+    const submitted = await db.select({ student_id: answerTable.student_id })
       .from(answerTable)
       .where(and(eq(answerTable.assignment_id, assignmentId), eq(answerTable.is_submitted, true)))
-      .all();
+      .execute();
     const submittedSet = new Set(submitted.map((a) => a.student_id));
 
     const rows = students.map((s) => {

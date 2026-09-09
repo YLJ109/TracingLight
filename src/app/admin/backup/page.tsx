@@ -9,13 +9,13 @@ export default function AdminBackup() {
         <CardContent className="p-6 space-y-3 text-sm">
           <p className="font-medium">备份说明</p>
           <p className="text-muted-foreground">
-            本平台采用 SQLite 单文件数据库，备份只需复制一个文件：
+            本平台采用 PostgreSQL 数据库，备份用 <code className="rounded bg-muted px-1 py-0.5">pg_dump</code> 导出 SQL 即可：
           </p>
           <div className="rounded-lg bg-muted p-3 font-mono text-xs">
-            data/tracinglight.db
+            pg_dump -U tracinglight -d tracinglight &gt; tracinglight_backup.sql
           </div>
           <p className="text-muted-foreground">
-            答辩演示前，复制该文件到安全位置即可完成备份；恢复时复制回来覆盖即可。
+            答辩演示前，导出到安全位置即可完成备份；恢复时用 psql 导入覆盖即可。
           </p>
         </CardContent>
       </Card>

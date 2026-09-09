@@ -20,11 +20,11 @@ export async function GET(
     const sid = user.userId;
 
     // 获取作业信息
-    const assignmentRows = db.select()
+    const assignmentRows = await db.select()
       .from(assignment)
       .where(eq(assignment.id, assignmentId))
       .limit(1)
-      .all();
+      .execute();
     const assignmentData = assignmentRows[0] || null;
 
     if (!assignmentData) {
@@ -32,43 +32,43 @@ export async function GET(
     }
 
     // 获取关联课程
-    const courseRows = db.select()
+    const courseRows = await db.select()
       .from(course)
       .where(eq(course.id, assignmentData.course_id))
       .limit(1)
-      .all();
+      .execute();
     const courseData = courseRows[0] || null;
 
     // 获取题目详情
     const questionIds: number[] = assignmentData.question_ids as number[] || [];
     let questions: any[] = [];
     if (questionIds.length > 0) {
-      const fetched = db.select()
+      const fetched = await db.select()
         .from(question)
         .where(inArray(question.id, questionIds))
-        .all();
+        .execute();
       // 按 assignment.question_ids 的原始顺序返回，避免 .orderBy(id) 打乱教师题序
       const qMap = new Map(fetched.map((q) => [q.id, q]));
       questions = questionIds.map((qid) => qMap.get(Number(qid))).filter(Boolean);
     }
 
     // 获取学生作答
-    const studentAnswers = db.select()
+    const studentAnswers = await db.select()
       .from(answer)
       .where(and(
         eq(answer.assignment_id, assignmentId),
         eq(answer.student_id, sid)
       ))
-      .all();
+      .execute();
 
     // 获取批改结果
-    const gradingTasks = db.select()
+    const gradingTasks = await db.select()
       .from(gradingTask)
       .where(and(
         eq(gradingTask.assignment_id, assignmentId),
         eq(gradingTask.student_id, sid)
       ))
-      .all();
+      .execute();
 
     // 构建题目+作答+批改的合并数据
     const answerMap = new Map(studentAnswers.map((a) => [a.question_id, a]));

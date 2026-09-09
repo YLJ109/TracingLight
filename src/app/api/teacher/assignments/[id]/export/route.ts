@@ -20,9 +20,9 @@ export async function POST(
     const { id } = await params;
     const assignmentId = parseInt(id, 10);
 
-    const asgn = db.select().from(assignment)
+    const asgn = (await db.select().from(assignment)
       .where(eq(assignment.id, assignmentId))
-      .limit(1).all()[0];
+      .limit(1).execute())[0];
     if (!asgn) {
       return NextResponse.json({ error: '作业不存在' }, { status: 404 });
     }
@@ -31,46 +31,46 @@ export async function POST(
     if (asgn.teacher_id !== authUser.userId) {
       return NextResponse.json({ error: '无权访问该作业' }, { status: 403 });
     }
-    const myClassIds = getTeacherClassIds(authUser.userId);
+    const myClassIds = await getTeacherClassIds(authUser.userId);
 
-    const courseNameRow = db.select({ name: course.name }).from(course)
-      .where(eq(course.id, asgn.course_id)).limit(1).all()[0] || null;
+    const courseNameRow = (await db.select({ name: course.name }).from(course)
+      .where(eq(course.id, asgn.course_id)).limit(1).execute())[0] || null;
 
     // 题目（按作业 question_ids 顺序；取其中真实存在的题目）
     const questionIds: number[] = (asgn.question_ids as number[]) || [];
     const questions = questionIds.length > 0
-      ? db.select().from(question).where(inArray(question.id, questionIds)).all()
+      ? await db.select().from(question).where(inArray(question.id, questionIds)).execute()
       : [];
     const qById = new Map(questions.map((q) => [q.id, q]));
 
     // 学生集合：仅本人授课班级的在册学生
     const students = myClassIds.length > 0
-      ? db.select({
+      ? await db.select({
           id: user.id, username: user.username, real_name: user.real_name,
           class_id: user.class_id, student_level: user.student_level,
         }).from(user).where(and(
           eq(user.role, 'student'), eq(user.is_active, true), inArray(user.class_id, myClassIds),
-        )).all()
+        )).execute()
       : [];
 
     // 班级名映射
     const classIds = [...new Set(students.map((s) => s.class_id).filter((v): v is number => v != null))];
     const classMap = new Map<number, string>();
     if (classIds.length > 0) {
-      db.select({ id: classInfo.id, name: classInfo.name })
-        .from(classInfo).where(inArray(classInfo.id, classIds)).all()
+      (await db.select({ id: classInfo.id, name: classInfo.name })
+        .from(classInfo).where(inArray(classInfo.id, classIds)).execute())
         .forEach((c) => classMap.set(c.id, c.name));
     }
 
     // 作答：是否提交 / 是否退回
-    const answers = db.select({
+    const answers = await db.select({
       student_id: answer.student_id,
       is_submitted: answer.is_submitted,
       returned: answer.returned,
-    }).from(answer).where(eq(answer.assignment_id, assignmentId)).all();
+    }).from(answer).where(eq(answer.assignment_id, assignmentId)).execute();
 
     // 批改：仅 completed，按 question 去重取最新（含覆盖分）
-    const gradings = db.select({
+    const gradings = await db.select({
       student_id: gradingTask.student_id,
       question_id: gradingTask.question_id,
       total_score: gradingTask.total_score,
@@ -79,7 +79,7 @@ export async function POST(
     }).from(gradingTask).where(and(
       eq(gradingTask.assignment_id, assignmentId),
       eq(gradingTask.status, 'completed'),
-    )).all();
+    )).execute();
 
     // 学生 → 每道题最新批改记录（同题多条时按 completed_at 保留最新一条，与 questions 路由一致）
     const rawScores = new Map<string, typeof gradings[number]>();

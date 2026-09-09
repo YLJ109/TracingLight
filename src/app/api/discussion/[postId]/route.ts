@@ -18,27 +18,27 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const { postId } = await params;
     const pid = Number(postId);
 
-    const post = db.select().from(discussionPost).where(eq(discussionPost.id, pid)).limit(1).all()[0];
+    const post = (await db.select().from(discussionPost).where(eq(discussionPost.id, pid)).limit(1).execute())[0];
     if (!post) return NextResponse.json({ error: '帖子不存在' }, { status: 404 });
     if (!canAccessCourse(authUser, post.course_id)) {
       return NextResponse.json({ error: '无权访问该课程' }, { status: 403 });
     }
 
-    const courseRow = db.select({ name: course.name }).from(course).where(eq(course.id, post.course_id)).limit(1).all()[0];
-    const replies = db.select().from(discussionReply)
+    const courseRow = (await db.select({ name: course.name }).from(course).where(eq(course.id, post.course_id)).limit(1).execute())[0];
+    const replies = await db.select().from(discussionReply)
       .where(eq(discussionReply.post_id, pid))
       .orderBy(desc(discussionReply.created_at))
-      .all();
+      .execute();
 
     // 当前用户点赞状态
-    const myPostLike = db.select().from(discussionLike)
+    const myPostLike = (await db.select().from(discussionLike)
       .where(and(eq(discussionLike.target_type, 'post'), eq(discussionLike.target_id, pid), eq(discussionLike.user_id, authUser.userId)))
-      .all()[0];
+      .execute())[0];
     const likedReplyIds = new Set<number>();
     if (replies.length > 0) {
-      const myLikes = db.select().from(discussionLike)
+      const myLikes = await db.select().from(discussionLike)
         .where(and(eq(discussionLike.target_type, 'reply'), eq(discussionLike.user_id, authUser.userId)))
-        .all();
+        .execute();
       for (const l of myLikes) likedReplyIds.add(l.target_id);
     }
 
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const { postId } = await params;
     const pid = Number(postId);
 
-    const post = db.select().from(discussionPost).where(eq(discussionPost.id, pid)).limit(1).all()[0];
+    const post = (await db.select().from(discussionPost).where(eq(discussionPost.id, pid)).limit(1).execute())[0];
     if (!post) return NextResponse.json({ error: '帖子不存在' }, { status: 404 });
     if (!canAccessCourse(authUser, post.course_id)) {
       return NextResponse.json({ error: '无权在该课程发言' }, { status: 403 });
@@ -97,18 +97,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const content = cleanText(body.content, 2000);
     if (!content) return NextResponse.json({ error: '请输入回复内容' }, { status: 400 });
 
-    const ret = db.insert(discussionReply).values({
+    const ret = await db.insert(discussionReply).values({
       post_id: pid,
       author_id: authUser.userId,
       content,
-    }).run();
-    db.update(discussionPost).set({
+    }).returning().execute();
+    await db.update(discussionPost).set({
       reply_count: (post.reply_count || 0) + 1,
       updated_at: new Date().toISOString(),
-    }).where(eq(discussionPost.id, pid)).run();
+    }).where(eq(discussionPost.id, pid)).execute();
     saveDb();
 
-    const insertId = (ret as unknown as { lastInsertRowid: number | bigint | null }).lastInsertRowid;
+    const insertId = (ret as { id: number }[])[0]?.id;
     return NextResponse.json({ success: true, reply_id: Number(insertId) });
   } catch (e) {
     if (e && typeof (e as { status?: number }).status === 'number') return e as NextResponse;
@@ -126,7 +126,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const { postId } = await params;
     const pid = Number(postId);
 
-    const post = db.select().from(discussionPost).where(eq(discussionPost.id, pid)).limit(1).all()[0];
+    const post = (await db.select().from(discussionPost).where(eq(discussionPost.id, pid)).limit(1).execute())[0];
     if (!post) return NextResponse.json({ error: '帖子不存在' }, { status: 404 });
     const isOwner = post.author_id === authUser.userId;
     const isModerator = authUser.role === 'admin' || authUser.role === 'teacher';
@@ -138,7 +138,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       return NextResponse.json({ error: '无权删除该帖子' }, { status: 403 });
     }
 
-    db.delete(discussionPost).where(eq(discussionPost.id, pid)).run();
+    await db.delete(discussionPost).where(eq(discussionPost.id, pid)).execute();
     saveDb();
     return NextResponse.json({ success: true });
   } catch (e) {

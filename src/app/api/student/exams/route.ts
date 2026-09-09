@@ -10,16 +10,16 @@ export async function GET(request: NextRequest) {
   if (!r.user) return NextResponse.json({ error: null }, { status: r.status });
   const db = getDb();
 
-  const enrolls = db.select({ exam_id: examEnroll.exam_id, enroll: examEnroll.id, allow: examEnroll.allow, enroll_status: examEnroll.enroll_status })
-    .from(examEnroll).where(eq(examEnroll.student_id, r.user.userId)).all();
+  const enrolls = await db.select({ exam_id: examEnroll.exam_id, enroll: examEnroll.id, allow: examEnroll.allow, enroll_status: examEnroll.enroll_status })
+    .from(examEnroll).where(eq(examEnroll.student_id, r.user.userId)).execute();
   if (enrolls.length === 0) return NextResponse.json({ exams: [] });
 
   // 向学生隐藏未发布的草稿考试
-  const list = db.select().from(exam)
-    .where(and(inArray(exam.id, enrolls.map((e) => e.exam_id)), ne(exam.status, 'draft'))).all();
-  const attempts = db.select().from(examAttempt).where(eq(examAttempt.student_id, r.user.userId)).all();
+  const list = await db.select().from(exam)
+    .where(and(inArray(exam.id, enrolls.map((e) => e.exam_id)), ne(exam.status, 'draft'))).execute();
+  const attempts = await db.select().from(examAttempt).where(eq(examAttempt.student_id, r.user.userId)).execute();
   const courseNames = new Map<number, string>();
-  db.select({ id: course.id, name: course.name }).from(course).all().forEach((c) => courseNames.set(c.id, c.name));
+  (await db.select({ id: course.id, name: course.name }).from(course).execute()).forEach((c) => courseNames.set(c.id, c.name));
 
   const nowMs = Date.now();
   const exams = list.map((e) => {

@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     const db = getDb();
 
     // 1. 获取学生信息
-    const studentRows = db.select().from(user).where(eq(user.id, student_id)).limit(1).all();
+    const studentRows = await db.select().from(user).where(eq(user.id, student_id)).limit(1).execute();
     const student = studentRows[0] || null;
 
     if (!student) {
@@ -54,14 +54,14 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. 获取作业成绩
-    const tasks = db.select().from(gradingTask)
+    const tasks = await db.select().from(gradingTask)
       .where(
         and(
           eq(gradingTask.student_id, student_id),
           eq(gradingTask.status, "completed")
         )
       )
-      .all();
+      .execute();
 
     // 对于 assignment title，这里 grading_task 表中没有 assignment name，
     // 保持与原有逻辑一致：使用 assignment id 作为 fallback
@@ -72,18 +72,18 @@ export async function POST(request: NextRequest) {
     }));
 
     // 3. 获取错题分布 - 需要 knowledge_point name，单独查询
-    const errors = db.select({
+    const errors = await db.select({
       knowledge_point_id: errorBook.knowledge_point_id,
     })
       .from(errorBook)
       .where(eq(errorBook.student_id, student_id))
-      .all();
+      .execute();
 
     // 批量获取知识点名称
     const kpIds = [...new Set(errors.map((e) => e.knowledge_point_id))];
     const kpMap = new Map<number, string>();
     if (kpIds.length > 0) {
-      const kpRows = db.select().from(knowledgePoint).where(inArray(knowledgePoint.id, kpIds)).all();
+      const kpRows = await db.select().from(knowledgePoint).where(inArray(knowledgePoint.id, kpIds)).execute();
       for (const kp of kpRows) {
         kpMap.set(kp.id, kp.name);
       }
@@ -126,15 +126,15 @@ export async function POST(request: NextRequest) {
     };
 
     // 5. 获取班级总人数
-    const countResult = db.select({ count: sql<number>`count(*)` })
+    const countResult = (await db.select({ count: sql<number>`count(*)` })
       .from(user)
       .where(eq(user.role, "student"))
-      .get();
+      .execute())[0];
     const totalStudents = countResult?.count || 10;
 
     // 6. 调用 AI 学情分析
     const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
-    const client = createAIClient(customHeaders);
+    const client = await createAIClient(customHeaders);
 
     const prompt = buildProfilerPrompt({
       studentName: student.real_name,

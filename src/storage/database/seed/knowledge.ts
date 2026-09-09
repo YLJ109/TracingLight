@@ -152,7 +152,7 @@ const COURSE_MAPS: Array<{ match: string; title: string; chapters: Array<{ chapt
 // 图谱节点颜色（环状放射布局六色系）
 const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4'];
 
-export function seedKnowledge(db: Drizzle, ctx: SeedCtx) {
+export async function seedKnowledge(db: Drizzle, ctx: SeedCtx) {
   const { nextId } = ctx;
 
   for (const cid of ctx.courseIds) {
@@ -163,56 +163,56 @@ export function seedKnowledge(db: Drizzle, ctx: SeedCtx) {
     // 根节点（level=1 课程）
     const courseKpId = nextId();
     ctx.lastKpId = Math.max(ctx.lastKpId, courseKpId);
-    db.insert(schema.knowledgePoint).values({
+    await db.insert(schema.knowledgePoint).values({
       id: courseKpId, course_id: cid, name: `课程总览 ${courseName}`, difficulty: 'medium',
       description: '课程整体知识框架', parent_id: null, sort_order: 0,
-    } as any).run();
+    } as any).execute();
     const courseRootNode = nextId();
-    db.insert(schema.knowledgeGraphNode).values({
+    await db.insert(schema.knowledgeGraphNode).values({
       id: courseRootNode, knowledge_point_id: courseKpId, course_id: cid,
       node_name: courseName, node_level: 1, parent_node_id: null,
       display_order: 1, color_hex: COLORS[0], is_leaf: false,
-    } as any).run();
+    } as any).execute();
     ctx.courseRootNode.set(cid, courseRootNode);
     ctx.graphNodes.push({
       id: courseRootNode, knowledge_point_id: courseKpId, course_id: cid, node_name: courseName,
       node_level: 1, parent_node_id: null, display_order: 1, color_hex: COLORS[0], is_leaf: false,
     });
 
-    chapters.forEach((ch, chIdx) => {
+    for (const [chIdx, ch] of chapters.entries()) {
       // 章节级占位知识点（父=课程占位知识点）
       const chapterKpId = nextId();
       ctx.lastKpId = Math.max(ctx.lastKpId, chapterKpId);
-      db.insert(schema.knowledgePoint).values({
+      await db.insert(schema.knowledgePoint).values({
         id: chapterKpId, course_id: cid, name: ch.chapter, difficulty: 'medium',
         description: ch.chapter, parent_id: courseKpId, sort_order: 0,
-      } as any).run();
+      } as any).execute();
       const chNodeId = nextId();
       const chColor = COLORS[(chIdx + 1) % COLORS.length];
-      db.insert(schema.knowledgeGraphNode).values({
+      await db.insert(schema.knowledgeGraphNode).values({
         id: chNodeId, knowledge_point_id: chapterKpId, course_id: cid,
         node_name: ch.chapter, node_level: 2, parent_node_id: courseRootNode,
         display_order: chIdx + 1, color_hex: chColor, is_leaf: false,
-      } as any).run();
+      } as any).execute();
       ctx.graphNodes.push({
         id: chNodeId, knowledge_point_id: chapterKpId, course_id: cid, node_name: ch.chapter,
         node_level: 2, parent_node_id: courseRootNode, display_order: chIdx + 1,
         color_hex: chColor, is_leaf: false,
       });
 
-      ch.kps.forEach((kp, kIdx) => {
+      for (const [kIdx, kp] of ch.kps.entries()) {
         const kpId = nextId();
         ctx.lastKpId = Math.max(ctx.lastKpId, kpId);
-        db.insert(schema.knowledgePoint).values({
+        await db.insert(schema.knowledgePoint).values({
           id: kpId, course_id: cid, name: kp.name, difficulty: kp.diff,
           description: `${ch.chapter} · ${kp.name}`, parent_id: chapterKpId, sort_order: kIdx + 1,
-        } as any).run();
+        } as any).execute();
         const leafNodeId = nextId();
-        db.insert(schema.knowledgeGraphNode).values({
+        await db.insert(schema.knowledgeGraphNode).values({
           id: leafNodeId, knowledge_point_id: kpId, course_id: cid,
           node_name: kp.name, node_level: 3, parent_node_id: chNodeId,
           display_order: kIdx + 1, color_hex: chColor, is_leaf: true,
-        } as any).run();
+        } as any).execute();
         ctx.kpNodeId.set(kpId, leafNodeId);
         if (!ctx.courseKps.has(cid)) ctx.courseKps.set(cid, []);
         ctx.courseKps.get(cid)!.push({
@@ -224,8 +224,8 @@ export function seedKnowledge(db: Drizzle, ctx: SeedCtx) {
           node_level: 3, parent_node_id: chNodeId, display_order: kIdx + 1,
           color_hex: chColor, is_leaf: true,
         });
-      });
-    });
+      }
+    }
   }
 
   // ========== 前置关系边：按 kpId 排序后，相邻(跨章节)知识点连接 prerequisite ==========
@@ -238,10 +238,10 @@ export function seedKnowledge(db: Drizzle, ctx: SeedCtx) {
     for (let i = 1; i < sorted.length; i++) {
       const fromId = ctx.kpNodeId.get(sorted[i - 1].kpId)!;
       const toId = ctx.kpNodeId.get(sorted[i].kpId)!;
-      db.insert(schema.knowledgeGraphEdge).values({
+      await db.insert(schema.knowledgeGraphEdge).values({
         id: nextId(), from_node_id: fromId, to_node_id: toId, relation_type: 'prerequisite',
         description: '前一知识点为后一知识点的基础',
-      } as any).run();
+      } as any).execute();
       ctx.graphEdges.push({ from_node_id: fromId, to_node_id: toId, relation_type: 'prerequisite', description: '' });
     }
   }

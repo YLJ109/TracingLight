@@ -10,11 +10,11 @@ export async function GET(request: NextRequest) {
     const authUser = await requireAuth(request, 'student');
     if (!authUser) return NextResponse.json({ error: '未登录' }, { status: 401 });
     const db = getDb();
-    const stu = db.select({ class_id: user.class_id }).from(user)
-      .where(eq(user.id, authUser.userId)).limit(1).all()[0];
+    const stu = (await db.select({ class_id: user.class_id }).from(user)
+      .where(eq(user.id, authUser.userId)).limit(1).execute())[0];
     if (!stu?.class_id) return NextResponse.json({ success: true, data: [] });
-    const list = db.select({ id: course.id, name: course.name }).from(course)
-      .where(eq(course.class_id, stu.class_id)).all();
+    const list = await db.select({ id: course.id, name: course.name }).from(course)
+      .where(eq(course.class_id, stu.class_id)).execute();
     return NextResponse.json({ success: true, data: list });
   } catch (e) {
     console.error('Student courses error:', e);

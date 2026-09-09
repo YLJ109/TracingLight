@@ -22,17 +22,17 @@ export interface WriteAuditParams {
 }
 
 /** 写一条审计日志；任何异常静默忽略，不影响主流程 */
-export function writeAudit(params: WriteAuditParams): void {
+export async function writeAudit(params: WriteAuditParams): Promise<void> {
   try {
     const db = getDb();
-    db.insert(auditLog).values({
+    await db.insert(auditLog).values({
       operator_id: params.operatorId ?? null,
       operator_name: params.operatorName ?? null,
       action: params.action,
       target_type: params.targetType ?? null,
       target_id: params.targetId == null ? null : String(params.targetId),
       detail: params.detail ?? null,
-    }).run();
+    }).execute();
   } catch (e) {
     // 审计失败不抛错，仅打印到服务端日志以便排查
     console.error('writeAudit error:', e);

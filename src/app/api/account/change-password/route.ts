@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '新密码至少 6 位' }, { status: 400 });
     }
 
-    const my = db.select().from(userTable).where(eq(userTable.id, authUser.userId)).limit(1).all()[0];
+    const my = (await db.select().from(userTable).where(eq(userTable.id, authUser.userId)).limit(1).execute())[0];
     if (!my) return NextResponse.json({ error: '用户不存在' }, { status: 404 });
 
     if (!verifyPassword(old_password, my.password || '')) {
@@ -30,13 +30,13 @@ export async function POST(request: NextRequest) {
     }
 
     const newHash = hashPassword(String(new_password));
-    db.update(userTable)
+    await db.update(userTable)
       .set({
         password: newHash,
         token_version: ((my as unknown as { token_version?: number }).token_version ?? 0) + 1,
       })
       .where(eq(userTable.id, my.id))
-      .run();
+      .execute();
 
     // 改密后旧 token 已失效，前端应引导重新登录
     return NextResponse.json({ success: true, message: '密码修改成功，请重新登录' });

@@ -15,15 +15,15 @@ export async function GET(request: NextRequest) {
     const db = getDb();
 
     // 学生班级 → 班级课程
-    const stu = db.select({ class_id: user.class_id }).from(user)
-      .where(eq(user.id, authUser.userId)).limit(1).all()[0];
+    const stu = (await db.select({ class_id: user.class_id }).from(user)
+      .where(eq(user.id, authUser.userId)).limit(1).execute())[0];
     const courseIds = stu?.class_id
-      ? db.select({ id: course.id }).from(course).where(eq(course.class_id, stu.class_id)).all().map((c) => c.id)
+      ? (await db.select({ id: course.id }).from(course).where(eq(course.class_id, stu.class_id)).execute()).map((c) => c.id)
       : [];
 
     // 可见公告：本班课程公告 或 无课程限定公告
     const visible = courseIds.length > 0
-      ? db.select({
+      ? await db.select({
           id: announcement.id,
           title: announcement.title,
           content: announcement.content,
@@ -37,8 +37,8 @@ export async function GET(request: NextRequest) {
             isNull(announcement.course_id),
           ))
           .orderBy(desc(announcement.is_pinned), desc(announcement.created_at))
-          .all()
-      : db.select({
+          .execute()
+      : await db.select({
           id: announcement.id,
           title: announcement.title,
           content: announcement.content,
@@ -49,15 +49,15 @@ export async function GET(request: NextRequest) {
         }).from(announcement)
           .where(isNull(announcement.course_id))
           .orderBy(desc(announcement.is_pinned), desc(announcement.created_at))
-          .all();
+          .execute();
 
     // 教师名
     const teacherIds = [...new Set(visible.map((a) => a.teacher_id).filter(Boolean))];
     const teacherMap = new Map<number, string>();
     if (teacherIds.length > 0) {
-      db.select({ id: user.id, name: user.real_name }).from(user)
+      (await db.select({ id: user.id, name: user.real_name }).from(user)
         .where(inArray(user.id, teacherIds as number[]))
-        .all()
+        .execute())
         .forEach((t) => teacherMap.set(t.id, t.name));
     }
 

@@ -83,15 +83,15 @@ export interface GradingRules {
 }
 
 /** 匹配教师自定义批改规则：course+type > course > type > 通用，取最具体的一条 */
-export function getActiveGradingRules(
+export async function getActiveGradingRules(
   teacherId: number,
   courseId: number | null,
   questionType: string
-): GradingRules | null {
+): Promise<GradingRules | null> {
   const db = getDb();
-  const rules = db.select().from(gradingConfig)
+  const rules = await db.select().from(gradingConfig)
     .where(and(eq(gradingConfig.teacher_id, teacherId), eq(gradingConfig.is_active, true)))
-    .all();
+    .execute();
   if (rules.length === 0) return null;
   const score = (r: typeof rules[number]) =>
     (r.course_id === courseId ? 2 : r.course_id == null ? 1 : -10) +
@@ -161,7 +161,7 @@ async function gradeAttachmentQuestion(
   configRules?: GradingRules | null,
   forwardHeaders?: Headers,
 ): Promise<GradingResult> {
-  const client = createAIClient(forwardHeaders ? HeaderUtils.extractForwardHeaders(forwardHeaders) : undefined);
+  const client = await createAIClient(forwardHeaders ? HeaderUtils.extractForwardHeaders(forwardHeaders) : undefined);
 
   // 解析作答 JSON（失败则回退为原始文本兜底）
   let files: AttachmentFileMeta[] = [];
@@ -298,7 +298,7 @@ export async function computeGrade(
   }
 
   // 3. 主观题 AI 批改
-  const client = createAIClient(forwardHeaders ? HeaderUtils.extractForwardHeaders(forwardHeaders) : undefined);
+  const client = await createAIClient(forwardHeaders ? HeaderUtils.extractForwardHeaders(forwardHeaders) : undefined);
   const prompt = buildGradingPrompt({
     questionContent: questionData.content,
     questionType: questionData.question_type,
@@ -352,18 +352,18 @@ export function maybeAutoPublishGrades(_assignmentId: number): boolean {
 }
 
 /** 批改完成 → 通知学生（闭环 P1-1：学生收到通知可直达作业详情） */
-export function notifyGraded(studentId: number, assignmentId: number): void {
+export async function notifyGraded(studentId: number, assignmentId: number): Promise<void> {
   try {
     const db = getDb();
-    const asgn = db.select({ title: assignment.title })
-      .from(assignment).where(eq(assignment.id, assignmentId)).limit(1).all()[0];
-    db.insert(notification).values({
+    const asgn = (await db.select({ title: assignment.title })
+      .from(assignment).where(eq(assignment.id, assignmentId)).limit(1).execute())[0];
+    await db.insert(notification).values({
       user_id: studentId,
       type: 'grade',
       title: '作业已批改',
       content: `《${asgn?.title || '作业'}》批改完成，快去查看得分与 AI 解析吧`,
       link: `/student/assignments/${assignmentId}`,
-    }).run();
+    }).execute();
     try { saveDb(); } catch { /* 定时持久化兜底 */ }
   } catch (e) {
     console.error('notifyGraded error:', e);
@@ -375,7 +375,7 @@ export function notifyGraded(studentId: number, assignmentId: number): void {
  * 事务提交后立即静默落盘（T-2）。
  * @param notify 单题批改入口传 true（发学生通知）；批量批改传 false，由调用方汇总发一条
  */
-export function recordGrading(params: {
+export async function recordGrading(params: {
   questionData: QuestionRow;
   studentId: number;
   assignmentId: number;
@@ -383,23 +383,23 @@ export function recordGrading(params: {
   answerId: number;
   result: GradingResult;
   notify?: boolean;
-}): number | null {
+}): Promise<number | null> {
   const db = getDb();
   const { questionData, studentId, assignmentId, studentAnswer, answerId, result, notify = false } = params;
 
-  const gradingTaskId = db.transaction(() => {
+  const gradingTaskId = await db.transaction(async () => {
     // 防重复累计：同一 (assignment, student, question) 此前若已批改（含退回后重批），旧行置 superseded 作废，
     // 各汇总只认最新一条 completed，避免总分/题数因行数叠加而膨胀。
-    db.update(gradingTask)
+    await db.update(gradingTask)
       .set({ status: 'superseded' })
       .where(and(
         eq(gradingTask.assignment_id, assignmentId),
         eq(gradingTask.student_id, studentId),
         eq(gradingTask.question_id, questionData.id),
       ))
-      .run();
+      .execute();
 
-    const inserted = db.insert(gradingTask).values({
+    const inserted = await db.insert(gradingTask).values({
       answer_id: answerId || 0,
       assignment_id: assignmentId,
       student_id: studentId,
@@ -418,22 +418,22 @@ export function recordGrading(params: {
       ai_generated_probability: result.ai_generated_probability ?? null,
       status: 'completed',
       completed_at: new Date().toISOString(),
-    }).returning().all();
+    }).returning().execute();
     const taskId = inserted[0]?.id ?? null;
 
     // 非满分错题归档（含去重）。空答/未作答只计 0 分但不进错题本，避免"未作答"污染错题复习队列
     const fullScore = result.full_score || questionData.default_score || 10;
     if (studentAnswer?.trim() && result.total_score < fullScore) {
-      const existing = db.select({ id: errorBook.id })
+      const existing = await db.select({ id: errorBook.id })
         .from(errorBook)
         .where(and(
           eq(errorBook.student_id, studentId),
           eq(errorBook.question_id, questionData.id),
           eq(errorBook.assignment_id, assignmentId),
         ))
-        .limit(1).all();
+        .limit(1).execute();
       if (!existing[0]) {
-        db.insert(errorBook).values({
+        await db.insert(errorBook).values({
           student_id: studentId,
           question_id: questionData.id,
           knowledge_point_id: questionData.knowledge_point_id,
@@ -445,7 +445,7 @@ export function recordGrading(params: {
           review_status: 'pending',
           review_count: 0,
           next_review_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' '),
-        }).run();
+        }).execute();
       }
     }
 
@@ -455,7 +455,7 @@ export function recordGrading(params: {
     if (kpId) {
       const isCorrect = result.total_score >= fullScore * 0.6;
       const thisRate = scoreToMastery(result.total_score, fullScore);
-      const existingLog = db.select({
+      const existingLog = await db.select({
         id: knowledgeMasteryLog.id,
         mastery_rate: knowledgeMasteryLog.mastery_rate,
         error_count: knowledgeMasteryLog.error_count,
@@ -465,27 +465,27 @@ export function recordGrading(params: {
           eq(knowledgeMasteryLog.student_id, studentId),
           eq(knowledgeMasteryLog.knowledge_point_id, kpId),
         ))
-        .limit(1).all();
+        .limit(1).execute();
       const row = existingLog[0];
       if (row) {
         const oldRate = row.mastery_rate || 0;
         const newRate = Math.round(oldRate * 0.7 + thisRate * 0.3);
-        db.update(knowledgeMasteryLog)
+        await db.update(knowledgeMasteryLog)
           .set({
             mastery_rate: newRate,
             error_count: (row.error_count || 0) + (isCorrect ? 0 : 1),
             recorded_at: new Date().toISOString().split('T')[0],
           })
           .where(eq(knowledgeMasteryLog.id, row.id))
-          .run();
+          .execute();
       } else {
-        db.insert(knowledgeMasteryLog).values({
+        await db.insert(knowledgeMasteryLog).values({
           student_id: studentId,
           knowledge_point_id: kpId,
           mastery_rate: thisRate,
           error_count: isCorrect ? 0 : 1,
           recorded_at: new Date().toISOString().split('T')[0],
-        }).run();
+        }).execute();
       }
     }
 
@@ -496,7 +496,7 @@ export function recordGrading(params: {
   try { saveDb(); } catch { /* 定时持久化兜底 */ }
 
   // P1-1：单题批改入口直接通知学生（批量入口由调用方汇总通知）
-  if (notify) notifyGraded(studentId, assignmentId);
+  if (notify) await notifyGraded(studentId, assignmentId);
 
   return gradingTaskId;
 }
@@ -520,14 +520,14 @@ export async function gradeOneAndRecord(params: {
   let configRules: GradingRules | null = null;
   let scoreOverride: number | undefined;
   try {
-    const asgn = db.select({
+    const asgn = (await db.select({
       teacher_id: assignmentTable.teacher_id,
       course_id: assignmentTable.course_id,
       question_scores: assignmentTable.question_scores,
     })
-      .from(assignmentTable).where(eq(assignmentTable.id, params.assignmentId)).limit(1).all()[0];
+      .from(assignmentTable).where(eq(assignmentTable.id, params.assignmentId)).limit(1).execute())[0];
     if (asgn) {
-      configRules = getActiveGradingRules(asgn.teacher_id, asgn.course_id, params.questionData.question_type);
+      configRules = await getActiveGradingRules(asgn.teacher_id, asgn.course_id, params.questionData.question_type);
       const qs = (asgn.question_scores as Record<number, number> | null | undefined) ?? {};
       if (typeof qs[params.questionData.id] === 'number') scoreOverride = Number(qs[params.questionData.id]);
     }
@@ -549,7 +549,7 @@ export async function gradeOneAndRecord(params: {
     const level = configRules.grade_levels.find((g) => pct >= g.min);
     if (level) result.overall_comment = `【${level.label}】${result.overall_comment}`;
   }
-  const gradingTaskId = recordGrading({
+  const gradingTaskId = await recordGrading({
     questionData: params.questionData,
     studentId: params.studentId,
     assignmentId: params.assignmentId,

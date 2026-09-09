@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const courseId = courseIdArg ? Number(courseIdArg) : null;
 
     // 可访问课程范围
-    const accessible = getAccessibleCourseIds(authUser);
+    const accessible = await getAccessibleCourseIds(authUser);
     if (courseId && !canAccessCourse(authUser, courseId)) {
       return NextResponse.json({ error: '无权访问该课程' }, { status: 403 });
     }
@@ -32,16 +32,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, data: [] });
     }
 
-    const posts = db.select().from(discussionPost)
+    const posts = await db.select().from(discussionPost)
       .where(inArray(discussionPost.course_id, filterCourseIds))
       .orderBy(desc(discussionPost.is_pinned), desc(discussionPost.created_at))
-      .all();
+      .execute();
 
     // 课程名映射
-    const courses = db.select({ id: course.id, name: course.name })
+    const courses = await db.select({ id: course.id, name: course.name })
       .from(course)
       .where(inArray(course.id, filterCourseIds))
-      .all();
+      .execute();
     const courseMap = new Map(courses.map((c) => [c.id, c.name]));
 
     const data = posts.map((p) => {
@@ -93,14 +93,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '无权在该课程发布讨论' }, { status: 403 });
     }
 
-    db.insert(discussionPost).values({
+    await db.insert(discussionPost).values({
       course_id: courseId,
       author_id: authUser.userId,
       title,
       content,
       is_pinned: authUser.role === 'teacher' ? !!body.is_pinned : false,
       updated_at: new Date().toISOString(),
-    }).run();
+    }).execute();
     saveDb();
 
     // 讨论发布/置顶埋点（静默，失败不影响响应）

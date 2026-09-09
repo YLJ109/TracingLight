@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     const db = getDb();
 
     // ===== 1. 到期需复习的错题 =====
-    const errorRows = db.select({
+    const errorRows = await db.select({
       id: errorBook.id,
       question_id: errorBook.question_id,
       content: errorBook.content,
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
       reviewed_at: errorBook.reviewed_at,
     }).from(errorBook)
       .where(eq(errorBook.student_id, studentId))
-      .all();
+      .execute();
 
     const dueErrors = errorRows.filter((e) =>
       e.review_status !== 'mastered'
@@ -59,27 +59,27 @@ export async function GET(request: NextRequest) {
     const errQIds = [...new Set(dueErrors.map((e) => e.question_id).filter(Boolean))];
     const qMap = new Map<number, string>();
     if (errQIds.length > 0) {
-      db.select({ id: question.id, content: question.content })
+      (await db.select({ id: question.id, content: question.content })
         .from(question).where(inArray(question.id, errQIds as number[]))
-        .all().forEach((q) => qMap.set(q.id, q.content));
+        .execute()).forEach((q) => qMap.set(q.id, q.content));
     }
     const errKpIds = [...new Set(dueErrors.map((e) => e.knowledge_point_id).filter(Boolean))];
     const kpMap = new Map<number, { name: string; course_id: number | null }>();
     if (errKpIds.length > 0) {
-      db.select({ id: knowledgePoint.id, name: knowledgePoint.name, course_id: knowledgePoint.course_id })
+      (await db.select({ id: knowledgePoint.id, name: knowledgePoint.name, course_id: knowledgePoint.course_id })
         .from(knowledgePoint).where(inArray(knowledgePoint.id, errKpIds as number[]))
-        .all().forEach((k) => kpMap.set(k.id, { name: k.name, course_id: k.course_id }));
+        .execute()).forEach((k) => kpMap.set(k.id, { name: k.name, course_id: k.course_id }));
     }
 
     // ===== 2. 薄弱知识点（mastery < 60，作为练习任务）=====
-    const weakRows = db.select({
+    const weakRows = await db.select({
       knowledge_point_id: knowledgeMasteryLog.knowledge_point_id,
       mastery_rate: knowledgeMasteryLog.mastery_rate,
       error_count: knowledgeMasteryLog.error_count,
       recorded_at: knowledgeMasteryLog.recorded_at,
     }).from(knowledgeMasteryLog)
       .where(eq(knowledgeMasteryLog.student_id, studentId))
-      .all();
+      .execute();
     // 每个知识点取最新掌握度，再筛薄弱
     const weakLatest = new Map<number, typeof weakRows[number]>();
     for (const m of weakRows) {
@@ -90,13 +90,13 @@ export async function GET(request: NextRequest) {
     const weakKpIds = weakLogs.map((m) => m.knowledge_point_id);
     const weakKpMap = new Map<number, { name: string; course_id: number | null }>();
     if (weakKpIds.length > 0) {
-      db.select({ id: knowledgePoint.id, name: knowledgePoint.name, course_id: knowledgePoint.course_id })
+      (await db.select({ id: knowledgePoint.id, name: knowledgePoint.name, course_id: knowledgePoint.course_id })
         .from(knowledgePoint).where(inArray(knowledgePoint.id, weakKpIds))
-        .all().forEach((k) => weakKpMap.set(k.id, { name: k.name, course_id: k.course_id }));
+        .execute()).forEach((k) => weakKpMap.set(k.id, { name: k.name, course_id: k.course_id }));
     }
 
     // ===== 3. 今日学习计划 session =====
-    const todaySessions = db.select({
+    const todaySessions = await db.select({
       id: studySession.id,
       plan_id: studySession.plan_id,
       session_date: studySession.session_date,
@@ -113,14 +113,14 @@ export async function GET(request: NextRequest) {
         sql`date(${studySession.session_date}) = date(${today})`,
         eq(studyPlan.status, 'active'),
       ))
-      .all();
+      .execute();
 
     const sessionKpIds = todaySessions.map((s) => s.knowledge_point_id).filter(Boolean);
     const sessionKpMap = new Map<number, string>();
     if (sessionKpIds.length > 0) {
-      db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
+      (await db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
         .from(knowledgePoint).where(inArray(knowledgePoint.id, sessionKpIds))
-        .all().forEach((k) => sessionKpMap.set(k.id, k.name));
+        .execute()).forEach((k) => sessionKpMap.set(k.id, k.name));
     }
 
     // ===== 组装 =====
@@ -162,13 +162,13 @@ export async function GET(request: NextRequest) {
 
     // ===== 4. 今日阅读投入（供页头实时反馈）=====
     // 行为日志按 (student_id, material_id) 累计 watch_duration，last_watched_at 记录最近一次打开时间(UTC)。
-    const readingLogs = db.select({
+    const readingLogs = await db.select({
       watch_duration: learningBehaviorLog.watch_duration,
       last_watched_at: learningBehaviorLog.last_watched_at,
       is_completed: learningBehaviorLog.is_completed,
     }).from(learningBehaviorLog)
       .where(eq(learningBehaviorLog.student_id, studentId))
-      .all();
+      .execute();
     // 全时段累计阅读分钟 → 阅读投入得分（口径统一见 lib/reading-score：每 60 分钟 10 分，封顶 25）
     const readingTotalSeconds = readingLogs.reduce((s, r) => s + (r.watch_duration || 0), 0);
     const readingMinutesTotal = readingMinutesFromSeconds(readingTotalSeconds);
@@ -219,7 +219,7 @@ export async function POST(request: NextRequest) {
     }
 
     const db = getDb();
-    const err = db.select().from(errorBook).where(eq(errorBook.id, errorBookId)).limit(1).all()[0];
+    const err = (await db.select().from(errorBook).where(eq(errorBook.id, errorBookId)).limit(1).execute())[0];
     if (!err) return NextResponse.json({ error: '错题不存在' }, { status: 404 });
     if (err.student_id !== authUser.userId) {
       return NextResponse.json({ error: '无权操作该错题' }, { status: 403 });
@@ -232,14 +232,14 @@ export async function POST(request: NextRequest) {
     const wasReviewed = !!err.reviewed_at;
     const mastered = outcome === 'too_easy' || (outcome === 'just_right' && wasReviewed);
 
-    db.update(errorBook)
+    await db.update(errorBook)
       .set({
         review_status: mastered ? 'mastered' : 'reviewing',
         reviewed_at: today,
         next_review_at: mastered ? null : addDays(today, days),
       })
       .where(eq(errorBook.id, errorBookId))
-      .run();
+      .execute();
 
     return NextResponse.json({
       success: true,

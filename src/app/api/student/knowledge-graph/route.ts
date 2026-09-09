@@ -206,36 +206,45 @@ export async function GET(req: NextRequest) {
   const user = await requireAuth(req, 'student');
   if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
   const courseIdParam = parseInt(searchParams.get('course_id') || '', 10);
-  // 无 course_id 时自动取该学生第一门可访问课程，杜绝硬编码幻数 id（课程 id 由种子自增，非从 1 起）
-  const courseId = courseIdParam || getAccessibleCourseIds(user)[0] || 0;
-  // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
   const studentId = user.userId;
 
+  // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
+  // 课程解析：优先使用前端传入 course_id，但仅当其存在且当前学生可访问时生效；
+  // 否则（无 course_id / 幻数 id / 无权访问）自动回退到该学生第一门可访问课程，
+  // 避免前端初始化阶段用硬编码 id(如 1) 请求不存在的课程时误报 404。
+  const accessibleIds = await getAccessibleCourseIds(user);
+  const db = getDb();
+  let courseId = courseIdParam
+    ? ((await db.select({ id: course.id }).from(course).where(eq(course.id, courseIdParam)).limit(1).execute())[0]?.id
+        && accessibleIds.includes(courseIdParam)
+        ? courseIdParam : 0)
+    : 0;
+  courseId = courseId || accessibleIds[0] || 0;
+  const effectiveCourseId = courseId;
+
   // ─── Check cache ───
-  const cacheKey = `kg:${courseId}:${studentId ?? 'anon'}`;
+  const cacheKey = `kg:${effectiveCourseId}:${studentId ?? 'anon'}`;
   const cached = getCached(cacheKey);
   if (cached) {
     return NextResponse.json({ success: true, data: cached, cached: true });
   }
 
-  const db = getDb();
-
   // ─── Load course ───
-  const courseRows = db.select({
+  const courseRows = await db.select({
     id: course.id,
     name: course.name,
   })
     .from(course)
-    .where(eq(course.id, courseId))
+    .where(eq(course.id, effectiveCourseId))
     .limit(1)
-    .all();
+    .execute();
   const courseData = courseRows[0] || null;
   if (!courseData) return NextResponse.json({ success: false, error: '课程不存在' }, { status: 404 });
-  // 越权防护：仅允许访问本班课程的知识图谱
-  if (!canAccessCourse(user, courseId)) return NextResponse.json({ success: false, error: '无权访问该课程' }, { status: 403 });
+  // 越权防护：仅允许访问本班课程的知识图谱（回退逻辑已保证 courseId 可访问，此处保留兜底校验）
+  if (!(await canAccessCourse(user, effectiveCourseId))) return NextResponse.json({ success: false, error: '无权访问该课程' }, { status: 403 });
 
   // ─── Load knowledge points ───
-  const kps = db.select({
+  const kps = await db.select({
     id: knowledgePoint.id,
     name: knowledgePoint.name,
     description: knowledgePoint.description,
@@ -243,7 +252,7 @@ export async function GET(req: NextRequest) {
     .from(knowledgePoint)
     .where(eq(knowledgePoint.course_id, courseId))
     .orderBy(knowledgePoint.id)
-    .all();
+    .execute();
 
   if (!kps || kps.length === 0) return NextResponse.json({ success: false, error: '知识点数据为空' }, { status: 500 });
 
@@ -257,7 +266,7 @@ export async function GET(req: NextRequest) {
   const logMasteries: Record<number, number> = {};
 
   if (studentId) {
-    const logs = db.select({
+    const logs = await db.select({
       knowledge_point_id: knowledgeMasteryLog.knowledge_point_id,
       mastery_rate: knowledgeMasteryLog.mastery_rate,
       recorded_at: knowledgeMasteryLog.recorded_at,
@@ -267,7 +276,7 @@ export async function GET(req: NextRequest) {
         eq(knowledgeMasteryLog.student_id, studentId),
         inArray(knowledgeMasteryLog.knowledge_point_id, kpIds)
       ))
-      .all();
+      .execute();
 
     if (logs && logs.length > 0) {
       const best: Record<number, { rate: number; date: string }> = {};
@@ -280,7 +289,7 @@ export async function GET(req: NextRequest) {
       for (const [k, v] of Object.entries(best)) logMasteries[Number(k)] = v.rate;
     }
 
-    const grades = db.select({
+    const grades = await db.select({
       knowledge_point_id: gradingTask.knowledge_point_id,
       total_score: sql<number>`COALESCE(${gradingTask.teacher_override_score}, ${gradingTask.total_score})`,
     })
@@ -289,7 +298,7 @@ export async function GET(req: NextRequest) {
         eq(gradingTask.student_id, studentId),
         inArray(gradingTask.knowledge_point_id, kpIds)
       ))
-      .all();
+      .execute();
 
     if (grades && grades.length > 0) {
       const sums: Record<number, { total: number; count: number }> = {};
@@ -311,7 +320,7 @@ export async function GET(req: NextRequest) {
   // ─── 错题统计（供详情盒展示真实错题/已掌握/待复习数量）───
   const errorStats: Record<number, { total: number; mastered: number; pending: number }> = {};
   if (studentId) {
-    const errRows = db.select({
+    const errRows = await db.select({
       knowledge_point_id: errorBook.knowledge_point_id,
       review_status: errorBook.review_status,
     })
@@ -320,7 +329,7 @@ export async function GET(req: NextRequest) {
         eq(errorBook.student_id, studentId),
         inArray(errorBook.knowledge_point_id, kpIds)
       ))
-      .all();
+      .execute();
     for (const e of errRows) {
       if (!errorStats[e.knowledge_point_id]) errorStats[e.knowledge_point_id] = { total: 0, mastered: 0, pending: 0 };
       errorStats[e.knowledge_point_id].total += 1;

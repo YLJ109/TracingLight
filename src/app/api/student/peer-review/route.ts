@@ -48,11 +48,11 @@ export async function GET(request: NextRequest) {
     // ── 分支：仅取「我收到的互评」（指定作业）──
     if (assignmentIdParam && mine) {
       const assignmentId = parseInt(assignmentIdParam);
-      const rows = db.select().from(peerReview)
+      const rows = await db.select().from(peerReview)
         .where(and(eq(peerReview.assignment_id, assignmentId), eq(peerReview.reviewee_id, me)))
-        .orderBy(desc(peerReview.created_at)).all();
-      const asgnRows = db.select().from(assignment)
-        .where(eq(assignment.id, assignmentId)).limit(1).all();
+        .orderBy(desc(peerReview.created_at)).execute();
+      const asgnRows = await db.select().from(assignment)
+        .where(eq(assignment.id, assignmentId)).limit(1).execute();
       const asgn = asgnRows[0] || null;
       if (!asgn) return NextResponse.json({ success: true, data: [] });
       const config = parsePeerConfig(asgn.peer_review);
@@ -62,15 +62,15 @@ export async function GET(request: NextRequest) {
       const reviewerIds = [...new Set(rows.map((r) => r.reviewer_id))];
       const nameMap = new Map<number, string>();
       if (reviewerIds.length) {
-        const us = db.select({ id: user.id, real_name: user.real_name })
-          .from(user).where(inArray(user.id, reviewerIds)).all();
+        const us = await db.select({ id: user.id, real_name: user.real_name })
+          .from(user).where(inArray(user.id, reviewerIds)).execute();
         us.forEach((u) => nameMap.set(u.id, u.real_name));
       }
       const qIds = [...new Set(rows.map((r) => r.question_id))];
       const qMap = new Map<number, { content: string; question_type: string; answer: string | null }>();
       if (qIds.length) {
-        const qs = db.select({ id: question.id, content: question.content, question_type: question.question_type, answer: question.answer })
-          .from(question).where(inArray(question.id, qIds)).all();
+        const qs = await db.select({ id: question.id, content: question.content, question_type: question.question_type, answer: question.answer })
+          .from(question).where(inArray(question.id, qIds)).execute();
         qs.forEach((q) => qMap.set(q.id, { content: q.content, question_type: q.question_type, answer: q.answer }));
       }
       const sortedReviewers = [...reviewerIds].sort((a, b) => a - b);
@@ -90,29 +90,29 @@ export async function GET(request: NextRequest) {
     // ── 分支：返回「我需互评」的作业与待办 ──
     if (!authUser.classId) return NextResponse.json({ success: true, data: [] });
     const classId = authUser.classId;
-    const courseRows = db.select({ id: course.id }).from(course).where(eq(course.class_id, classId)).all();
+    const courseRows = await db.select({ id: course.id }).from(course).where(eq(course.class_id, classId)).execute();
     const courseIds = courseRows.map((c) => c.id);
     if (courseIds.length === 0) return NextResponse.json({ success: true, data: [] });
 
-    const asgns = db.select().from(assignment)
+    const asgns = await db.select().from(assignment)
       .where(inArray(assignment.course_id, courseIds))
-      .orderBy(desc(assignment.created_at)).all();
+      .orderBy(desc(assignment.created_at)).execute();
     const enabledAsgns = asgns.filter((a) => parsePeerConfig(a.peer_review).enabled);
 
     // 我是否已提交该作业（互评前置条件）
     const mySubmitted = new Set<number>();
     {
-      const rows = db.select({ assignment_id: answer.assignment_id })
+      const rows = await db.select({ assignment_id: answer.assignment_id })
         .from(answer)
         .where(and(eq(answer.student_id, me), eq(answer.is_submitted, true)))
-        .groupBy(answer.assignment_id).all();
+        .groupBy(answer.assignment_id).execute();
       rows.forEach((r) => mySubmitted.add(r.assignment_id));
     }
 
     // 该班级内全部学生 id（用于姓名映射 + 盲评排序）
-    const classStudentIds = db.select({ id: user.id, real_name: user.real_name })
+    const classStudentIds = await db.select({ id: user.id, real_name: user.real_name })
       .from(user)
-      .where(and(eq(user.role, 'student'), eq(user.class_id, classId))).all();
+      .where(and(eq(user.role, 'student'), eq(user.class_id, classId))).execute();
     const sortedClassStudentIds = classStudentIds.map((u) => u.id).sort((a, b) => a - b);
     const nameMap = new Map(classStudentIds.map((u) => [u.id, u.real_name]));
 
@@ -142,7 +142,7 @@ export async function GET(request: NextRequest) {
 
       const qIds = (asgn.question_ids as number[]) || [];
       const qs = qIds.length
-        ? db.select().from(question).where(inArray(question.id, qIds)).all()
+        ? await db.select().from(question).where(inArray(question.id, qIds)).execute()
         : [];
       const subjectiveQs = qs.filter((q) => !isObjectiveType(q.question_type));
 
@@ -153,27 +153,27 @@ export async function GET(request: NextRequest) {
       };
 
       // 已提交同学（同班、已交该作业）
-      const submittedRows = db.select({ student_id: answer.student_id })
+      const submittedRows = await db.select({ student_id: answer.student_id })
         .from(answer)
         .where(and(eq(answer.assignment_id, assignmentIdForReview), eq(answer.is_submitted, true)))
-        .groupBy(answer.student_id).all();
+        .groupBy(answer.student_id).execute();
       const submittedStudentIds = submittedRows.map((r) => r.student_id);
 
       // 学生作答（用于取每题作答内容 + 判断是否已答）
-      const answerRows = db.select({
+      const answerRows = await db.select({
         student_id: answer.student_id, question_id: answer.question_id, student_answer: answer.student_answer,
       })
         .from(answer)
         .where(and(eq(answer.assignment_id, assignmentIdForReview), inArray(answer.question_id, subjectiveQs.map((q) => q.id))))
-        .all();
+        .execute();
       const answerByQ = new Map<string, string | null>();
       answerRows.forEach((r) => answerByQ.set(`${r.student_id}:${r.question_id}`, r.student_answer));
 
       // 既有互评记录（按 reviewee 聚合已有的评阅人）
       const existingByReviewee = new Map<number, number[]>();
-      const existingRows = db.select({ reviewer_id: peerReview.reviewer_id, reviewee_id: peerReview.reviewee_id })
+      const existingRows = await db.select({ reviewer_id: peerReview.reviewer_id, reviewee_id: peerReview.reviewee_id })
         .from(peerReview)
-        .where(eq(peerReview.assignment_id, assignmentIdForReview)).all();
+        .where(eq(peerReview.assignment_id, assignmentIdForReview)).execute();
       existingRows.forEach((r) => {
         if (!existingByReviewee.has(r.reviewee_id)) existingByReviewee.set(r.reviewee_id, []);
         existingByReviewee.get(r.reviewee_id)!.push(r.reviewer_id);
@@ -208,8 +208,8 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      const courseInfo = db.select({ name: course.name }).from(course)
-        .where(eq(course.id, asgn.course_id)).get();
+      const courseInfo = (await db.select({ name: course.name }).from(course)
+        .where(eq(course.id, asgn.course_id)).execute())[0];
       result.push({
         assignment: {
           id: asgn.id,
@@ -252,26 +252,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '不能互评自己的作业' }, { status: 400 });
     }
 
-    const asgnRows = db.select().from(assignment).where(eq(assignment.id, assignmentId)).limit(1).all();
+    const asgnRows = await db.select().from(assignment).where(eq(assignment.id, assignmentId)).limit(1).execute();
     const asgn = asgnRows[0] || null;
     if (!asgn) return NextResponse.json({ error: '作业不存在' }, { status: 404 });
     const config = parsePeerConfig(asgn.peer_review);
     if (!config.enabled) return NextResponse.json({ error: '该作业未开启互评' }, { status: 400 });
 
     // 跨租户隔离：被评者必须是同班学生且已提交该作业
-    const courseInfo = db.select({ class_id: course.class_id }).from(course)
-      .where(eq(course.id, asgn.course_id)).get();
-    const revieweeRows = db.select()
+    const courseInfo = (await db.select({ class_id: course.class_id }).from(course)
+      .where(eq(course.id, asgn.course_id)).execute())[0];
+    const revieweeRows = await db.select()
       .from(user)
       .where(and(eq(user.id, revieweeId), eq(user.role, 'student')))
-      .limit(1).all();
+      .limit(1).execute();
     const reviewee = revieweeRows[0] || null;
     if (!reviewee || courseInfo?.class_id == null || reviewee.class_id !== courseInfo.class_id) {
       return NextResponse.json({ error: '被评同学不在本班范围内' }, { status: 403 });
     }
 
     // 题目分值（用于校验互评分数范围）
-    const qRows = db.select().from(question).where(eq(question.id, questionId)).limit(1).all();
+    const qRows = await db.select().from(question).where(eq(question.id, questionId)).limit(1).execute();
     const q = qRows[0] || null;
     if (!q) return NextResponse.json({ error: '题目不存在' }, { status: 404 });
     if (isObjectiveType(q.question_type)) {
@@ -284,7 +284,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 校验该同学确已作答该题（只评已提交的作答）
-    const hasAnswer = db.select({ id: answer.id })
+    const hasAnswer = (await db.select({ id: answer.id })
       .from(answer)
       .where(and(
         eq(answer.assignment_id, assignmentId),
@@ -292,7 +292,7 @@ export async function POST(request: NextRequest) {
         eq(answer.student_id, revieweeId),
         eq(answer.is_submitted, true),
       ))
-      .get();
+      .execute())[0];
     if (!hasAnswer) return NextResponse.json({ error: '该同学尚未作答此题' }, { status: 400 });
 
     const dimensionScores = (body.dimension_scores && typeof body.dimension_scores === 'object')
@@ -305,7 +305,7 @@ export async function POST(request: NextRequest) {
       : undefined;
 
     // upsert（同 (assignment, question, reviewer, reviewee) 唯一键）
-    db.insert(peerReview).values({
+    await db.insert(peerReview).values({
       assignment_id: assignmentId,
       question_id: questionId,
       reviewer_id: reviewerId,
@@ -322,7 +322,7 @@ export async function POST(request: NextRequest) {
         comment: body.comment || '',
         status: 'completed',
       },
-    }).run();
+    }).execute();
     saveDb();
 
     return NextResponse.json({ success: true, data: { reviewed: true } });

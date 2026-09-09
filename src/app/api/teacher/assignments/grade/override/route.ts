@@ -37,13 +37,13 @@ export async function POST(request: NextRequest) {
     const db = getDb();
 
     // 归属校验 + 取批改记录（含 full_score 供分数上限校验）
-    const task = db.select().from(gradingTask)
-      .where(eq(gradingTask.id, Number(grading_task_id))).get();
+    const task = (await db.select().from(gradingTask)
+      .where(eq(gradingTask.id, Number(grading_task_id))).execute())[0];
     if (!task) {
       return NextResponse.json({ error: '批改记录不存在' }, { status: 404 });
     }
-    const asgn = db.select({ teacher_id: assignment.teacher_id })
-      .from(assignment).where(eq(assignment.id, task.assignment_id)).get();
+    const asgn = (await db.select({ teacher_id: assignment.teacher_id })
+      .from(assignment).where(eq(assignment.id, task.assignment_id)).execute())[0];
     // 跨租户隔离：仅作业创建教师可改分（与作业列表 `assignment.teacher_id` 归口一致）
     if (!asgn || asgn.teacher_id !== user.userId) {
       return NextResponse.json({ error: '无权修改该成绩' }, { status: 403 });
@@ -81,17 +81,17 @@ export async function POST(request: NextRequest) {
     const safeComment = override_comment ? htmlToPlainText(String(override_comment)).trim().slice(0, 1000) : '';
 
     // 覆盖分 + 复核留痕在同一事务内，杜绝部分生效
-    db.transaction(() => {
-      db.update(gradingTask)
+    await db.transaction(async (tx) => {
+      await tx.update(gradingTask)
         .set(data)
         .where(eq(gradingTask.id, Number(grading_task_id)))
-        .run();
+        .execute();
 
       const finalScore = data.teacher_override_score !== undefined
         ? (data.teacher_override_score as number)
         : (task.teacher_override_score ?? task.total_score);
 
-      db.insert(reviewRecord).values({
+      await tx.insert(reviewRecord).values({
         grading_task_id: Number(grading_task_id),
         reviewer_id: user.userId,
         reviewer_role: 'teacher',
@@ -99,20 +99,20 @@ export async function POST(request: NextRequest) {
         ai_score: task.total_score,
         final_score: finalScore as number,
         comment: safeComment,
-      }).run();
+      }).execute();
     });
 
     // P1-1：教师改分/评语后通知学生（含评语摘要）
     try {
-      const asgn = db.select({ title: assignment.title })
-        .from(assignment).where(eq(assignment.id, task.assignment_id)).limit(1).all()[0];
-      db.insert(notification).values({
+      const asgn = (await db.select({ title: assignment.title })
+        .from(assignment).where(eq(assignment.id, task.assignment_id)).limit(1).execute())[0];
+      await db.insert(notification).values({
         user_id: task.student_id,
         type: 'grade',
         title: '成绩已更新',
         content: `《${asgn?.title || '作业'}》教师已复核你的作答${safeComment ? `：${safeComment.slice(0, 50)}` : '，快去查看'}`,
         link: `/student/assignments/${task.assignment_id}`,
-      }).run();
+      }).execute();
     } catch (notifyErr) {
       console.error('Override notify error:', notifyErr);
     }
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
       const finalScore = data.teacher_override_score as number;
       const full = fullScore || task.full_score || 0;
       const isCorrect = full > 0 ? finalScore / full >= 0.6 : false;
-      syncMasteryFromGrading({
+      await syncMasteryFromGrading({
         studentId: task.student_id,
         knowledgePointId: task.knowledge_point_id,
         score: finalScore,
@@ -139,11 +139,11 @@ export async function POST(request: NextRequest) {
           eq(errorBook.question_id, task.question_id),
           eq(errorBook.assignment_id, task.assignment_id),
         );
-        const eb = db.select({ id: errorBook.id }).from(errorBook).where(scope).limit(1).all();
+        const eb = (await db.select({ id: errorBook.id }).from(errorBook).where(scope).limit(1).execute());
         if (finalScore >= full && full > 0) {
-          if (eb[0]) db.delete(errorBook).where(eq(errorBook.id, eb[0].id)).run();
+          if (eb[0]) await db.delete(errorBook).where(eq(errorBook.id, eb[0].id)).execute();
         } else if (task.student_answer?.trim() && !eb[0]) {
-          db.insert(errorBook).values({
+          await db.insert(errorBook).values({
             student_id: task.student_id,
             question_id: task.question_id,
             knowledge_point_id: task.knowledge_point_id,
@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
             review_status: 'pending',
             review_count: 0,
             next_review_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' '),
-          }).run();
+          }).execute();
         }
       }
     }

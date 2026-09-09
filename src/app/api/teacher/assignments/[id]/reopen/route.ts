@@ -18,17 +18,17 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (!authUser) return NextResponse.json({ error: '未登录' }, { status: 401 });
     const { id } = await context.params;
     const assignmentId = Number(id);
-    if (!isAssignmentInTeacherScope(authUser.userId, assignmentId)) {
+    if (!await isAssignmentInTeacherScope(authUser.userId, assignmentId)) {
       return NextResponse.json({ error: '无权操作该作业' }, { status: 403 });
     }
     const body = await request.json();
     const allowResubmit = !!body.allow_resubmit;
 
     const db = getDb();
-    db.update(assignment)
+    await db.update(assignment)
       .set({ allow_resubmit: allowResubmit })
       .where(eq(assignment.id, assignmentId))
-      .run();
+      .execute();
     try { saveDb(); } catch { /* 定时持久化兜底 */ }
 
     // 补交切换埋点（静默，失败不影响响应）

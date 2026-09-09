@@ -101,7 +101,7 @@ export function StudyPlanPanel() {
     try {
       const res = await apiFetch('/api/student/study-plan/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student_id: studentId, course_id: 1 }),
+        body: JSON.stringify({ student_id: studentId }),
       });
       const data = await res.json();
       if (data.success && data.data?.weeklyPlan) {

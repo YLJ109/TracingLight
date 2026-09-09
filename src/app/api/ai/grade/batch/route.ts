@@ -37,8 +37,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Get assignment
-    const assignmentData = db.select().from(assignment)
-      .where(eq(assignment.id, Number(assignment_id))).limit(1).all()[0] || null;
+    const assignmentData = (await db.select().from(assignment)
+      .where(eq(assignment.id, Number(assignment_id))).limit(1).execute())[0] || null;
     if (!assignmentData) {
       return NextResponse.json({ error: '作业不存在' }, { status: 404 });
     }
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     // Get questions（含知识点名称，供 AI 提示词）
     const questionIds = (assignmentData.question_ids as number[]) || [];
     const questions = questionIds.length > 0
-      ? db.select().from(question).where(inArray(question.id, questionIds)).all()
+      ? await db.select().from(question).where(inArray(question.id, questionIds)).execute()
       : [];
     const questionMap = new Map(questions.map((q) => [q.id, q]));
 
@@ -54,37 +54,37 @@ export async function POST(request: NextRequest) {
     const kpIds = [...new Set(questions.map((q) => q.knowledge_point_id).filter(Boolean))];
     const kpMap = new Map<number, string>();
     if (kpIds.length > 0) {
-      db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
+      (await db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
         .from(knowledgePoint).where(inArray(knowledgePoint.id, kpIds as number[]))
-        .all()
+        .execute())
         .forEach((kp) => kpMap.set(kp.id, kp.name));
     }
 
     // 学生层级（保留字段语义，供扩展）
-    void db.select({ student_level: user.student_level }).from(user)
-      .where(eq(user.id, Number(student_id))).limit(1).all()[0];
+    void (await db.select({ student_level: user.student_level }).from(user)
+      .where(eq(user.id, Number(student_id))).limit(1).execute())[0];
 
     // Get student answers
-    const answers = db.select().from(answer).where(
+    const answers = await db.select().from(answer).where(
       and(
         eq(answer.assignment_id, Number(assignment_id)),
         eq(answer.student_id, Number(student_id))
       )
-    ).all();
+    ).execute();
 
     if (!answers || answers.length === 0) {
       return NextResponse.json({ error: '学生未提交作业' }, { status: 400 });
     }
 
     // 已批改题目跳过（幂等）——但答案提交时间晚于批改完成时间的题目（退回重做后重新提交）需要重新批改
-    const existingGradings = db.select({ question_id: gradingTask.question_id, completed_at: gradingTask.completed_at })
+    const existingGradings = await db.select({ question_id: gradingTask.question_id, completed_at: gradingTask.completed_at })
       .from(gradingTask)
       .where(
         and(
           eq(gradingTask.assignment_id, Number(assignment_id)),
           eq(gradingTask.student_id, Number(student_id))
         )
-      ).all();
+      ).execute();
     const lastGradedAt = new Map<number, string>();
     for (const g of existingGradings) {
       const prev = lastGradedAt.get(g.question_id);

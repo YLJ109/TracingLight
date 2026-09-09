@@ -19,24 +19,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const db = getDb();
   const examId = parseInt((await params).id);
 
-  const attempt = db.select().from(examAttempt).where(and(eq(examAttempt.exam_id, examId), eq(examAttempt.student_id, r.user.userId))).get();
+  const attempt = (await db.select().from(examAttempt).where(and(eq(examAttempt.exam_id, examId), eq(examAttempt.student_id, r.user.userId))).execute())[0];
   if (!attempt || attempt.status !== 'in_progress') return NextResponse.json({ ok: true, finished: true });
 
   const body = await request.json().catch(() => null);
   if (!body) return NextResponse.json({ error: '参数错误' }, { status: 400 });
 
   const events: ProctorEventItem[] = Array.isArray(body.events) ? body.events : [];
-  const config = (db.select().from(exam).where(eq(exam.id, examId)).get()?.proctor_config ?? defaultProctorConfig()) as ReturnType<typeof defaultProctorConfig>;
+  const config = ((await db.select().from(exam).where(eq(exam.id, examId)).execute())[0]?.proctor_config ?? defaultProctorConfig()) as ReturnType<typeof defaultProctorConfig>;
   const now = new Date().toISOString();
 
   // 写事件
   for (const ev of events) {
     if (ev.type === 'heartbeat') continue; // 心跳不进事件表
-    db.insert(examProctorEvent).values({
+    await db.insert(examProctorEvent).values({
       exam_id: examId, attempt_id: attempt.id, student_id: r.user.userId,
       type: ev.type, severity: ev.severity || 'warn', detail: ev.detail || {},
       created_at: now,
-    }).run();
+    }).execute();
   }
 
   // 同步服务端累计计数（取更大值防绕过）
@@ -52,10 +52,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (clickRiskTypes.includes(ev.type) && !flags.includes(ev.type)) flags.push(ev.type);
   }
 
-  db.update(examAttempt).set({
+  await db.update(examAttempt).set({
     switch_count: switchCount, fullscreen_exit_count: feCount, risk_score: riskScore,
     risk_flags: flags, device_fp: body.device_fp || attempt.device_fp, updated_at: now,
-  }).where(eq(examAttempt.id, attempt.id)).run();
+  }).where(eq(examAttempt.id, attempt.id)).execute();
 
   // 超限 → 服务端权威自动交卷
   const maxSwitch = Number(config.max_switch) || 3;

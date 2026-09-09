@@ -50,11 +50,12 @@ http://<服务器公网IP>:5000
 
 | 步骤 | 行为 |
 |------|------|
-| 系统依赖 | apt/yum 安装 git、编译工具 |
+| 系统依赖 | apt/yum 安装 git、PostgreSQL |
+| PostgreSQL | 创建 `tracinglight` 角色与库（若缺） |
 | Node + pnpm | 缺则通过 nvm + corepack 自动安装 |
 | 依赖 | `pnpm install --frozen-lockfile` |
-| `.env` | 缺则生成随机 `JWT_SECRET`，`ZHIPU_API_KEY` 留待配置 |
-| 种子数据 | 仅当 `data/tracinglight.db` 为空时灌入 |
+| `.env` | 缺则生成随机 `JWT_SECRET` + PG 连接串，`ZHIPU_API_KEY` 留待配置 |
+| 种子数据 | 仅当 `data/.pg_seeded` 不存在时 `drizzle-kit push` 建表 + 灌入种子 |
 | 构建 | `next build` 生产构建 |
 | pm2 | `pm2 start ecosystem.config.cjs` + `pm2 save` |
 
@@ -141,10 +142,9 @@ server {
 
 | 问题 | 解决 |
 |------|------|
-| `better-sqlite3` 编译失败 | 装齐 `build-essential python3 make g++` 后重跑 |
+| 数据库连接失败 | `sudo systemctl status postgresql`；确认 `.env` 的 `DATABASE_URL`（默认 `localhost:5432`） |
 | 页面能开但 AI 报错 | 未配 `ZHIPU_API_KEY`，见第 3 节 |
 | 头像上传 404 | `public/uploads` 目录需存在（脚本已 `mkdir`）；重启 `pm2 reload` |
 | 端口被占 | `PORT=5001 sudo ./deploy/setup-linux.sh`，或改 `.env` 后 reload |
-| 数据库被锁 / EBUSY | 先 `pm2 stop tracinglight`，再删 `data/*.db*`，最后 `pm2 start` |
 
 > 安全建议：不要把 `.env`（含 JWT_SECRET）提交到任何仓库；服务器防火墙仅放行必要端口。

@@ -15,37 +15,37 @@ export async function GET(request: NextRequest) {
     if (!authUser) return NextResponse.json({ error: '未登录' }, { status: 401 });
     const db = getDb();
 
-    const my = db.select()
+    const my = (await db.select()
       .from(userTable)
       .where(eq(userTable.id, authUser.userId))
       .limit(1)
-      .all()[0];
+      .execute())[0];
     if (!my) return NextResponse.json({ error: '用户不存在' }, { status: 404 });
 
     // 班级名
     let className = null;
     let advisor: Array<{ id: number; name: string; username: string }> = [];
     if (my.class_id) {
-      className = db.select({ name: classInfo.name }).from(classInfo)
-        .where(eq(classInfo.id, my.class_id)).limit(1).all()[0]?.name || null;
+      className = (await db.select({ name: classInfo.name }).from(classInfo)
+        .where(eq(classInfo.id, my.class_id)).limit(1).execute())[0]?.name || null;
 
       if (my.role === 'student') {
         // 指导导师 = 本班课程所关联的授课教师（去重）
-        const courseIds = db.select({ id: course.id }).from(course)
-          .where(eq(course.class_id, my.class_id)).all().map((c) => c.id);
+        const courseIds = (await db.select({ id: course.id }).from(course)
+          .where(eq(course.class_id, my.class_id)).execute()).map((c) => c.id);
         const teacherIds: number[] = [];
         if (courseIds.length > 0) {
-          db.select({ teacher_id: course.teacher_id }).from(course)
+          (await db.select({ teacher_id: course.teacher_id }).from(course)
             .where(inArray(course.id, courseIds))
-            .all()
+            .execute())
             .forEach((c) => { if (c.teacher_id) teacherIds.push(c.teacher_id); });
         }
         const uniqueTeacherIds = [...new Set(teacherIds)];
         if (uniqueTeacherIds.length > 0) {
-          advisor = db.select({ id: userTable.id, name: userTable.real_name, username: userTable.username })
+          advisor = await db.select({ id: userTable.id, name: userTable.real_name, username: userTable.username })
             .from(userTable)
             .where(inArray(userTable.id, uniqueTeacherIds))
-            .all();
+            .execute();
         }
       }
     }
@@ -54,15 +54,15 @@ export async function GET(request: NextRequest) {
     let stats = null;
     if (my.role === 'student') {
       const studentId = my.id;
-      const completed = db.select({ count: sql<number>`count(*)` }).from(gradingTask)
-        .where(and(eq(gradingTask.student_id, studentId), eq(gradingTask.status, 'completed'))).all()[0]?.count || 0;
-      const errRows = db.select({ review_status: errorBook.review_status }).from(errorBook)
-        .where(eq(errorBook.student_id, studentId)).all();
+      const completed = (await db.select({ count: sql<number>`count(*)` }).from(gradingTask)
+        .where(and(eq(gradingTask.student_id, studentId), eq(gradingTask.status, 'completed'))).execute())[0]?.count || 0;
+      const errRows = await db.select({ review_status: errorBook.review_status }).from(errorBook)
+        .where(eq(errorBook.student_id, studentId)).execute();
       const totalErrors = errRows.length;
       const masteredErrors = errRows.filter((r) => r.review_status === 'mastered').length;
-      const grads = db.select({ total_score: gradingTask.total_score, full_score: gradingTask.full_score })
+      const grads = await db.select({ total_score: gradingTask.total_score, full_score: gradingTask.full_score })
         .from(gradingTask)
-        .where(and(eq(gradingTask.student_id, studentId), eq(gradingTask.status, 'completed'))).all();
+        .where(and(eq(gradingTask.student_id, studentId), eq(gradingTask.status, 'completed'))).execute();
       const ts = grads.reduce((s, g) => s + (g.total_score || 0), 0);
       const tf = grads.reduce((s, g) => s + (g.full_score || 0), 0);
       const avgScore = tf > 0 ? Math.round((ts / tf) * 1000) / 10 : 0;
@@ -125,12 +125,12 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: '没有需要更新的字段' }, { status: 400 });
     }
 
-    db.update(userTable)
+    await db.update(userTable)
       .set(patch)
       .where(eq(userTable.id, authUser.userId))
-      .run();
+      .execute();
 
-    const updated = db.select().from(userTable).where(eq(userTable.id, authUser.userId)).limit(1).all()[0];
+    const updated = (await db.select().from(userTable).where(eq(userTable.id, authUser.userId)).limit(1).execute())[0];
     return NextResponse.json({
       success: true,
       user: {

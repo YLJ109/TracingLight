@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAIClient, isAIConfigError } from "@/lib/ai/client";
 import { requireAuth } from "@/lib/server-auth";
-import { getDb, saveDb, ensureColumn } from "@/storage/database/db";
+import { getDb, saveDb } from "@/storage/database/db";
 import { qaSession, qaMessage } from "@/storage/database/shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { buildUserContent, VISION_MODEL, type IncomingAttachment } from "@/lib/ai/attachments";
@@ -57,32 +57,29 @@ export async function POST(request: NextRequest) {
   const titleFallback = (rawAttachments[0]?.name || message || '').slice(0, 20);
 
   const db = getDb();
-  // 运行兜底：确保已有进程的 qa_message 具备 attachment 列（缺列则补）
-  ensureColumn('qa_message', 'attachment', 'ALTER TABLE qa_message ADD COLUMN attachment TEXT');
-
   // 会话归属：只能续写本人会话（与非流式接口一致）
   let sessionId = body.session_id ? Number(body.session_id) : null;
   if (sessionId) {
-    const s = db.select().from(qaSession)
+    const s = (await db.select().from(qaSession)
       .where(and(eq(qaSession.id, sessionId), eq(qaSession.user_id, authUser.userId)))
-      .get();
+      .execute())[0];
     if (!s) sessionId = null;
   }
   if (!sessionId) {
-    const created = db.insert(qaSession).values({
+    const created = await db.insert(qaSession).values({
       user_id: authUser.userId,
       title: message.slice(0, 20) || titleFallback,
-    }).returning().all();
+    }).returning().execute();
     sessionId = created[0]?.id;
   }
 
   // 取历史 + 保存用户消息（非流式部分先落库）——上下文记忆：最近 30 条
-  const historyMsgs = db.select().from(qaMessage)
+  const historyMsgs = await db.select().from(qaMessage)
     .where(eq(qaMessage.session_id, sessionId!))
     .orderBy(qaMessage.id)
     .limit(30)
-    .all();
-  db.insert(qaMessage).values({ session_id: sessionId!, role: 'user', content: message, attachment: build.persist ? JSON.stringify(build.persist) : null }).run();
+    .execute();
+  await db.insert(qaMessage).values({ session_id: sessionId!, role: 'user', content: message, attachment: build.persist ? JSON.stringify(build.persist) : null }).execute();
   try { saveDb(); } catch { /* 定时持久化兜底 */ }
 
   const messages = [
@@ -110,12 +107,12 @@ export async function POST(request: NextRequest) {
       try {
         // 自动标题：默认标题的会话在首条消息后改为消息摘要（豆包式）
         try {
-          const sess = db.select().from(qaSession).where(eq(qaSession.id, sid)).get();
+          const sess = (await db.select().from(qaSession).where(eq(qaSession.id, sid)).execute())[0];
           if (sess && (!sess.title || sess.title === '新的对话')) {
-            db.update(qaSession).set({ title: message.slice(0, 20) || titleFallback }).where(eq(qaSession.id, sid)).run();
+            await db.update(qaSession).set({ title: message.slice(0, 20) || titleFallback }).where(eq(qaSession.id, sid)).execute();
           }
         } catch { /* 标题更新失败不影响主流程 */ }
-        const client = createAIClient();
+        const client = await createAIClient();
         for await (const chunk of client.stream(messages, { model, temperature: 0.5, max_tokens: 1024 })) {
           if (chunk.content) {
             fullContent += chunk.content;
@@ -123,10 +120,10 @@ export async function POST(request: NextRequest) {
           }
         }
         // 流结束：落库 assistant 回复（与非流式接口持久化一致）
-        db.insert(qaMessage).values({ session_id: sid, role: 'assistant', content: fullContent }).run();
-        db.update(qaSession).set({ updated_at: new Date().toISOString() })
+        await db.insert(qaMessage).values({ session_id: sid, role: 'assistant', content: fullContent }).execute();
+        await db.update(qaSession).set({ updated_at: new Date().toISOString() })
           .where(and(eq(qaSession.id, sid), eq(qaSession.user_id, userId)))
-          .run();
+          .execute();
         try { saveDb(); } catch { /* 定时持久化兜底 */ }
         send({ done: true });
       } catch (e) {
@@ -134,7 +131,7 @@ export async function POST(request: NextRequest) {
         // 出错：把已生成的部分保存，并通知前端
         if (fullContent) {
           try {
-            db.insert(qaMessage).values({ session_id: sid, role: 'assistant', content: fullContent + '\n\n（回复中断）' }).run();
+            await db.insert(qaMessage).values({ session_id: sid, role: 'assistant', content: fullContent + '\n\n（回复中断）' }).execute();
             try { saveDb(); } catch { /* 定时持久化兜底 */ }
           } catch { /* 忽略落库失败 */ }
         }

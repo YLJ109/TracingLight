@@ -13,7 +13,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const db = getDb();
   const examId = parseInt((await params).id);
 
-  const attempt = db.select().from(examAttempt).where(and(eq(examAttempt.exam_id, examId), eq(examAttempt.student_id, r.user.userId))).get();
+  const attempt = (await db.select().from(examAttempt).where(and(eq(examAttempt.exam_id, examId), eq(examAttempt.student_id, r.user.userId))).execute())[0];
   if (!attempt) return NextResponse.json({ error: '请先开始考试' }, { status: 403 });
   if (attempt.status !== 'in_progress') return NextResponse.json({ error: '考试已交卷' }, { status: 400 });
 

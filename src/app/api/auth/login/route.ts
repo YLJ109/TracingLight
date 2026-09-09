@@ -51,11 +51,11 @@ export async function POST(request: NextRequest) {
     }
 
     const db = getDb();
-    const rows = db.select()
+    const rows = await db.select()
       .from(userTable)
       .where(eq(userTable.username, username))
       .limit(1)
-      .all();
+      .execute();
 
     if (rows.length === 0) {
       return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });

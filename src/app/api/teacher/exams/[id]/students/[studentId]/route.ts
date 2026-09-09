@@ -19,38 +19,38 @@ export async function GET(
   const examId = parseInt((await params).id);
   const studentId = parseInt((await params).studentId);
 
-  const row = db.select().from(exam).where(eq(exam.id, examId)).get();
+  const row = (await db.select().from(exam).where(eq(exam.id, examId)).execute())[0];
   if (!row) return NextResponse.json({ error: '考试不存在' }, { status: 404 });
   if (row.teacher_id !== r.user.userId) return NextResponse.json({ error: '无权限' }, { status: 403 });
-  if (!isStudentInTeacherScope(r.user.userId, studentId)) {
+  if (!await isStudentInTeacherScope(r.user.userId, studentId)) {
     return NextResponse.json({ error: '无权查看该学生' }, { status: 403 });
   }
 
-  const courseName = db.select({ name: course.name }).from(course).where(eq(course.id, row.course_id)).get()?.name || '';
-  const student = db.select({ id: user.id, real_name: user.real_name, username: user.username, class_id: user.class_id, student_level: user.student_level })
-    .from(user).where(eq(user.id, studentId)).get();
+  const courseName = (await db.select({ name: course.name }).from(course).where(eq(course.id, row.course_id)).execute())[0]?.name || '';
+  const student = (await db.select({ id: user.id, real_name: user.real_name, username: user.username, class_id: user.class_id, student_level: user.student_level })
+    .from(user).where(eq(user.id, studentId)).execute())[0];
   if (!student) return NextResponse.json({ error: '学生不存在' }, { status: 404 });
-  const className = student.class_id ? (db.select({ name: classInfo.name }).from(classInfo).where(eq(classInfo.id, student.class_id)).get()?.name || '') : '';
+  const className = student.class_id ? ((await db.select({ name: classInfo.name }).from(classInfo).where(eq(classInfo.id, student.class_id)).execute())[0]?.name || '') : '';
 
-  const attempt = db.select().from(examAttempt)
-    .where(and(eq(examAttempt.exam_id, examId), eq(examAttempt.student_id, studentId))).get() || null;
+  const attempt = (await db.select().from(examAttempt)
+    .where(and(eq(examAttempt.exam_id, examId), eq(examAttempt.student_id, studentId))).execute())[0] || null;
 
   const questionIds = (row.question_ids as number[]) || [];
   const questions = questionIds.length
-    ? db.select().from(question).where(inArray(question.id, questionIds)).orderBy(question.id).all()
+    ? await db.select().from(question).where(inArray(question.id, questionIds)).orderBy(question.id).execute()
     : [];
 
   const kpIds = [...new Set(questions.map((q) => q.knowledge_point_id).filter(Boolean))] as number[];
   const kpMap = new Map<number, string>();
   if (kpIds.length) {
-    db.select({ id: knowledgePoint.id, name: knowledgePoint.name }).from(knowledgePoint).where(inArray(knowledgePoint.id, kpIds)).all()
+    (await db.select({ id: knowledgePoint.id, name: knowledgePoint.name }).from(knowledgePoint).where(inArray(knowledgePoint.id, kpIds)).execute())
       .forEach((kp) => kpMap.set(kp.id, kp.name));
   }
 
-  const answers = db.select().from(examAnswer)
-    .where(and(eq(examAnswer.exam_id, examId), eq(examAnswer.student_id, studentId))).all();
-  const gradings = db.select().from(examGrading)
-    .where(and(eq(examGrading.exam_id, examId), eq(examGrading.student_id, studentId))).all();
+  const answers = await db.select().from(examAnswer)
+    .where(and(eq(examAnswer.exam_id, examId), eq(examAnswer.student_id, studentId))).execute();
+  const gradings = await db.select().from(examGrading)
+    .where(and(eq(examGrading.exam_id, examId), eq(examGrading.student_id, studentId))).execute();
 
   const answerMap = new Map(answers.map((a) => [a.question_id, a]));
   const gradingMap = new Map(gradings.map((g) => [g.question_id, g]));

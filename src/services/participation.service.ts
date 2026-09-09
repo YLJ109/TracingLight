@@ -64,62 +64,63 @@ const windowStart = () => {
   return d.toISOString().slice(0, 10);
 };
 
-export function computeParticipationScore(studentId: number): ParticipationScore {
+export async function computeParticipationScore(studentId: number): Promise<ParticipationScore> {
   const db = getDb();
   const start = windowStart();
   const end = today();
 
   // 1) 签到率：近30天实际签到 / 30
-  const signins = db.select().from(signInRecord)
+  const signins = await db.select().from(signInRecord)
     .where(and(
       eq(signInRecord.user_id, studentId),
       gte(signInRecord.sign_date, start),
       lte(signInRecord.sign_date, end),
     ))
-    .all();
+    .execute();
   const signinDays = signins.length;
   const signinRate = Math.min(100, Math.round((signinDays / WINDOW) * 100));
 
   // 2) 作业完成率：布置给该学生所在班级的作业数 vs 该生已提交数
   // 口径：学生班级(经 user.class_id) → 该班课程(course.class_id) → 布置的作业(assignment.course_id)
-  const myClassId = db.select({ class_id: user.class_id })
-    .from(user).where(eq(user.id, studentId)).all()[0]?.class_id;
+  const myClassId = (await db.select({ class_id: user.class_id })
+    .from(user).where(eq(user.id, studentId)).execute())[0]?.class_id;
   let assignedAll = 0;
   if (myClassId != null) {
-    const classCourseIds = db.select({ id: course.id })
-      .from(course).where(eq(course.class_id, myClassId)).all().map((c) => c.id);
+    const classCourseRows = await db.select({ id: course.id })
+      .from(course).where(eq(course.class_id, myClassId)).execute();
+    const classCourseIds = classCourseRows.map((c) => c.id);
     assignedAll = classCourseIds.length > 0
-      ? db.select({ id: assignment.id })
+      ? (await db.select({ id: assignment.id })
           .from(assignment)
           .where(and(
             inArray(assignment.course_id, classCourseIds),
             inArray(assignment.status, ['published', 'closed']),
-          )).all().length
+          )).execute()).length
       : 0;
   }
-  const answered = db.select().from(answer)
+  const answered = await db.select().from(answer)
     .where(and(eq(answer.student_id, studentId), eq(answer.is_submitted, true)))
-    .all();
+    .execute();
   const submittedCount = Math.min(new Set(answered.map((a) => a.assignment_id)).size, assignedAll || Number.MAX_SAFE_INTEGER);
   const homeworkRate = assignedAll > 0 ? Math.round((submittedCount / assignedAll) * 100) : 0;
 
   // 3) 阅读投入：累计分钟数 → 每 60 分钟 10 分，封顶 25（口径见 lib/reading-score）
-  const readingLogs = db.select().from(learningBehaviorLog)
+  const readingLogs = await db.select().from(learningBehaviorLog)
     .where(eq(learningBehaviorLog.student_id, studentId))
-    .all();
+    .execute();
   const readingMinutes = readingMinutesFromSeconds(readingLogs.reduce((s, r) => s + (r.watch_duration || 0), 0));
   const readingScore = readingScoreFromMinutes(readingMinutes);
 
   // 4) 讨论贡献：发帖数 + 回复数，每 1 次 2 分，封顶 15
-  const postCount = db.select().from(discussionPost)
-    .where(eq(discussionPost.author_id, studentId)).all().length;
-  const replyCount = db.select().from(discussionReply)
-    .where(eq(discussionReply.author_id, studentId)).all().length;
+  const postCount = (await db.select().from(discussionPost)
+    .where(eq(discussionPost.author_id, studentId)).execute()).length;
+  const replyCount = (await db.select().from(discussionReply)
+    .where(eq(discussionReply.author_id, studentId)).execute()).length;
   const discussionContribution = Math.min(15, (postCount + replyCount) * 2);
 
   // 5) 错题复习：已掌握 / 总数，封顶 10
-  const myErrors = db.select().from(errorBook)
-    .where(eq(errorBook.student_id, studentId)).all();
+  const myErrors = await db.select().from(errorBook)
+    .where(eq(errorBook.student_id, studentId)).execute();
   const reviewRate = myErrors.length > 0
     ? Math.round((myErrors.filter((e) => e.review_status === 'mastered').length / myErrors.length) * 100)
     : 0;

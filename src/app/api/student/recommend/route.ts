@@ -29,35 +29,35 @@ export async function GET(request: NextRequest) {
     const db = getDb();
 
     // 学生班级（用于收敛课程范围）
-    const stu = db.select({ class_id: user.class_id }).from(user).where(eq(user.id, studentId)).limit(1).all()[0];
+    const stu = (await db.select({ class_id: user.class_id }).from(user).where(eq(user.id, studentId)).limit(1).execute())[0];
     const classId = stu?.class_id ?? null;
 
     // 课程（本班级课程）
     const courses = (classId != null
-      ? db.select({ id: course.id, name: course.name, short_name: course.short_name })
-          .from(course).where(eq(course.class_id, classId)).orderBy(course.id).all()
-      : db.select({ id: course.id, name: course.name, short_name: course.short_name })
-          .from(course).orderBy(course.id).all()
+      ? await db.select({ id: course.id, name: course.name, short_name: course.short_name })
+          .from(course).where(eq(course.class_id, classId)).orderBy(course.id).execute()
+      : await db.select({ id: course.id, name: course.name, short_name: course.short_name })
+          .from(course).orderBy(course.id).execute()
     );
     const courseIds = courses.map((c) => c.id);
     const courseMap = new Map(courses.map((c) => [c.id, c]));
 
     // 知识点（本班级课程下）
     const kps = courseIds.length > 0
-      ? db.select({ id: knowledgePoint.id, name: knowledgePoint.name, course_id: knowledgePoint.course_id })
-          .from(knowledgePoint).where(inArray(knowledgePoint.course_id, courseIds)).all()
+      ? await db.select({ id: knowledgePoint.id, name: knowledgePoint.name, course_id: knowledgePoint.course_id })
+          .from(knowledgePoint).where(inArray(knowledgePoint.course_id, courseIds)).execute()
       : [];
     const kpMap = new Map(kps.map((k) => [k.id, k]));
 
     // 真实掌握度
-    const masteryLogs = db.select({
+    const masteryLogs = await db.select({
       knowledge_point_id: knowledgeMasteryLog.knowledge_point_id,
       mastery_rate: knowledgeMasteryLog.mastery_rate,
       error_count: knowledgeMasteryLog.error_count,
       recorded_at: knowledgeMasteryLog.recorded_at,
     }).from(knowledgeMasteryLog)
       .where(eq(knowledgeMasteryLog.student_id, studentId))
-      .all();
+      .execute();
     const masteryByKp = new Map<number, typeof masteryLogs[number]>();
     for (const m of masteryLogs) {
       const cur = masteryByKp.get(m.knowledge_point_id);
@@ -66,26 +66,27 @@ export async function GET(request: NextRequest) {
 
     // 每个知识点题量（真实）
     const qpCounts = kps.length > 0
-      ? db.select({ kp_id: question.knowledge_point_id, cnt: sql<number>`count(*)` })
-          .from(question).where(inArray(question.knowledge_point_id, kps.map((k) => k.id))).all()
+      ? await db.select({ kp_id: question.knowledge_point_id, cnt: sql<number>`count(*)` })
+          .from(question).where(inArray(question.knowledge_point_id, kps.map((k) => k.id)))
+          .groupBy(question.knowledge_point_id).execute()
       : [];
     const qpMap = new Map(qpCounts.map((r) => [r.kp_id, r.cnt || 0]));
 
     // 真实错题（含题目内容）
-    const errorRows = db.select({
+    const errorRows = await db.select({
       id: errorBook.id,
       question_id: errorBook.question_id,
       knowledge_point_id: errorBook.knowledge_point_id,
       error_type: errorBook.error_type,
       review_status: errorBook.review_status,
       next_review_at: errorBook.next_review_at,
-    }).from(errorBook).where(eq(errorBook.student_id, studentId)).all();
+    }).from(errorBook).where(eq(errorBook.student_id, studentId)).execute();
     const errQIds = [...new Set(errorRows.map((e) => e.question_id).filter(Boolean))];
     const errQMap = new Map<number, { content: string; difficulty: string | null }>();
     if (errQIds.length > 0) {
-      db.select({ id: question.id, content: question.content, difficulty: question.difficulty })
+      (await db.select({ id: question.id, content: question.content, difficulty: question.difficulty })
         .from(question).where(inArray(question.id, errQIds as number[]))
-        .all()
+        .execute())
         .forEach((q) => errQMap.set(q.id, { content: q.content, difficulty: q.difficulty }));
     }
     const errors = errorRows.map((e) => ({
@@ -95,24 +96,24 @@ export async function GET(request: NextRequest) {
     }));
 
     // 真实批改成绩
-    const gradings = db.select({
+    const gradings = await db.select({
       assignment_id: gradingTask.assignment_id,
       total_score: sql<number>`COALESCE(${gradingTask.teacher_override_score}, ${gradingTask.total_score})`,
       full_score: gradingTask.full_score,
       completed_at: gradingTask.completed_at,
     }).from(gradingTask)
       .where(and(eq(gradingTask.student_id, studentId), eq(gradingTask.status, 'completed')))
-      .all();
+      .execute();
 
     // 学习投入（真实行为日志）
-    const behavior = db.select({
+    const behavior = await db.select({
       progress: learningBehaviorLog.progress,
       is_completed: learningBehaviorLog.is_completed,
-    }).from(learningBehaviorLog).where(eq(learningBehaviorLog.student_id, studentId)).all();
+    }).from(learningBehaviorLog).where(eq(learningBehaviorLog.student_id, studentId)).execute();
 
     // 学习材料（本班级课程，按知识点推荐）——knowledge_point_ids 存 JSON 数组
     const materials = courseIds.length > 0
-      ? db.select().from(learningMaterial).where(inArray(learningMaterial.course_id, courseIds)).all()
+      ? await db.select().from(learningMaterial).where(inArray(learningMaterial.course_id, courseIds)).execute()
       : [];
     const materialsByKp = new Map<number, typeof learningMaterial.$inferSelect[]>();
     for (const m of materials) {
@@ -127,8 +128,8 @@ export async function GET(request: NextRequest) {
       }
     }
     const materialProgress = new Map<number, number>();
-    db.select({ material_id: learningBehaviorLog.material_id, progress: learningBehaviorLog.progress })
-      .from(learningBehaviorLog).where(eq(learningBehaviorLog.student_id, studentId)).all()
+    (await db.select({ material_id: learningBehaviorLog.material_id, progress: learningBehaviorLog.progress })
+      .from(learningBehaviorLog).where(eq(learningBehaviorLog.student_id, studentId)).execute())
       .forEach((b) => materialProgress.set(b.material_id, b.progress || 0));
 
     // ===== 知识掌握列表（每个知识点取最新掌握度） =====
@@ -208,8 +209,8 @@ export async function GET(request: NextRequest) {
 
     // ===== 真实趋势（按作业聚合成绩）=====
     const assignments = courseIds.length > 0
-      ? db.select({ id: assignment.id, end_time: assignment.end_time })
-          .from(assignment).where(inArray(assignment.course_id, courseIds)).orderBy(asc(assignment.end_time)).all()
+      ? await db.select({ id: assignment.id, end_time: assignment.end_time })
+          .from(assignment).where(inArray(assignment.course_id, courseIds)).orderBy(asc(assignment.end_time)).execute()
       : [];
     const asgnMap = new Map(assignments.map((a) => [a.id, a]));
     const trendByAssignment = new Map<number, { score: number; full: number }>();
@@ -249,12 +250,12 @@ export async function GET(request: NextRequest) {
       ? eq(examSchedule.course_id, courseId)
       : (courseIds.length > 0 ? inArray(examSchedule.course_id, courseIds) : undefined);
     const examScheduleData = examScope
-      ? db.select().from(examSchedule)
+      ? await db.select().from(examSchedule)
           .where(and(examScope, gte(examSchedule.exam_date, today)))
-          .orderBy(asc(examSchedule.exam_date)).all()
-      : db.select().from(examSchedule)
+          .orderBy(asc(examSchedule.exam_date)).execute()
+      : await db.select().from(examSchedule)
           .where(gte(examSchedule.exam_date, today))
-          .orderBy(asc(examSchedule.exam_date)).all();
+          .orderBy(asc(examSchedule.exam_date)).execute();
     const upcomingExams = examScheduleData.map((e) => ({
       id: e.id,
       title: e.exam_name,

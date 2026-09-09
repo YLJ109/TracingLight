@@ -30,21 +30,21 @@ function isUniqueViolation(e: unknown): boolean {
 }
 
 /** 在给定句柄上获取（或惰性创建）签到汇总；并发首建 UNIQUE 冲突用 INSERT+重查规避 */
-function getOrCreateSummaryOn(q: any, user_id: number) {
-  let s = q.select().from(signInSummary)
-    .where(eq(signInSummary.user_id, user_id)).limit(1).all()[0];
+async function getOrCreateSummaryOn(q: any, user_id: number) {
+  let s = (await q.select().from(signInSummary)
+    .where(eq(signInSummary.user_id, user_id)).limit(1).execute())[0];
   if (!s) {
     try {
-      q.insert(signInSummary).values({
+      await q.insert(signInSummary).values({
         user_id, current_streak: 0, max_streak: 0, last_sign_date: null,
         total_days: 0, month: monthOf(today()), month_days: 0, year_days: 0,
         remedy_cards: 1, updated_at: nowStr(),
-      }).run();
+      }).execute();
     } catch (e) {
       if (!isUniqueViolation(e)) throw e;
     }
-    s = q.select().from(signInSummary)
-      .where(eq(signInSummary.user_id, user_id)).limit(1).all()[0];
+    s = (await q.select().from(signInSummary)
+      .where(eq(signInSummary.user_id, user_id)).limit(1).execute())[0];
   }
   return s;
 }
@@ -62,21 +62,21 @@ export async function GET(request: NextRequest) {
     const uid = authUser.userId;
     const t = today();
 
-    const summary = getOrCreateSummary(uid);
-    const signedToday = db.select().from(signInRecord)
+    const summary = await getOrCreateSummary(uid);
+    const signedToday = (await db.select().from(signInRecord)
       .where(and(eq(signInRecord.user_id, uid), eq(signInRecord.sign_date, t)))
-      .limit(1).all()[0];
+      .limit(1).execute())[0];
 
     // 本月签到记录
     const monthStart = monthOf(t) + '-01';
-    const monthRecords = db.select().from(signInRecord)
+    const monthRecords = await db.select().from(signInRecord)
       .where(and(
         eq(signInRecord.user_id, uid),
         sql`${signInRecord.sign_date} >= ${monthStart}`,
         sql`${signInRecord.sign_date} <= ${t}`,
       ))
       .orderBy(signInRecord.sign_date)
-      .all();
+      .execute();
 
     const missed = monthRecords.length < new Date(t).getUTCDate()
       ? new Date(t).getUTCDate() - monthRecords.length
@@ -125,9 +125,9 @@ export async function POST(request: NextRequest) {
     const t = today();
 
     // 前置防重复（数据库唯一索引做并发兜底）
-    const exist = db.select().from(signInRecord)
+    const exist = (await db.select().from(signInRecord)
       .where(and(eq(signInRecord.user_id, uid), eq(signInRecord.sign_date, t)))
-      .limit(1).all()[0];
+      .limit(1).execute())[0];
     if (exist) {
       return NextResponse.json({
         success: false, code: 'ALREADY_SIGNED', error: '今天已经签到过啦',
@@ -137,8 +137,8 @@ export async function POST(request: NextRequest) {
 
     let result;
     try {
-      result = db.transaction((tx) => {
-        const summary = getOrCreateSummaryOn(tx, uid);
+      result = await db.transaction(async (tx) => {
+        const summary = await getOrCreateSummaryOn(tx, uid);
         const last = summary.last_sign_date;
         // 连续判定：昨天签过则 +1，否则从 1 开始
         const isConsecutive = last && addDays(last, 1) === t;
@@ -154,11 +154,11 @@ export async function POST(request: NextRequest) {
         let cards = summary.remedy_cards ?? 0;
         if (newStreak > 0 && newStreak % 7 === 0 && cards < 3) cards += 1;
 
-        tx.insert(signInRecord).values({
+        await tx.insert(signInRecord).values({
           user_id: uid, sign_date: t, streak_day: newStreak, points, source: 'normal', created_at: nowStr(),
-        }).run();
+        }).execute();
 
-        tx.update(signInSummary).set({
+        await tx.update(signInSummary).set({
           current_streak: newStreak,
           max_streak: Math.max(summary.max_streak ?? 0, newStreak),
           last_sign_date: t,
@@ -168,10 +168,10 @@ export async function POST(request: NextRequest) {
           year_days: (summary.year_days ?? 0) + 1,
           remedy_cards: cards,
           updated_at: nowStr(),
-        }).where(eq(signInSummary.user_id, uid)).run();
+        }).where(eq(signInSummary.user_id, uid)).execute();
 
         // 发积分（幂等键 = 用户+日期，与上面写入同一事务，失败整体回滚）
-        const award = awardPointsTx(tx, {
+        const award = await awardPointsTx(tx, {
           user_id: uid,
           amount: points,
           biz_type: 'checkin',

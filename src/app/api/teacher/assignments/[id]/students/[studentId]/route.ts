@@ -19,9 +19,9 @@ export async function GET(
     const studentIdNum = parseInt(studentId);
 
     // Get assignment info
-    const asgnRows = db.select().from(assignment)
+    const asgnRows = await db.select().from(assignment)
       .where(eq(assignment.id, assignmentId))
-      .limit(1).all();
+      .limit(1).execute();
     const asgn = asgnRows[0] || null;
 
     if (!asgn) {
@@ -33,15 +33,15 @@ export async function GET(
       return NextResponse.json({ error: '无权访问该作业' }, { status: 403 });
     }
     // 学生必须在本人授课班级范围，防止越权查看他人班级学生作答详情
-    if (!isStudentInTeacherScope(authUser.userId, studentIdNum)) {
+    if (!await isStudentInTeacherScope(authUser.userId, studentIdNum)) {
       return NextResponse.json({ error: '无权查看该学生' }, { status: 403 });
     }
 
     // Get associated course name
-    const courseRow = db.select({ name: course.name })
+    const courseRow = (await db.select({ name: course.name })
       .from(course)
       .where(eq(course.id, asgn.course_id))
-      .limit(1).all()[0] || null;
+      .limit(1).execute())[0] || null;
 
     const assignmentWithCourse = {
       id: asgn.id,
@@ -51,13 +51,13 @@ export async function GET(
     };
 
     // Get student info
-    const studentRows = db.select({
+    const studentRows = await db.select({
       id: user.id,
       real_name: user.real_name,
       student_level: user.student_level,
     }).from(user)
       .where(eq(user.id, studentIdNum))
-      .limit(1).all();
+      .limit(1).execute();
     const student = studentRows[0] || null;
 
     if (!student) {
@@ -70,39 +70,39 @@ export async function GET(
     // Get questions
     let questions: any[] = [];
     if (questionIds.length > 0) {
-      questions = db.select().from(question)
+      questions = await db.select().from(question)
         .where(inArray(question.id, questionIds))
         .orderBy(question.id)
-        .all();
+        .execute();
     }
 
     // Enrich questions with knowledge point names
     const kpIds = [...new Set(questions.map((q) => q.knowledge_point_id).filter(Boolean))];
     const kpMap = new Map<number, string>();
     if (kpIds.length > 0) {
-      const kps = db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
+      const kps = await db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
         .from(knowledgePoint)
         .where(inArray(knowledgePoint.id, kpIds as number[]))
-        .all();
+        .execute();
       kps.forEach((kp) => kpMap.set(kp.id, kp.name));
     }
 
     // Get student answers
-    const answers = db.select().from(answer)
+    const answers = await db.select().from(answer)
       .where(and(
         eq(answer.assignment_id, assignmentId),
         eq(answer.student_id, studentIdNum),
       ))
-      .all();
+      .execute();
 
     // Get grading tasks（仅取最新完成的批改；退回/重批的旧行 status=superseded 不计入）
-    const gradings = db.select().from(gradingTask)
+    const gradings = await db.select().from(gradingTask)
       .where(and(
         eq(gradingTask.assignment_id, assignmentId),
         eq(gradingTask.student_id, studentIdNum),
         eq(gradingTask.status, 'completed'),
       ))
-      .all();
+      .execute();
 
     // 按 question_id 去重取最新一条，防止旧行残留导致题数/总分膨胀
     const gradingsByQuestion = new Map<number, typeof gradings[number]>();

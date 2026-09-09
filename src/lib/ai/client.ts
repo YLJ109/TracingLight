@@ -52,13 +52,13 @@ export function isPlaceholderKey(key: string): boolean {
  * 支持管理后台「系统设置」在线切换 API 地址 / Key / 模型，立即生效无需重启。
  * key 约定：ai_base_url / ai_api_key / ai_model
  */
-function getRuntimeConfig(): { apiKey: string; baseUrl: string; model: string } {
+async function getRuntimeConfig(): Promise<{ apiKey: string; baseUrl: string; model: string }> {
   let baseUrl = ZHIPU_BASE_URL;
   let model = ZHIPU_MODEL;
   let apiKey = process.env.ZHIPU_API_KEY || '';
   try {
     // 从管理端 system_config 读取（DB 优先，env 兜底）。静态导入经 Next 打包正确解析，生产亦生效。
-    const rows = getDb().select().from(systemConfig).all();
+    const rows = await getDb().select().from(systemConfig).execute();
     const map = new Map(rows.map((r: { key: string; value: string | null }) => [r.key, r.value]));
     if (map.get('ai_base_url')) baseUrl = String(map.get('ai_base_url'));
     if (map.get('ai_model')) model = String(map.get('ai_model'));
@@ -84,7 +84,7 @@ export async function extractTextFromImage(
   prompt: string,
   visionModel = 'glm-4v-flash'
 ): Promise<string> {
-  const client = createAIClient();
+  const client = await createAIClient();
   const dataUrl = imageBase64.startsWith('data:') ? imageBase64 : `data:image/png;base64,${imageBase64}`;
   const response = await client.invoke(
     [
@@ -126,8 +126,7 @@ class ZhipuClient {
   private baseUrl: string;
   private defaultModel: string;
 
-  constructor() {
-    const cfg = getRuntimeConfig();
+  constructor(cfg: { apiKey: string; baseUrl: string; model: string }) {
     this.apiKey = cfg.apiKey;
     this.baseUrl = cfg.baseUrl;
     this.defaultModel = cfg.model;
@@ -230,8 +229,8 @@ class ZhipuClient {
 /**
  * 创建智谱 AI 客户端
  */
-export function createAIClient(_headers?: Record<string, string>): ZhipuClient {
-  return new ZhipuClient();
+export async function createAIClient(_headers?: Record<string, string>): Promise<ZhipuClient> {
+  return new ZhipuClient(await getRuntimeConfig());
 }
 
 /**

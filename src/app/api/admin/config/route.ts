@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     if (!authUser) return NextResponse.json({ error: '未登录或无权访问' }, { status: 401 });
     const db = getDb();
 
-    const configs = db.select().from(systemConfig).all();
+    const configs = await db.select().from(systemConfig).execute();
     return NextResponse.json({ success: true, data: configs });
   } catch (e) {
     if (e && typeof (e as { status?: number }).status === 'number') return e as NextResponse;
@@ -54,22 +54,22 @@ export async function POST(request: NextRequest) {
     const { key, value } = body;
     if (!key) return NextResponse.json({ error: '缺少 key' }, { status: 400 });
 
-    const existing = db.select().from(systemConfig).where(eq(systemConfig.key, key)).all();
+    const existing = await db.select().from(systemConfig).where(eq(systemConfig.key, key)).execute();
     if (existing.length > 0) {
-      db.update(systemConfig).set({ value: String(value), updated_at: new Date().toISOString() })
-        .where(eq(systemConfig.key, key)).run();
+      await db.update(systemConfig).set({ value: String(value), updated_at: new Date().toISOString() })
+        .where(eq(systemConfig.key, key)).execute();
     } else {
-      db.insert(systemConfig).values({ key, value: String(value), updated_at: new Date().toISOString() }).run();
+      await db.insert(systemConfig).values({ key, value: String(value), updated_at: new Date().toISOString() }).execute();
     }
 
-    db.insert(auditLog).values({
+    await db.insert(auditLog).values({
       operator_id: authUser.userId,
       operator_name: authUser.username,
       action: 'update_config',
       target_type: 'system_config',
       target_id: key,
       detail: `更新配置 ${key}`,
-    }).run();
+    }).execute();
     saveDb();
 
     // AI 相关配置同步写回 .env（ai_api_key → ZHIPU_API_KEY 等），重启/重置 DB 后仍生效

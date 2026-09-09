@@ -14,11 +14,11 @@ export async function GET(request: NextRequest) {
     // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
     const sid = user.userId;
 
-    const schedules = db.select()
+    const schedules = await db.select()
       .from(studentSchedule)
       .where(eq(studentSchedule.student_id, sid))
       .orderBy(asc(studentSchedule.start_time))
-      .all();
+      .execute();
 
     // 按星期几分组 (day_of_week is JSON array in schema)
     const grouped: Record<number, Array<typeof studentSchedule.$inferSelect>> = {};
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
     const studentId = user.userId;
 
     // Insert and get back the created row
-    const result = db.insert(studentSchedule)
+    const result = await db.insert(studentSchedule)
       .values({
         student_id: studentId,
         title,
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
         priority: 1,
       })
       .returning()
-      .all();
+      .execute();
 
     const data = result[0] || null;
 
@@ -105,16 +105,16 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ success: false, error: '缺少必填字段' }, { status: 400 });
     }
 
-    const target = db.select({ id: studentSchedule.id, student_id: studentSchedule.student_id })
+    const target = await db.select({ id: studentSchedule.id, student_id: studentSchedule.student_id })
       .from(studentSchedule)
       .where(eq(studentSchedule.id, Number(id)))
       .limit(1)
-      .all();
+      .execute();
     if (!target[0] || target[0].student_id !== user.userId) {
       return NextResponse.json({ success: false, error: '无权操作该安排' }, { status: 403 });
     }
 
-    db.update(studentSchedule)
+    await db.update(studentSchedule)
       .set({
         title: String(title).slice(0, 50),
         day_of_week: [day_of_week] as unknown as number[],
@@ -122,10 +122,10 @@ export async function PUT(request: NextRequest) {
         end_time: end_time || '09:00',
       })
       .where(eq(studentSchedule.id, Number(id)))
-      .run();
+      .execute();
 
     try { saveDb(); } catch { /* 定时持久化兜底 */ }
-    const updated = db.select().from(studentSchedule).where(eq(studentSchedule.id, Number(id))).limit(1).all()[0];
+    const updated = (await db.select().from(studentSchedule).where(eq(studentSchedule.id, Number(id))).limit(1).execute())[0];
     return NextResponse.json({ success: true, data: updated });
   } catch (error: unknown) {
     if (error && typeof (error as { status?: number }).status === 'number') return error as NextResponse;
@@ -148,18 +148,18 @@ export async function DELETE(request: NextRequest) {
     }
 
     // 校验归属，防止越权删除他人课表
-    const target = db.select({ id: studentSchedule.id, student_id: studentSchedule.student_id })
+    const target = await db.select({ id: studentSchedule.id, student_id: studentSchedule.student_id })
       .from(studentSchedule)
       .where(eq(studentSchedule.id, parseInt(id)))
       .limit(1)
-      .all();
+      .execute();
     if (!target[0] || target[0].student_id !== user.userId) {
       return NextResponse.json({ success: false, error: "无权操作" }, { status: 403 });
     }
 
-    db.delete(studentSchedule)
+    await db.delete(studentSchedule)
       .where(eq(studentSchedule.id, parseInt(id)))
-      .run();
+      .execute();
 
     // 关键写路径即时落盘
     try { saveDb(); } catch { /* 定时持久化兜底 */ }

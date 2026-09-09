@@ -23,8 +23,8 @@ export async function GET(request: NextRequest) {
 
     // ============ 教师数据范围（跨租户隔离） ============
     // 该教师只允许访问自己授课的课程/班级/学生，其他教师数据一律不可见
-    const myCourseIds = getTeacherCourseIds(authUser.userId);
-    const myClassIds = getTeacherClassIds(authUser.userId);
+    const myCourseIds = await getTeacherCourseIds(authUser.userId);
+    const myClassIds = await getTeacherClassIds(authUser.userId);
 
     // ============ 筛选参数 ============
     const sp = request.nextUrl.searchParams;
@@ -41,12 +41,12 @@ export async function GET(request: NextRequest) {
 
     // 筛选选项：仅本人授课课程 / 本人授课班级
     const courses = myCourseIds.length > 0
-      ? db.select({ id: course.id, name: course.name, class_id: course.class_id })
-          .from(course).where(inArray(course.id, myCourseIds)).all()
+      ? await db.select({ id: course.id, name: course.name, class_id: course.class_id })
+          .from(course).where(inArray(course.id, myCourseIds)).execute()
       : [];
     const classes = myClassIds.length > 0
-      ? db.select({ id: classInfo.id, name: classInfo.name, grade: classInfo.grade })
-          .from(classInfo).where(inArray(classInfo.id, myClassIds)).all()
+      ? await db.select({ id: classInfo.id, name: classInfo.name, grade: classInfo.grade })
+          .from(classInfo).where(inArray(classInfo.id, myClassIds)).execute()
       : [];
 
     // ============ 学生集合过滤 ============
@@ -59,8 +59,8 @@ export async function GET(request: NextRequest) {
     if (classId) {
       targetClassId = classId;
     } else if (courseId) {
-      const c = db.select({ class_id: course.class_id }).from(course)
-        .where(eq(course.id, courseId)).get();
+      const c = (await db.select({ class_id: course.class_id }).from(course)
+        .where(eq(course.id, courseId)).execute())[0];
       targetClassId = c?.class_id ?? null;
     }
     if (targetClassId != null) {
@@ -68,35 +68,35 @@ export async function GET(request: NextRequest) {
     }
 
     // 1. Get all active students
-    const students = db.select({
+    const students = await db.select({
       id: user.id,
       real_name: user.real_name,
       student_level: user.student_level,
       class_id: user.class_id,
     }).from(user)
       .where(studentCond)
-      .all();
+      .execute();
 
     // ============ 数据范围过滤（跨租户 + 课程筛选） ============
     // 本教师全部作业 ID，用于把 grading 收敛到本人作业，防止他人作业成绩混入
-    const myAssignmentIds = getTeacherCourseIds(authUser.userId).length > 0
-      ? db.select({ id: assignment.id }).from(assignment)
-          .where(inArray(assignment.course_id, myCourseIds)).all().map((a) => a.id)
+    const myAssignmentIds = (await getTeacherCourseIds(authUser.userId)).length > 0
+      ? (await db.select({ id: assignment.id }).from(assignment)
+          .where(inArray(assignment.course_id, myCourseIds)).execute()).map((a) => a.id)
       : [];
     // 本教师全部学生 ID，用于把掌握度/错题收敛到本人班级学生
     const myStudentIds = myClassIds.length > 0
-      ? db.select({ id: user.id }).from(user)
+      ? (await db.select({ id: user.id }).from(user)
           .where(and(eq(user.role, 'student'), inArray(user.class_id, myClassIds)))
-          .all().map((u) => u.id)
+          .execute()).map((u) => u.id)
       : [];
 
     const courseAssignmentIds = courseId
-      ? db.select({ id: assignment.id }).from(assignment)
-          .where(eq(assignment.course_id, courseId)).all().map((a) => a.id)
+      ? (await db.select({ id: assignment.id }).from(assignment)
+          .where(eq(assignment.course_id, courseId)).execute()).map((a) => a.id)
       : null;
     const courseKpIds = courseId
-      ? db.select({ id: knowledgePoint.id }).from(knowledgePoint)
-          .where(eq(knowledgePoint.course_id, courseId)).all().map((k) => k.id)
+      ? (await db.select({ id: knowledgePoint.id }).from(knowledgePoint)
+          .where(eq(knowledgePoint.course_id, courseId)).execute()).map((k) => k.id)
       : null;
 
     // 2. Get grading tasks with dimension scores（限定：本人课程内的作业）
@@ -113,7 +113,7 @@ export async function GET(request: NextRequest) {
           : eq(gradingTask.id, -1)
       );
     }
-    const gradings = db.select({
+    const gradings = await db.select({
       id: gradingTask.id,
       student_id: gradingTask.student_id,
       total_score: gradingTask.total_score,
@@ -126,7 +126,7 @@ export async function GET(request: NextRequest) {
       knowledge_point_id: gradingTask.knowledge_point_id,
     }).from(gradingTask)
       .where(and(...gradingConds))
-      .all();
+      .execute();
 
     // 3. Get knowledge mastery data（限定本人班级学生）
     const masteryConds: SQL[] = [
@@ -141,13 +141,13 @@ export async function GET(request: NextRequest) {
           : eq(knowledgeMasteryLog.id, -1)
       );
     }
-    const masteryData = db.select({
+    const masteryData = await db.select({
       student_id: knowledgeMasteryLog.student_id,
       knowledge_point_id: knowledgeMasteryLog.knowledge_point_id,
       mastery_rate: knowledgeMasteryLog.mastery_rate,
     }).from(knowledgeMasteryLog)
       .where(and(...masteryConds))
-      .all();
+      .execute();
 
     // 4. Get error book data（限定本人班级学生）
     const errorConds: SQL[] = [
@@ -162,17 +162,17 @@ export async function GET(request: NextRequest) {
           : eq(errorBook.id, -1)
       );
     }
-    const errors = db.select({
+    const errors = await db.select({
       student_id: errorBook.student_id,
       review_status: errorBook.review_status,
       knowledge_point_id: errorBook.knowledge_point_id,
       error_type: errorBook.error_type,
     }).from(errorBook)
       .where(and(...errorConds))
-      .all();
+      .execute();
 
     // 4.1 学习行为（阅读时长）：按学生聚合累计观看秒数 / 完成材料数 / 学习材料数
-    const behaviorRows = db.select({
+    const behaviorRows = await db.select({
       student_id: learningBehaviorLog.student_id,
       watch_seconds: learningBehaviorLog.watch_duration,
       is_completed: learningBehaviorLog.is_completed,
@@ -180,7 +180,7 @@ export async function GET(request: NextRequest) {
       .where(myStudentIds.length > 0
         ? inArray(learningBehaviorLog.student_id, myStudentIds)
         : eq(learningBehaviorLog.id, -1))
-      .all();
+      .execute();
     const behaviorMap = new Map<number, { readonlySeconds: number; completedMaterials: number; totalMaterials: number }>();
     behaviorRows.forEach((b) => {
       const cur = behaviorMap.get(b.student_id) || { readonlySeconds: 0, completedMaterials: 0, totalMaterials: 0 };
@@ -192,11 +192,11 @@ export async function GET(request: NextRequest) {
 
     // 5. Get all knowledge points（限定本人课程，仅作名称字典）
     const allKps = myCourseIds.length > 0
-      ? db.select({
+      ? await db.select({
           id: knowledgePoint.id,
           name: knowledgePoint.name,
           course_id: knowledgePoint.course_id,
-        }).from(knowledgePoint).where(inArray(knowledgePoint.course_id, myCourseIds)).all()
+        }).from(knowledgePoint).where(inArray(knowledgePoint.course_id, myCourseIds)).execute()
       : [];
 
     // 6. Get assignments for trend computation（限定本人课程作业）
@@ -204,7 +204,7 @@ export async function GET(request: NextRequest) {
       ? inArray(assignment.course_id, myCourseIds)
       : eq(assignment.id, -1);
     if (courseId) assignmentCond = eq(assignment.course_id, courseId);
-    const assignments = db.select({
+    const assignments = await db.select({
       id: assignment.id,
       title: assignment.title,
       course_id: assignment.course_id,
@@ -212,7 +212,7 @@ export async function GET(request: NextRequest) {
     }).from(assignment)
       .where(assignmentCond)
       .orderBy(assignment.end_time)
-      .all();
+      .execute();
 
     // ============ Per-Student Analytics ============
     // 完成率分母 = 当前范围内（选课→该课程作业；未选课→本人课程作业）作业总数，避免硬编码造成高估/失真

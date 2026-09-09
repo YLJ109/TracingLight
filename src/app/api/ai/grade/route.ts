@@ -32,24 +32,24 @@ export async function POST(request: NextRequest) {
     }
 
     // 1. 获取题目信息
-    const questionData = db.select().from(question).where(eq(question.id, Number(question_id))).limit(1).all()[0] || null;
+    const questionData = (await db.select().from(question).where(eq(question.id, Number(question_id))).limit(1).execute())[0] || null;
     if (!questionData) {
       return NextResponse.json({ error: "题目不存在" }, { status: 404 });
     }
 
     // 2. 知识点名称（供 AI 批改提示词）
     const kp = questionData.knowledge_point_id
-      ? db.select({ name: knowledgePoint.name }).from(knowledgePoint).where(eq(knowledgePoint.id, questionData.knowledge_point_id)).limit(1).all()[0]
+      ? (await db.select({ name: knowledgePoint.name }).from(knowledgePoint).where(eq(knowledgePoint.id, questionData.knowledge_point_id)).limit(1).execute())[0]
       : null;
 
     // 3. 获取学生作答
-    const answerData = db.select().from(answer).where(
+    const answerData = (await db.select().from(answer).where(
       and(
         eq(answer.assignment_id, Number(assignment_id)),
         eq(answer.student_id, Number(student_id)),
         eq(answer.question_id, Number(question_id))
       )
-    ).limit(1).all()[0] || null;
+    ).limit(1).execute())[0] || null;
 
     // 4. 统一批改管线：计分（空答/规则引擎/AI）+ 事务落库（批改记录/错题/掌握度）+ 即时落盘
     const { result, gradingTaskId } = await gradeOneAndRecord({

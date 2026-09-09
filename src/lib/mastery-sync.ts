@@ -25,13 +25,13 @@ export function blendRate(oldRate: number, thisRate: number, weight = 0.3): numb
  * 幂等回写：以某次（确认后的）得分率平滑进该学生该知识点的历史掌握度。
  * 仅在批改完成后调用即可，无需额外调度；内部不做 saveDb，交由调用方统一落库。
  */
-export function syncMasteryFromGrading(opts: {
+export async function syncMasteryFromGrading(opts: {
   studentId: number;
   knowledgePointId: number | null | undefined;
   score: number;
   fullScore: number;
   isCorrect: boolean;
-}): void {
+}): Promise<void> {
   if (!opts.knowledgePointId) return;
   if (!Number.isFinite(opts.score) || !Number.isFinite(opts.fullScore)) return;
 
@@ -39,7 +39,7 @@ export function syncMasteryFromGrading(opts: {
   const today = new Date().toISOString().split('T')[0];
   const thisRate = scoreToMastery(opts.score, opts.fullScore);
 
-  const row = db
+  const row = (await db
     .select({
       id: knowledgeMasteryLog.id,
       mastery_rate: knowledgeMasteryLog.mastery_rate,
@@ -51,28 +51,28 @@ export function syncMasteryFromGrading(opts: {
       eq(knowledgeMasteryLog.knowledge_point_id, opts.knowledgePointId),
     ))
     .limit(1)
-    .all()[0];
+    .execute())[0];
 
   try {
     if (row) {
       // 与练习口径一致：历史占 0.7，本次表现占 0.3
       const newRate = blendRate(row.mastery_rate || 0, thisRate);
-      db.update(knowledgeMasteryLog)
+      await db.update(knowledgeMasteryLog)
         .set({
           mastery_rate: newRate,
           error_count: (row.error_count || 0) + (opts.isCorrect ? 0 : 1),
           recorded_at: today,
         })
         .where(eq(knowledgeMasteryLog.id, row.id))
-        .run();
+        .execute();
     } else {
-      db.insert(knowledgeMasteryLog).values({
+      await db.insert(knowledgeMasteryLog).values({
         student_id: opts.studentId,
         knowledge_point_id: opts.knowledgePointId,
         mastery_rate: thisRate,
         error_count: opts.isCorrect ? 0 : 1,
         recorded_at: today,
-      }).run();
+      }).execute();
     }
   } catch (err) {
     // 掌握度回写失败不应阻断批改主流程

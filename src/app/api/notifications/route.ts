@@ -10,12 +10,12 @@ export async function GET(request: NextRequest) {
     if (!authUser) return NextResponse.json({ error: '未登录' }, { status: 401 });
     const db = getDb();
 
-    const rows = db.select()
+    const rows = await db.select()
       .from(notification)
       .where(eq(notification.user_id, authUser.userId))
       .orderBy(desc(notification.id))
       .limit(30)
-      .all();
+      .execute();
 
     const data = rows.map((n) => ({
       id: n.id,
@@ -47,20 +47,20 @@ export async function POST(request: NextRequest) {
     const { id, all } = body;
 
     if (all) {
-      db.update(notification).set({ is_read: true })
-        .where(eq(notification.user_id, authUser.userId)).run();
+      await db.update(notification).set({ is_read: true })
+        .where(eq(notification.user_id, authUser.userId)).execute();
     } else if (id) {
       // 校验通知归属，防止越权标记他人通知
-      const target = db.select({ id: notification.id, user_id: notification.user_id })
+      const target = await db.select({ id: notification.id, user_id: notification.user_id })
         .from(notification)
         .where(eq(notification.id, Number(id)))
         .limit(1)
-        .all();
+        .execute();
       if (!target[0] || target[0].user_id !== authUser.userId) {
         return NextResponse.json({ error: '无权操作' }, { status: 403 });
       }
-      db.update(notification).set({ is_read: true })
-        .where(eq(notification.id, Number(id))).run();
+      await db.update(notification).set({ is_read: true })
+        .where(eq(notification.id, Number(id))).execute();
     }
 
     saveDb();

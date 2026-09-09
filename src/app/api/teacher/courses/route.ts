@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
 
     const db = getDb();
     // 仅返回当前教师所授课程，杜绝越权查看他人课程
-    const courses = db.select().from(course).where(eq(course.teacher_id, user.userId)).all();
+    const courses = await db.select().from(course).where(eq(course.teacher_id, user.userId)).execute();
 
     return NextResponse.json({ success: true, data: courses });
   } catch (e) {

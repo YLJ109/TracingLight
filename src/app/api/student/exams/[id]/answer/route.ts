@@ -19,7 +19,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const db = getDb();
   const examId = parseInt((await params).id);
 
-  const attempt = db.select().from(examAttempt).where(and(eq(examAttempt.exam_id, examId), eq(examAttempt.student_id, r.user.userId))).get();
+  const attempt = (await db.select().from(examAttempt).where(and(eq(examAttempt.exam_id, examId), eq(examAttempt.student_id, r.user.userId))).execute())[0];
   if (!attempt) return NextResponse.json({ error: '请先开始考试' }, { status: 403 });
   if (attempt.status !== 'in_progress') return NextResponse.json({ error: '考试已结束，无法修改作答' }, { status: 403 });
   // 服务器权威 deadline 校验
@@ -33,25 +33,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const now = new Date().toISOString();
   for (const item of body.answers as SaveAnswerItem[]) {
     if (!item.question_id) continue;
-    const existing = db.select().from(examAnswer)
-      .where(and(eq(examAnswer.attempt_id, attempt.id), eq(examAnswer.question_id, item.question_id))).get();
+    const existing = (await db.select().from(examAnswer)
+      .where(and(eq(examAnswer.attempt_id, attempt.id), eq(examAnswer.question_id, item.question_id))).execute())[0];
     const studentAnswer = (item.student_answer ?? '').trim();
     if (existing) {
-      db.update(examAnswer).set({
+      await db.update(examAnswer).set({
         student_answer: item.student_answer ?? existing.student_answer,
         is_answered: studentAnswer.length > 0,
         marked: item.marked ?? existing.marked,
         revise_count: (item.revise_count ?? 0) + (existing.revise_count || 0),
         duration_ms: (item.duration_ms ?? 0) + (existing.duration_ms || 0),
         saved_at: now,
-      }).where(eq(examAnswer.id, existing.id)).run();
+      }).where(eq(examAnswer.id, existing.id)).execute();
     } else {
-      db.insert(examAnswer).values({
+      await db.insert(examAnswer).values({
         attempt_id: attempt.id, exam_id: examId, student_id: r.user.userId, question_id: item.question_id,
         student_answer: item.student_answer ?? '', is_answered: studentAnswer.length > 0,
         marked: item.marked ?? false, revise_count: item.revise_count ?? 0, duration_ms: item.duration_ms ?? 0,
         saved_at: now,
-      }).run();
+      }).execute();
     }
   }
 

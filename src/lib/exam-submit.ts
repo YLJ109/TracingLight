@@ -11,17 +11,17 @@ import { gradeExamQuestion, isExamAnswerEmpty } from './exam-grading';
 
 export async function finalizeExamSubmission(attemptId: number, via: string): Promise<{ submitted: boolean; reason?: string }> {
   const db = getDb();
-  const attempt = db.select().from(examAttempt).where(eq(examAttempt.id, attemptId)).get();
+  const attempt = (await db.select().from(examAttempt).where(eq(examAttempt.id, attemptId)).execute())[0];
   if (!attempt) return { submitted: false, reason: 'no_attempt' };
   if (attempt.status !== 'in_progress') return { submitted: true }; // 已交卷
-  const ex = db.select().from(exam).where(eq(exam.id, attempt.exam_id)).get();
+  const ex = (await db.select().from(exam).where(eq(exam.id, attempt.exam_id)).execute())[0];
   if (!ex) return { submitted: false, reason: 'no_exam' };
 
   const now = new Date().toISOString();
   // 快照最终作答
-  const answers = db.select().from(examAnswer).where(eq(examAnswer.attempt_id, attemptId)).all();
+  const answers = await db.select().from(examAnswer).where(eq(examAnswer.attempt_id, attemptId)).execute();
   const qids = (ex.question_ids as number[]) || [];
-  const questions = db.select().from(question).where(inArray(question.id, qids)).all();
+  const questions = await db.select().from(question).where(inArray(question.id, qids)).execute();
   const scores = (ex.question_scores as Record<string, number>) || {};
   const qMap = new Map(questions.map((q) => [q.id, q]));
 
@@ -36,8 +36,8 @@ export async function finalizeExamSubmission(attemptId: number, via: string): Pr
     }, ans.student_answer || '', full);
   }
 
-  db.update(examAttempt).set({ status: via === 'terminate' ? 'terminated' : (via === 'exceed' ? 'auto_submitted' : 'submitted'), submitted_at: now, submitted_via: via, updated_at: now })
-    .where(eq(examAttempt.id, attemptId)).run();
+  await db.update(examAttempt).set({ status: via === 'terminate' ? 'terminated' : (via === 'exceed' ? 'auto_submitted' : 'submitted'), submitted_at: now, submitted_via: via, updated_at: now })
+    .where(eq(examAttempt.id, attemptId)).execute();
 
   // 成绩公布改为教师主导：交卷只完成客观题预判分，**不自动公布**成绩/答案。
   // 教师在批改台（objective 复核/主观题 AI 批量批改）复核后，手动「公布成绩」学生才可见。

@@ -57,7 +57,7 @@ export async function generateErrorAnalysis(params: {
 请判断错误成因并输出讲解与建议。`;
 
   try {
-    const client = createAIClient();
+    const client = await createAIClient();
     const res = await invokeStructured<ErrorAnalysis>(client, ERROR_ANALYSIS_SYSTEM_PROMPT, userPrompt, 0.2);
     return {
       error_analysis: String(res?.error_analysis || '').trim(),

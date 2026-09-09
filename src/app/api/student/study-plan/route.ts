@@ -17,14 +17,14 @@ export async function GET(request: NextRequest) {
 
     // Get DB study plans（查今天及未来的全部计划，含已完成，用于准确的完成统计）
     const today = new Date().toISOString().split("T")[0];
-    const allPlans = db.select()
+    const allPlans = await db.select()
       .from(studyPlan)
       .where(and(
         eq(studyPlan.student_id, studentId),
         gte(studyPlan.plan_date, today)
       ))
       .orderBy(asc(studyPlan.plan_date), asc(studyPlan.time_slot))
-      .all();
+      .execute();
     // 日程展示仍以「未完成」任务为主（与原逻辑一致）；统计则在含已完成的完整数据上计算
     const plans = allPlans.filter((p) => p.status === "pending");
 
@@ -33,8 +33,8 @@ export async function GET(request: NextRequest) {
     const dayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
     // 计划内容对接到真实知识点（用于跳转时精准定位错题/材料）
-    const kpRows = db.select({ id: knowledgePoint.id, name: knowledgePoint.name, course_id: knowledgePoint.course_id })
-      .from(knowledgePoint).all();
+    const kpRows = await db.select({ id: knowledgePoint.id, name: knowledgePoint.name, course_id: knowledgePoint.course_id })
+      .from(knowledgePoint).execute();
     const kpNameToId = new Map<string, { id: number; courseId: number }>();
     for (const k of kpRows) {
       if (k.name && !kpNameToId.has(k.name)) kpNameToId.set(k.name, { id: k.id, courseId: k.course_id });
@@ -73,24 +73,24 @@ export async function GET(request: NextRequest) {
     });
 
     // Get schedules from DB
-    const schedules = db.select()
+    const schedules = await db.select()
       .from(studentSchedule)
       .where(eq(studentSchedule.student_id, studentId))
-      .all();
+      .execute();
 
     // Get exams from DB
-    const exams = db.select()
+    const exams = await db.select()
       .from(examSchedule)
       .orderBy(asc(examSchedule.exam_date))
       .limit(5)
-      .all();
+      .execute();
 
     // 真实薄弱知识点：每个知识点取最新掌握度，按统一口径 isWeakMastery([30,60)) 判定，升序取前 10
-    const masteryRows = db.select({
+    const masteryRows = await db.select({
       knowledge_point_id: knowledgeMasteryLog.knowledge_point_id,
       mastery_rate: knowledgeMasteryLog.mastery_rate,
       recorded_at: knowledgeMasteryLog.recorded_at,
-    }).from(knowledgeMasteryLog).where(eq(knowledgeMasteryLog.student_id, studentId)).all();
+    }).from(knowledgeMasteryLog).where(eq(knowledgeMasteryLog.student_id, studentId)).execute();
     const latestMastery = new Map<number, number>();
     const masteryAt = new Map<number, string>();
     for (const m of masteryRows) {

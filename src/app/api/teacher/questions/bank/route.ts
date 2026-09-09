@@ -6,19 +6,19 @@ import { question, course, knowledgePoint, gradingTask, assignment, exam } from 
 import { getTeacherCourseIds } from '@/lib/teacher-scope';
 
 // 解析某题归属课程
-function questionCourseId(questionId: number): number | null {
+async function questionCourseId(questionId: number): Promise<number | null> {
   const db = getDb();
-  const row = db.select({ course_id: question.course_id })
-    .from(question).where(eq(question.id, questionId)).get();
+  const row = (await db.select({ course_id: question.course_id })
+    .from(question).where(eq(question.id, questionId)).execute())[0];
   return row?.course_id ?? null;
 }
 
 // 根据知识点反查课程归属
-function kpCourseId(kpId?: number | null): number | null {
+async function kpCourseId(kpId?: number | null): Promise<number | null> {
   if (kpId == null) return null;
   const db = getDb();
-  const row = db.select({ course_id: knowledgePoint.course_id })
-    .from(knowledgePoint).where(eq(knowledgePoint.id, kpId)).get();
+  const row = (await db.select({ course_id: knowledgePoint.course_id })
+    .from(knowledgePoint).where(eq(knowledgePoint.id, kpId)).execute())[0];
   return row?.course_id ?? null;
 }
 
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
     const offset = (page - 1) * pageSize;
 
-    const myCourseIds = getTeacherCourseIds(authUser.userId);
+    const myCourseIds = await getTeacherCourseIds(authUser.userId);
     // 计算每题「已布置」次数：扫描本人课程下所有作业与考试的 question_ids
     const usedCounts = new Map<number, number>();
     const scanRefs = (qids: unknown) => {
@@ -49,10 +49,10 @@ export async function GET(req: NextRequest) {
       });
     };
     if (myCourseIds.length > 0) {
-      db.select({ q: assignment.question_ids }).from(assignment)
-        .where(inArray(assignment.course_id, myCourseIds)).all().forEach((r) => scanRefs(r.q));
-      db.select({ q: exam.question_ids }).from(exam)
-        .where(inArray(exam.course_id, myCourseIds)).all().forEach((r) => scanRefs(r.q));
+      (await db.select({ q: assignment.question_ids }).from(assignment)
+        .where(inArray(assignment.course_id, myCourseIds)).execute()).forEach((r) => scanRefs(r.q));
+      (await db.select({ q: exam.question_ids }).from(exam)
+        .where(inArray(exam.course_id, myCourseIds)).execute()).forEach((r) => scanRefs(r.q));
     }
     const usedIds = [...usedCounts.keys()];
     // 越权指定他人课程 → 403
@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
     }
     // 越权指定他人课程下的知识点 → 403
     if (knowledge_point_id && !course_id) {
-      const kc = kpCourseId(parseInt(knowledge_point_id));
+      const kc = await kpCourseId(parseInt(knowledge_point_id));
       if (kc != null && !myCourseIds.includes(kc)) {
         return NextResponse.json({ error: '无权访问该知识点' }, { status: 403 });
       }
@@ -85,19 +85,19 @@ export async function GET(req: NextRequest) {
     if (usage === 'unused') filters.push(notInArray(question.id, usedIds));
 
     // Get total count
-    const countResult = db.select({ count: sql<number>`count(*)` })
+    const countResult = await db.select({ count: sql<number>`count(*)` })
       .from(question)
       .where(and(...filters))
-      .all();
+      .execute();
     const total = countResult[0]?.count || 0;
 
     // Get paginated questions
-    const questions = db.select().from(question)
+    const questions = await db.select().from(question)
       .where(and(...filters))
       .orderBy(desc(question.created_at))
       .limit(pageSize)
       .offset(offset)
-      .all();
+      .execute();
 
     // Collect course IDs and knowledge point IDs for enrichment
     const courseIds = [...new Set(questions.map((q) => q.course_id))];
@@ -105,19 +105,19 @@ export async function GET(req: NextRequest) {
 
     const coursesMap = new Map<number, { id: number; name: string; short_name: string | null }>();
     if (courseIds.length > 0) {
-      const crs = db.select({ id: course.id, name: course.name, short_name: course.short_name })
+      const crs = await db.select({ id: course.id, name: course.name, short_name: course.short_name })
         .from(course)
         .where(inArray(course.id, courseIds))
-        .all();
+        .execute();
       crs.forEach((c) => coursesMap.set(c.id, c));
     }
 
     const kpMap = new Map<number, { id: number; name: string }>();
     if (kpIds.length > 0) {
-      const kps = db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
+      const kps = await db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
         .from(knowledgePoint)
         .where(inArray(knowledgePoint.id, kpIds as number[]))
-        .all();
+        .execute();
       kps.forEach((kp) => kpMap.set(kp.id, kp));
     }
 
@@ -125,13 +125,13 @@ export async function GET(req: NextRequest) {
     // 答对 = 满分（规则引擎对客观题仅精确正确给满分，主观题 AI 满分代表完整作答）。
     const accuracyByQuestion = new Map<number, { attempts: number; correct: number }>();
     if (questions.length > 0) {
-      const gradings = db.select({
+      const gradings = await db.select({
         question_id: gradingTask.question_id,
         total_score: gradingTask.total_score,
         full_score: gradingTask.full_score,
       }).from(gradingTask)
         .where(and(inArray(gradingTask.question_id, questions.map(q => q.id)), eq(gradingTask.status, 'completed')))
-        .all();
+        .execute();
       for (const g of gradings) {
         const cur = accuracyByQuestion.get(g.question_id) || { attempts: 0, correct: 0 };
         cur.attempts += 1;
@@ -156,23 +156,23 @@ export async function GET(req: NextRequest) {
 
     // 下拉课程：仅本人课程
     const courses = myCourseIds.length > 0
-      ? db.select({
+      ? await db.select({
           id: course.id,
           name: course.name,
           short_name: course.short_name,
-        }).from(course).where(inArray(course.id, myCourseIds)).orderBy(course.id).all()
+        }).from(course).where(inArray(course.id, myCourseIds)).orderBy(course.id).execute()
       : [];
 
     // 知识点下拉：仅本人课程的知识点（供出题选择）
     const allKps = myCourseIds.length > 0
-      ? db.select({
+      ? await db.select({
           id: knowledgePoint.id,
           name: knowledgePoint.name,
           course_id: knowledgePoint.course_id,
         }).from(knowledgePoint)
           .where(inArray(knowledgePoint.course_id, myCourseIds))
           .orderBy(knowledgePoint.id)
-          .all()
+          .execute()
       : [];
 
     return NextResponse.json({
@@ -221,9 +221,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: '请选择知识点' }, { status: 400 });
     }
 
-    const myCourseIds = getTeacherCourseIds(authUser.userId);
+    const myCourseIds = await getTeacherCourseIds(authUser.userId);
     // 归属：题目课程必须为本人课程；若未给课程则从知识点反查，仍须归属本人
-    const targetCourseId: number | null = course_id ? Number(course_id) : kpCourseId(knowledge_point_id);
+    const targetCourseId: number | null = course_id ? Number(course_id) : await kpCourseId(knowledge_point_id);
     if (targetCourseId != null && !myCourseIds.includes(targetCourseId)) {
       return NextResponse.json({ success: false, error: '无权在该课程创建题目' }, { status: 403 });
     }
@@ -235,7 +235,7 @@ export async function POST(req: NextRequest) {
       finalOptions = { ...(base as Record<string, unknown>), template: experiment_template };
     }
 
-    const result = db.insert(question).values({
+    const result = await db.insert(question).values({
       course_id: targetCourseId ?? course_id ?? null,
       knowledge_point_id,
       question_type,
@@ -252,7 +252,7 @@ export async function POST(req: NextRequest) {
       max_chars: max_chars == null || max_chars === '' ? null : Number(max_chars) || null,
       min_select: min_select == null || min_select === '' ? null : Number(min_select) || null,
       max_select: max_select == null || max_select === '' ? null : Number(max_select) || null,
-    }).returning().all();
+    }).returning().execute();
 
     const data = result[0];
 
@@ -278,8 +278,8 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: false, error: '缺少题目ID' }, { status: 400 });
     }
 
-    const myCourseIds = getTeacherCourseIds(authUser.userId);
-    const ownedCourse = questionCourseId(Number(id));
+    const myCourseIds = await getTeacherCourseIds(authUser.userId);
+    const ownedCourse = await questionCourseId(Number(id));
     if (ownedCourse == null || !myCourseIds.includes(ownedCourse)) {
       return NextResponse.json({ success: false, error: '无权修改该题目' }, { status: 403 });
     }
@@ -289,7 +289,7 @@ export async function PUT(req: NextRequest) {
     }
     // 知识点归属校验
     if (knowledge_point_id != null) {
-      const kc = kpCourseId(Number(knowledge_point_id));
+      const kc = await kpCourseId(Number(knowledge_point_id));
       if (kc != null && !myCourseIds.includes(kc)) {
         return NextResponse.json({ success: false, error: '无权将该题目关联至该知识点' }, { status: 403 });
       }
@@ -309,11 +309,11 @@ export async function PUT(req: NextRequest) {
       setObj[f] = (v === null || v === undefined || v === '') ? null : Number(v) || null;
     }
 
-    const result = db.update(question)
+    const result = await db.update(question)
       .set(setObj)
       .where(eq(question.id, Number(id)))
       .returning()
-      .all();
+      .execute();
 
     const data = result[0];
 
@@ -339,16 +339,16 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: '缺少题目ID' }, { status: 400 });
     }
 
-    const myCourseIds = getTeacherCourseIds(authUser.userId);
-    const ownedCourse = questionCourseId(Number(id));
+    const myCourseIds = await getTeacherCourseIds(authUser.userId);
+    const ownedCourse = await questionCourseId(Number(id));
     if (ownedCourse == null || !myCourseIds.includes(ownedCourse)) {
       return NextResponse.json({ success: false, error: '无权删除该题目' }, { status: 403 });
     }
 
-    db.update(question)
+    await db.update(question)
       .set({ is_active: false })
       .where(eq(question.id, parseInt(id)))
-      .run();
+      .execute();
     saveDb();
 
     return NextResponse.json({ success: true });

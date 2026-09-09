@@ -20,11 +20,11 @@ export async function GET(request: NextRequest) {
     if (reviewStatus) conditions.push(eq(errorBook.review_status, reviewStatus));
     if (kpId) conditions.push(eq(errorBook.knowledge_point_id, kpId));
 
-    const errors = db.select()
+    const errors = await db.select()
       .from(errorBook)
       .where(and(...conditions))
       .orderBy(desc(errorBook.created_at))
-      .all();
+      .execute();
 
     if (!errors || errors.length === 0) {
       return NextResponse.json({ success: true, data: [] });
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
       course_id: number;
     }[] = [];
     if (questionIds.length > 0) {
-      questions = db.select({
+      questions = await db.select({
         id: question.id,
         content: question.content,
         question_type: question.question_type,
@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
       })
         .from(question)
         .where(inArray(question.id, questionIds))
-        .all();
+        .execute();
     }
 
     // Fetch knowledge points
@@ -62,14 +62,14 @@ export async function GET(request: NextRequest) {
       course_id: number;
     }[] = [];
     if (kpIds.length > 0) {
-      kps = db.select({
+      kps = await db.select({
         id: knowledgePoint.id,
         name: knowledgePoint.name,
         course_id: knowledgePoint.course_id,
       })
         .from(knowledgePoint)
         .where(inArray(knowledgePoint.id, kpIds))
-        .all();
+        .execute();
     }
 
     // Fetch courses
@@ -80,13 +80,13 @@ export async function GET(request: NextRequest) {
 
     let courses: { id: number; name: string }[] = [];
     if (courseIds.length > 0) {
-      courses = db.select({
+      courses = await db.select({
         id: course.id,
         name: course.name,
       })
         .from(course)
         .where(inArray(course.id, courseIds))
-        .all();
+        .execute();
     }
 
     // 来源作业信息：作业名 + 题号（题目在作业中的序号，由 assignment.question_ids 顺序决定）
@@ -97,14 +97,14 @@ export async function GET(request: NextRequest) {
       question_ids: unknown;
     }[] = [];
     if (assignmentIds.length > 0) {
-      assignments = db.select({
+      assignments = await db.select({
         id: assignment.id,
         title: assignment.title,
         question_ids: assignment.question_ids,
       })
         .from(assignment)
         .where(inArray(assignment.id, assignmentIds))
-        .all();
+        .execute();
     }
     // 题号映射：`${assignmentId}_${questionId}` -> 第几题（从 1 起）
     const questionNo = new Map<string, number>();
@@ -171,11 +171,11 @@ export async function PATCH(request: NextRequest) {
     }
 
     // 校验错题归属当前用户，防止越权修改他人错题
-    const target = db.select({ id: errorBook.id, student_id: errorBook.student_id })
+    const target = await db.select({ id: errorBook.id, student_id: errorBook.student_id })
       .from(errorBook)
       .where(eq(errorBook.id, Number(error_id)))
       .limit(1)
-      .all();
+      .execute();
     if (!target[0] || target[0].student_id !== user.userId) {
       return NextResponse.json({ error: '无权操作该错题' }, { status: 403 });
     }
@@ -187,8 +187,8 @@ export async function PATCH(request: NextRequest) {
     const updateSet: Record<string, unknown> = { review_status, reviewed_at: fmt(now) };
 
     if (review_status === 'reviewing') {
-      const cur = db.select({ review_count: errorBook.review_count })
-        .from(errorBook).where(eq(errorBook.id, Number(error_id))).limit(1).all()[0];
+      const cur = (await db.select({ review_count: errorBook.review_count })
+        .from(errorBook).where(eq(errorBook.id, Number(error_id))).limit(1).execute())[0];
       const count = cur?.review_count ?? 0;
       if (count >= 2) {
         // 第三次复习完成 → 掌握
@@ -205,46 +205,46 @@ export async function PATCH(request: NextRequest) {
       updateSet.next_review_at = null;
     }
 
-    db.update(errorBook)
+    await db.update(errorBook)
       .set(updateSet)
       .where(eq(errorBook.id, Number(error_id)))
-      .run();
+      .execute();
 
     // 掌握 → 把该错题知识点的掌握度回写入 knowledgeMasteryLog（拉到≥80 掌握线），
     // 使知识图谱/推荐/学情等掌握度数据源同步更新，不再出现「错题本已掌握、图谱不变」。
     if (finalStatus === 'mastered') {
       try {
-        const kpRow = db.select({ knowledge_point_id: errorBook.knowledge_point_id })
+        const kpRow = (await db.select({ knowledge_point_id: errorBook.knowledge_point_id })
           .from(errorBook)
           .where(eq(errorBook.id, Number(error_id)))
           .limit(1)
-          .all()[0];
+          .execute())[0];
         const kpId = kpRow?.knowledge_point_id;
         if (kpId != null) {
           const MODULE_MASTERY = 0.5;
-          const existing = db.select({ id: knowledgeMasteryLog.id, mastery_rate: knowledgeMasteryLog.mastery_rate })
+          const existing = (await db.select({ id: knowledgeMasteryLog.id, mastery_rate: knowledgeMasteryLog.mastery_rate })
             .from(knowledgeMasteryLog)
             .where(and(
               eq(knowledgeMasteryLog.student_id, user.userId),
               eq(knowledgeMasteryLog.knowledge_point_id, kpId)
             ))
             .limit(1)
-            .all()[0];
+            .execute())[0];
           const today = new Date().toISOString().split('T')[0];
           if (existing) {
             const newRate = Math.max(existing.mastery_rate || 0, Math.round((existing.mastery_rate || 0) * (1 - MODULE_MASTERY) + 100 * MODULE_MASTERY));
-            db.update(knowledgeMasteryLog)
+            await db.update(knowledgeMasteryLog)
               .set({ mastery_rate: newRate, recorded_at: today })
               .where(eq(knowledgeMasteryLog.id, existing.id))
-              .run();
+              .execute();
           } else {
-            db.insert(knowledgeMasteryLog).values({
+            await db.insert(knowledgeMasteryLog).values({
               student_id: user.userId,
               knowledge_point_id: kpId,
               mastery_rate: MODULE_MASTERY * 100,
               error_count: 0,
               recorded_at: today,
-            }).run();
+            }).execute();
           }
         }
       } catch (mErr) {

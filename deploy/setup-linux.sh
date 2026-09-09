@@ -24,20 +24,34 @@ command_exists() { command -v "$1" >/dev/null 2>&1; }
 mkdir -p "$PROJECT_DIR/logs" "$PROJECT_DIR/public/uploads" "$PROJECT_DIR/data"
 
 # ----------------------------------------------------------------------------
-# 1. System deps (better-sqlite3 may compile from source; pm2 runs as a service)
+# 1. System deps (follows PostgreSQL; pm2 runs as a service)
 # ----------------------------------------------------------------------------
 install_sys_deps() {
-  log "Installing system dependencies (git curl build tools)..."
+  log "Installing system dependencies (git curl build tools postgresql)..."
   if command_exists apt-get; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -y >/dev/null
     apt-get install -y --no-install-recommends git curl ca-certificates \
-      build-essential python3 make g++ >/dev/null
+      postgresql postgresql-contrib >/dev/null
   elif command_exists yum; then
-    yum install -y git curl gcc gcc-c++ make python3 >/dev/null
+    yum install -y git curl postgresql-server postgresql-contrib >/dev/null
   else
-    log "WARN: unknown package manager; install Node 20+ and build tools manually."
+    log "WARN: unknown package manager; install Node 20+ and PostgreSQL manually."
   fi
+}
+
+# ensure the tracinglight role + database exist (idempotent)
+ensure_pg() {
+  log "Ensuring PostgreSQL role/database 'tracinglight'..."
+  if ! command_exists psql; then return; fi
+  if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='tracinglight'" | grep -q 1; then
+    log "Role 'tracinglight' already exists."
+  else
+    sudo -u postgres psql -c "CREATE ROLE tracinglight LOGIN PASSWORD 'tracinglight_pw';" >/dev/null
+  fi
+  sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='tracinglight'" | grep -q 1 \
+    && log "Database 'tracinglight' already exists." \
+    || sudo -u postgres psql -c "CREATE DATABASE tracinglight OWNER tracinglight;" >/dev/null
 }
 
 # ----------------------------------------------------------------------------
@@ -96,23 +110,27 @@ ensure_env() {
       "ZHIPU_API_KEY=your_zhipu_api_key_here",
       "ZHIPU_MODEL=glm-4-flash",
       "", "# JWT Auth", "JWT_SECRET="+s, "",
-      "# Database","DATABASE_PATH=./data/tracinglight.db", "",
-      "# Server","NODE_ENV=production","PORT="+'"$PORT"',""
+      "# Database (PostgreSQL)","DATABASE_DRIVER=postgres",
+      "# edit DATABASE_URL to point to your PostgreSQL instance",
+      "DATABASE_URL=postgres://tracinglight:tracinglight_pw@localhost:5432/tracinglight", "",
+      "# Server","NODE_ENV=production","PORT="+'"$PORT'",",""
     ].join("\n")+"\n";
     fs.writeFileSync(process.cwd()+"/.env",env);
   '
 }
 
 # ----------------------------------------------------------------------------
-# 5. Seed demo data only when DB is empty
+# 5. Push schema & seed demo data only when PG not seeded
 # ----------------------------------------------------------------------------
 seed() {
-  if [ -f "$PROJECT_DIR/data/tracinglight.db" ]; then
-    log "tracinglight.db exists, keeping existing data."
+  if [ -f "$PROJECT_DIR/data/.pg_seeded" ]; then
+    log "PostgreSQL already seeded, keeping existing data."
     return
   fi
-  log "Seeding demo data (first run)..."
+  log "Pushing schema + seeding demo data (first run)..."
+  ( cd "$PROJECT_DIR" && pnpm exec drizzle-kit push >/dev/null 2>&1 )
   ( cd "$PROJECT_DIR" && pnpm exec tsx src/storage/database/seed.ts )
+  touch "$PROJECT_DIR/data/.pg_seeded"
 }
 
 # ----------------------------------------------------------------------------
@@ -146,6 +164,7 @@ case "${1:-install}" in
   install)
     if [ "$(id -u)" -ne 0 ]; then err "run with sudo for first install:  sudo ./deploy/setup-linux.sh"; fi
     install_sys_deps
+    ensure_pg
     ensure_node; ensure_pnpm; ensure_pm2   # pm2 needs a global npm to exist first sometimes
     install_app; ensure_env; seed; pm2_start
     log "DONE. App is running on http://<this-server-ip>:$PORT  (pm2 name: tracinglight)"

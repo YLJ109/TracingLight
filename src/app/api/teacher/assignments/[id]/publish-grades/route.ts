@@ -7,10 +7,10 @@ import { writeAudit } from '@/lib/audit';
 
 async function getOwnedAssignment(userId: number, assignmentId: number) {
   const db = getDb();
-  return db.select().from(assignment)
+  return (await db.select().from(assignment)
     .where(and(eq(assignment.id, assignmentId), eq(assignment.teacher_id, userId)))
     .limit(1)
-    .get();
+    .execute())[0];
 }
 
 // GET /api/teacher/assignments/[id]/publish-grades - 查询该作业成绩是否已发布
@@ -48,15 +48,15 @@ export async function POST(
     if (!row) return NextResponse.json({ error: '作业不存在或无权限' }, { status: 404 });
 
     // 前置校验：至少存在一条已完成批改的成绩，避免发布「空成绩」
-    const gradedCount = getDb().select({ id: gradingTask.id })
+    const gradedCount = (await getDb().select({ id: gradingTask.id })
       .from(gradingTask)
       .where(and(eq(gradingTask.assignment_id, assignmentId), eq(gradingTask.status, 'completed')))
-      .all().length;
+      .execute()).length;
     if (gradedCount === 0) {
       return NextResponse.json({ error: '该作业还没有批改完成的成绩，请先完成批改后再发布' }, { status: 400 });
     }
 
-    getDb().update(assignment).set({ grades_published: true }).where(eq(assignment.id, assignmentId)).run();
+    await getDb().update(assignment).set({ grades_published: true }).where(eq(assignment.id, assignmentId)).execute();
     saveDb();
 
     // 公布作业成绩埋点（静默，失败不影响响应）

@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
         for (const rs of wrongs) {
           const q = practice.questions[rs.index];
           const submitted = answers.find((a) => a.index === rs.index)?.student_answer ?? '';
-          db.insert(errorBook).values({
+          await db.insert(errorBook).values({
             student_id: authUser.userId,
             knowledge_point_id: kpIdForError,
             content: q?.content ?? '',
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
             review_status: 'pending',
             next_review_at: nextDay,
             review_count: 0,
-          }).run();
+          }).execute();
           insertCount++;
         }
         if (insertCount > 0) { try { saveDb(); } catch {} }
@@ -95,24 +95,24 @@ export async function POST(request: NextRequest) {
     if (kpId) {
       try {
         const db = getDb();
-        const row = db.select({ id: knowledgeMasteryLog.id, mastery_rate: knowledgeMasteryLog.mastery_rate, error_count: knowledgeMasteryLog.error_count })
+        const row = (await db.select({ id: knowledgeMasteryLog.id, mastery_rate: knowledgeMasteryLog.mastery_rate, error_count: knowledgeMasteryLog.error_count })
           .from(knowledgeMasteryLog)
           .where(and(eq(knowledgeMasteryLog.student_id, authUser.userId), eq(knowledgeMasteryLog.knowledge_point_id, kpId)))
-          .limit(1).all()[0];
+          .limit(1).execute())[0];
         if (row) {
           const newRate = Math.round((row.mastery_rate || 0) * 0.7 + thisRate * 0.3);
-          db.update(knowledgeMasteryLog)
+          await db.update(knowledgeMasteryLog)
             .set({ mastery_rate: newRate, recorded_at: new Date().toISOString().split('T')[0] })
             .where(eq(knowledgeMasteryLog.id, row.id))
-            .run();
+            .execute();
         } else {
-          db.insert(knowledgeMasteryLog).values({
+          await db.insert(knowledgeMasteryLog).values({
             student_id: authUser.userId,
             knowledge_point_id: kpId,
             mastery_rate: thisRate,
             error_count: 0,
             recorded_at: new Date().toISOString().split('T')[0],
-          }).run();
+          }).execute();
         }
         try { saveDb(); } catch { /* 定时持久化兜底 */ }
       } catch (mErr) {

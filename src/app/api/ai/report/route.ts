@@ -38,16 +38,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "无权查看该学生学习数据" }, { status: 403 });
     }
 
-    const stuRows = db.select().from(user).where(eq(user.id, Number(student_id))).limit(1).all();
+    const stuRows = await db.select().from(user).where(eq(user.id, Number(student_id))).limit(1).execute();
     const stu = stuRows[0];
     if (!stu) return NextResponse.json({ error: "学生不存在" }, { status: 404 });
 
-    const gradings = db.select().from(gradingTask).where(eq(gradingTask.student_id, Number(student_id))).all();
+    const gradings = await db.select().from(gradingTask).where(eq(gradingTask.student_id, Number(student_id))).execute();
     const totalScore = gradings.reduce((s, g) => s + (g.total_score || 0), 0);
     const fullScore = gradings.reduce((s, g) => s + (g.full_score || 0), 0);
     const avg = fullScore > 0 ? Math.round((totalScore / fullScore) * 1000) / 10 : 0;
 
-    const errors = db.select().from(errorBook).where(eq(errorBook.student_id, Number(student_id))).all();
+    const errors = await db.select().from(errorBook).where(eq(errorBook.student_id, Number(student_id))).execute();
     const errorTypeCount: Record<string, number> = {};
     for (const e of errors) {
       const t = e.error_type || "unknown";
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       .map(([k, v]) => `${k}: ${v} 题`)
       .join("、");
 
-    const mastery = db.select().from(knowledgeMasteryLog).where(eq(knowledgeMasteryLog.student_id, Number(student_id))).all();
+    const mastery = await db.select().from(knowledgeMasteryLog).where(eq(knowledgeMasteryLog.student_id, Number(student_id))).execute();
     const avgMastery = mastery.length > 0
       ? Math.round(mastery.reduce((s, m) => s + (m.mastery_rate || 0), 0) / mastery.length)
       : 0;
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
 
 请生成该学生的学情分析报告。`;
 
-    const client = createAIClient();
+    const client = await createAIClient();
     const result = await client.invoke(
       [
         { role: "system", content: SYSTEM_PROMPT },

@@ -32,16 +32,16 @@ export async function GET(request: NextRequest) {
     const authUser = await requireAuth(request, 'teacher');
     if (!authUser) return NextResponse.json({ error: '未登录' }, { status: 401 });
     const db = getDb();
-    const rules = db.select().from(gradingConfig)
+    const rules = await db.select().from(gradingConfig)
       .where(eq(gradingConfig.teacher_id, authUser.userId))
       .orderBy(desc(gradingConfig.updated_at))
-      .all();
+      .execute();
     // 附课程名
     const courseIds = [...new Set(rules.map((r) => r.course_id).filter(Boolean))] as number[];
     const courseMap = new Map<number, string>();
     if (courseIds.length > 0) {
-      db.select({ id: course.id, name: course.name }).from(course)
-        .where(eq(course.teacher_id, authUser.userId)).all()
+      (await db.select({ id: course.id, name: course.name }).from(course)
+        .where(eq(course.teacher_id, authUser.userId)).execute())
         .forEach((c) => courseMap.set(c.id, c.name));
     }
     return NextResponse.json({
@@ -65,14 +65,14 @@ export async function POST(request: NextRequest) {
     if (!name) return NextResponse.json({ success: false, error: '规则名称不能为空' }, { status: 400 });
 
     const course_id = body?.course_id ? Number(body.course_id) : null;
-    if (course_id && !isCourseInTeacherScope(authUser.userId, course_id)) {
+    if (course_id && !await isCourseInTeacherScope(authUser.userId, course_id)) {
       return NextResponse.json({ success: false, error: '无权为该课程配置规则' }, { status: 403 });
     }
 
     const lv = validateGradeLevels(body?.grade_levels);
     if (!lv.ok) return NextResponse.json({ success: false, error: lv.error }, { status: 400 });
 
-    const result = db.insert(gradingConfig).values({
+    const result = await db.insert(gradingConfig).values({
       teacher_id: authUser.userId,
       name: name.slice(0, 40),
       course_id,
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
       grade_levels: lv.parsed ?? [],
       is_active: body?.is_active === false ? false : true,
       updated_at: new Date().toISOString(),
-    }).returning().all();
+    }).returning().execute();
 
     try { saveDb(); } catch { /* 定时持久化兜底 */ }
     return NextResponse.json({ success: true, data: result[0] });

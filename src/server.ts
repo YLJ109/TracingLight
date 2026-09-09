@@ -64,7 +64,7 @@ app.prepare().then(async () => {
   // Initialize database
   console.log('Initializing database...');
   const db = await initDb();
-  const uc = db.select().from(user).all().length;
+  const uc = (await db.select().from(user).execute()).length;
   console.log(`Database ready (${uc} users loaded).`);
 
   const server = createServer(async (req, res) => {

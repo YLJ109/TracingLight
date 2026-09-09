@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 课程归属校验
-    const myCourseIds = getTeacherCourseIds(authUser.userId);
+    const myCourseIds = await getTeacherCourseIds(authUser.userId);
     if (!myCourseIds.includes(course_id)) {
       return NextResponse.json({ success: false, error: '无权访问该课程' }, { status: 403 });
     }
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     if (difficulty) filters.push(eq(question.difficulty, difficulty));
     if (excludeIds.length > 0) filters.push(not(inArray(question.id, excludeIds)));
 
-    const pool = db.select().from(question).where(and(...filters)).all();
+    const pool = await db.select().from(question).where(and(...filters)).execute();
 
     // 随机抽取 count 道
     const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, count);
@@ -58,14 +58,14 @@ export async function POST(req: NextRequest) {
     const kpIds = [...new Set(shuffled.map((q) => q.knowledge_point_id))];
     const coursesMap = new Map<number, { id: number; name: string }>();
     if (courseIds.length > 0) {
-      db.select({ id: course.id, name: course.name }).from(course)
-        .where(inArray(course.id, courseIds)).all()
+      (await db.select({ id: course.id, name: course.name }).from(course)
+        .where(inArray(course.id, courseIds)).execute())
         .forEach((c) => coursesMap.set(c.id, c));
     }
     const kpMap = new Map<number, { id: number; name: string }>();
     if (kpIds.length > 0) {
-      db.select({ id: knowledgePoint.id, name: knowledgePoint.name }).from(knowledgePoint)
-        .where(inArray(knowledgePoint.id, kpIds as number[])).all()
+      (await db.select({ id: knowledgePoint.id, name: knowledgePoint.name }).from(knowledgePoint)
+        .where(inArray(knowledgePoint.id, kpIds as number[])).execute())
         .forEach((kp) => kpMap.set(kp.id, kp));
     }
 

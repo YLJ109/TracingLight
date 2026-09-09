@@ -28,28 +28,28 @@ export async function POST(request: NextRequest) {
     }
 
     // 跨租户校验
-    if (!isAssignmentInTeacherScope(authUser.userId, Number(assignment_id))) {
+    if (!await isAssignmentInTeacherScope(authUser.userId, Number(assignment_id))) {
       return NextResponse.json({ error: '无权操作该作业' }, { status: 403 });
     }
-    if (!isStudentInTeacherScope(authUser.userId, Number(student_id))) {
+    if (!await isStudentInTeacherScope(authUser.userId, Number(student_id))) {
       return NextResponse.json({ error: '无权操作该学生' }, { status: 403 });
     }
 
     const db = getDb();
-    const asgn = db.select({ title: assignment.title }).from(assignment)
-      .where(eq(assignment.id, Number(assignment_id))).limit(1).all()[0];
+    const asgn = (await db.select({ title: assignment.title }).from(assignment)
+      .where(eq(assignment.id, Number(assignment_id))).limit(1).execute())[0];
     if (!asgn) return NextResponse.json({ error: '作业不存在' }, { status: 404 });
 
     const now = new Date().toISOString();
-    const rows = db.select({ id: answer.id }).from(answer)
+    const rows = await db.select({ id: answer.id }).from(answer)
       .where(and(eq(answer.assignment_id, Number(assignment_id)), eq(answer.student_id, Number(student_id))))
-      .all();
+      .execute();
     if (rows.length === 0) {
       return NextResponse.json({ error: '该学生尚未提交此作业，无需退回' }, { status: 400 });
     }
 
     // 标记退回：returned 置位 + 关闭提交门控（学生端据此显示重做入口）
-    db.update(answer)
+    await db.update(answer)
       .set({
         returned: true,
         returned_at: now,
@@ -57,36 +57,36 @@ export async function POST(request: NextRequest) {
         is_submitted: false,
       })
       .where(and(eq(answer.assignment_id, Number(assignment_id)), eq(answer.student_id, Number(student_id))))
-      .run();
+      .execute();
 
     // 作废该生该作业已批改的 gradingTask（置 superseded），退回重做后旧成绩不再计入总分/题数，
     // 待学生重新提交后由统一批改管线生成新的 completed 记录。
-    db.update(gradingTask)
+    await db.update(gradingTask)
       .set({ status: 'superseded' })
       .where(and(
         eq(gradingTask.assignment_id, Number(assignment_id)),
         eq(gradingTask.student_id, Number(student_id)),
       ))
-      .run();
+      .execute();
 
     // 回滚该生该作业已写入的错题本记录：
     // 退回重做后，旧错题不再计入「需复习」统计，待重做提交后由批改管线按新作答重新入册，
     // 避免同一次尝试因「退回→重交」被重复叠加到错题本/复习排期。
-    db.delete(errorBook)
+    await db.delete(errorBook)
       .where(and(
         eq(errorBook.assignment_id, Number(assignment_id)),
         eq(errorBook.student_id, Number(student_id)),
       ))
-      .run();
+      .execute();
 
     // 通知学生（复用通知机制）
-    db.insert(notification).values({
+    await db.insert(notification).values({
       user_id: Number(student_id),
       type: 'assignment',
       title: '作业被退回',
       content: `《${asgn.title}》被老师退回：${reason.slice(0, 80)}，请修改后重新提交`,
       link: `/student/assignments/${assignment_id}`,
-    }).run();
+    }).execute();
     try { saveDb(); } catch { /* 定时持久化兜底 */ }
 
     // 退回重做埋点（静默，失败不影响响应）

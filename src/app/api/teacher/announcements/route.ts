@@ -21,10 +21,10 @@ export async function GET(request: NextRequest) {
       filters.push(eq(announcement.course_id, Number(courseId)));
     }
 
-    const data = db.select().from(announcement)
+    const data = await db.select().from(announcement)
       .where(and(...filters))
       .orderBy(announcement.created_at)
-      .all();
+      .execute();
 
     // Reverse to get descending order (newest first)
     data.reverse();
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: '课程参数无效' }, { status: 400 });
       }
       // 校验课程属于当前教师授课课程，防跨班广播
-      if (!getTeacherCourseIds(authUser.userId).includes(cid)) {
+      if (!(await getTeacherCourseIds(authUser.userId)).includes(cid)) {
         return NextResponse.json({ error: '无权向该课程发布公告' }, { status: 403 });
       }
       targetCourseId = cid;
@@ -67,38 +67,38 @@ export async function POST(request: NextRequest) {
     const safeTitle = htmlToPlainText(String(title ?? '')).trim() || '未命名公告';
     const safeContent = sanitizeRichHTML(String(content ?? ''));
 
-    const result = db.insert(announcement).values({
+    const result = await db.insert(announcement).values({
       teacher_id: authUser.userId,
       title: safeTitle,
       content: safeContent,
       course_id: targetCourseId,
       is_pinned: false,
       target_type: 'all',
-    }).returning().all();
+    }).returning().execute();
 
     // 通知扇出：公告面向的课程班级学生收到通知（学生在通知中心查看）
     try {
       let targets: Array<{ id: number }>;
       if (targetCourseId) {
-        const cls = db.select({ class_id: course.class_id }).from(course)
-          .where(eq(course.id, targetCourseId)).limit(1).all()[0];
+        const cls = (await db.select({ class_id: course.class_id }).from(course)
+          .where(eq(course.id, targetCourseId)).limit(1).execute())[0];
         targets = cls?.class_id
-          ? db.select({ id: user.id }).from(user)
+          ? await db.select({ id: user.id }).from(user)
               .where(and(eq(user.role, 'student'), eq(user.class_id, cls.class_id)))
-              .all()
+              .execute()
           : [];
       } else {
-        targets = db.select({ id: user.id }).from(user).where(eq(user.role, 'student')).all();
+        targets = await db.select({ id: user.id }).from(user).where(eq(user.role, 'student')).execute();
       }
       const sid = result[0]?.id;
       if (targets.length > 0) {
-        db.insert(notification).values(targets.map((t) => ({
+        await db.insert(notification).values(targets.map((t) => ({
           user_id: t.id,
           type: 'system',
           title: '新公告',
           content: `${authUser.username.includes('teacher') ? '老师' : '管理员'}发布了公告「${String(safeTitle).slice(0, 30)}」`,
           link: sid ? `/student/announcements?aid=${sid}` : '/student/announcements',
-        }))).run();
+        }))).execute();
         try { saveDb(); } catch { /* 定时持久化兜底 */ }
       }
     } catch (notifyErr) {
@@ -138,11 +138,11 @@ export async function PUT(request: NextRequest) {
     if (!id) return NextResponse.json({ error: '缺少ID' }, { status: 400 });
 
     // 校验归属，防止越权修改他人公告（IDOR）
-    const target = db.select({ id: announcement.id, teacher_id: announcement.teacher_id })
+    const target = await db.select({ id: announcement.id, teacher_id: announcement.teacher_id })
       .from(announcement)
       .where(eq(announcement.id, Number(id)))
       .limit(1)
-      .all();
+      .execute();
     if (!target[0] || target[0].teacher_id !== authUser.userId) {
       return NextResponse.json({ error: '无权操作该公告' }, { status: 403 });
     }
@@ -152,11 +152,11 @@ export async function PUT(request: NextRequest) {
     if (content !== undefined) updates.content = sanitizeRichHTML(String(content));
     if (is_pinned !== undefined) updates.is_pinned = is_pinned;
 
-    db.update(announcement).set(updates).where(eq(announcement.id, id)).run();
+    await db.update(announcement).set(updates).where(eq(announcement.id, id)).execute();
 
-    const data = db.select().from(announcement)
+    const data = (await db.select().from(announcement)
       .where(eq(announcement.id, id))
-      .get();
+      .execute())[0];
 
     return NextResponse.json({ data });
   } catch (e: any) {
@@ -176,16 +176,16 @@ export async function DELETE(request: NextRequest) {
     if (!id) return NextResponse.json({ error: '缺少ID' }, { status: 400 });
 
     // 校验归属，防止越权删除他人公告（IDOR）
-    const target = db.select({ id: announcement.id, teacher_id: announcement.teacher_id })
+    const target = await db.select({ id: announcement.id, teacher_id: announcement.teacher_id })
       .from(announcement)
       .where(eq(announcement.id, Number(id)))
       .limit(1)
-      .all();
+      .execute();
     if (!target[0] || target[0].teacher_id !== authUser.userId) {
       return NextResponse.json({ error: '无权操作该公告' }, { status: 403 });
     }
 
-    db.delete(announcement).where(eq(announcement.id, Number(id))).run();
+    await db.delete(announcement).where(eq(announcement.id, Number(id))).execute();
 
     return NextResponse.json({ success: true });
   } catch (e: any) {

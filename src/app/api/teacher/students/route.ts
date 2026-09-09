@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     const level = searchParams.get('level');
 
     // 跨租户隔离：仅返回当前教师授课班级下的学生
-    const classIds = getTeacherClassIds(authUser.userId);
+    const classIds = await getTeacherClassIds(authUser.userId);
     const filters = [eq(user.role, 'student'), eq(user.is_active, true)];
     if (classIds.length > 0) {
       filters.push(inArray(user.class_id, classIds));
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 显式列选择，绝不返回 password 哈希
-    const data = db.select({
+    const data = await db.select({
       id: user.id,
       username: user.username,
       real_name: user.real_name,
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     }).from(user)
       .where(and(...filters))
       .orderBy(user.id)
-      .all();
+      .execute();
 
     return NextResponse.json({ success: true, data });
   } catch (e) {

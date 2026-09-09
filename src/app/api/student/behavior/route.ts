@@ -18,23 +18,23 @@ export async function POST(request: NextRequest) {
 
     if (!materialId) return NextResponse.json({ error: '缺少 material_id' }, { status: 400 });
 
-    const existing = db.select().from(learningBehaviorLog)
+    const existing = (await db.select().from(learningBehaviorLog)
       .where(and(
         eq(learningBehaviorLog.student_id, authUser.userId),
         eq(learningBehaviorLog.material_id, materialId),
       ))
-      .all()[0];
+      .execute())[0];
 
     if (existing) {
-      db.update(learningBehaviorLog).set({
+      await db.update(learningBehaviorLog).set({
         watch_duration: (existing.watch_duration || 0) + watchDuration,
         progress: Math.max(existing.progress || 0, progress),
         review_count: (existing.review_count || 0) + 1,
         is_completed: !!(existing.is_completed || isCompleted),
         last_watched_at: new Date().toISOString(),
-      }).where(eq(learningBehaviorLog.id, existing.id)).run();
+      }).where(eq(learningBehaviorLog.id, existing.id)).execute();
     } else {
-      db.insert(learningBehaviorLog).values({
+      await db.insert(learningBehaviorLog).values({
         student_id: authUser.userId,
         material_id: materialId,
         watch_duration: watchDuration,
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
         review_count: 1,
         is_completed: isCompleted,
         last_watched_at: new Date().toISOString(),
-      }).run();
+      }).execute();
     }
 
     // 关键写路径即时落盘，避免崩溃丢失学习行为记录

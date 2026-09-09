@@ -35,20 +35,22 @@ if exist "node_modules\.bin" (
     )
 )
 
-REM ---------- 3. data dir & first-time seed (only if empty db) ----------
+REM ---------- 3. first-time schema push & seed (only if not seeded) ----------
 if not exist "data" mkdir data
-if exist "data\tracinglight.db" (
-    echo [3/4] Database already exists, keeping existing data.
+if exist "data\.pg_seeded" (
+    echo [3/4] PostgreSQL already seeded, keeping existing data.
 ) else (
-    echo [3/4] First run, generating demo data...
+    echo [3/4] Pushing schema and generating demo data...
+    call "%~dp0node_modules\.bin\drizzle-kit.cmd" push >nul 2>&1
     call "%~dp0node_modules\.bin\tsx.cmd" src/storage/database/seed.ts
     if errorlevel 1 (
         echo.
-        echo  [ERROR] Seed data generation failed.
+        echo  [ERROR] Seed data generation failed. Check PostgreSQL is reachable.
         echo.
         pause
         exit /b 1
     )
+    echo. > "data\.pg_seeded"
 )
 
 REM ---------- 3b. generate .env (if missing) with random JWT secret ----------
@@ -56,7 +58,7 @@ if exist ".env" (
     echo [3/4] .env already exists, keeping existing.
 ) else (
     echo [3/4] Generating .env with random JWT secret...
-    node -e "var f=require('fs'),c=require('crypto');var s=c.randomBytes(32).toString('hex');var env=['# TracingLight environment','','# ========== Zhipu AI ==========','# fill in your key from https://open.bigmodel.cn','ZHIPU_API_KEY=your_zhipu_api_key_here','ZHIPU_MODEL=glm-4-flash','','# ========== JWT Auth ==========','JWT_SECRET='+s,'','# ========== Database ==========','DATABASE_PATH=./data/tracinglight.db','','# ========== Server ==========','NODE_ENV=production','PORT=5000'].join('\n')+'\n';f.writeFileSync('.env',env.toString());"
+    node -e "var f=require('fs'),c=require('crypto');var s=c.randomBytes(32).toString('hex');var env=['# TracingLight environment','','# ========== Zhipu AI ==========','# fill in your key from https://open.bigmodel.cn','ZHIPU_API_KEY=your_zhipu_api_key_here','ZHIPU_MODEL=glm-4-flash','','# ========== JWT Auth ==========','JWT_SECRET='+s,'','# ========== Database (PostgreSQL) ==========','DATABASE_DRIVER=postgres','# edit DATABASE_URL to point to your PostgreSQL instance','DATABASE_URL=postgres://tracinglight:tracinglight_pw@localhost:5433/tracinglight','','# ========== Server ==========','NODE_ENV=production','PORT=5000'].join('\n')+'\n';f.writeFileSync('.env',env.toString());"
     if errorlevel 1 (
         echo.
         echo  [ERROR] Failed to generate .env file.

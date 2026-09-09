@@ -20,27 +20,23 @@ export async function POST(request: NextRequest) {
     if (!course_id || !name) {
       return NextResponse.json({ success: false, error: '缺少课程或知识点名称' }, { status: 400 });
     }
-    if (!isCourseInTeacherScope(authUser.userId, course_id)) {
+    if (!await isCourseInTeacherScope(authUser.userId, course_id)) {
       return NextResponse.json({ success: false, error: '无权在该课程下创建知识点' }, { status: 403 });
     }
 
     // 同课程下重名校验
-    const exists = db.select({ id: knowledgePoint.id }).from(knowledgePoint)
-      .where(eq(knowledgePoint.course_id, course_id)).all()
-      .find((k) => {
-        const row = db.select({ name: knowledgePoint.name }).from(knowledgePoint)
-          .where(eq(knowledgePoint.id, k.id)).limit(1).all()[0];
-        return row?.name === name;
-      });
+    const allKps = await db.select({ id: knowledgePoint.id, course_id: knowledgePoint.course_id, name: knowledgePoint.name }).from(knowledgePoint)
+      .where(eq(knowledgePoint.course_id, course_id)).execute();
+    const exists = allKps.find((k) => k.name === name);
     if (exists) {
       return NextResponse.json({ success: false, error: '该课程下已存在同名知识点' }, { status: 409 });
     }
 
-    const result = db.insert(knowledgePoint).values({
+    const result = await db.insert(knowledgePoint).values({
       course_id,
       name: name.slice(0, 50),
       description: body?.description ? String(body.description).slice(0, 200) : null,
-    }).returning().all();
+    }).returning().execute();
 
     try { saveDb(); } catch { /* 定时持久化兜底 */ }
     return NextResponse.json({ success: true, data: result[0] });

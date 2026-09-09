@@ -11,19 +11,19 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!r.user) return NextResponse.json({ error: null }, { status: r.status });
   const db = getDb();
   const examId = parseInt((await params).id);
-  const row = db.select().from(exam).where(eq(exam.id, examId)).get();
+  const row = (await db.select().from(exam).where(eq(exam.id, examId)).execute())[0];
   if (!row) return NextResponse.json({ error: '考试不存在' }, { status: 404 });
   if (row.teacher_id !== r.user.userId) return NextResponse.json({ error: '无权限' }, { status: 403 });
 
-  const enrolls = db.select().from(examEnroll).where(eq(examEnroll.exam_id, examId)).all();
+  const enrolls = await db.select().from(examEnroll).where(eq(examEnroll.exam_id, examId)).execute();
   const studentIds = enrolls.map((e) => e.student_id);
   const students = studentIds.length
-    ? db.select({ id: user.id, real_name: user.real_name, username: user.username, class_id: user.class_id }).from(user).where(inArray(user.id, studentIds)).all()
+    ? await db.select({ id: user.id, real_name: user.real_name, username: user.username, class_id: user.class_id }).from(user).where(inArray(user.id, studentIds)).execute()
     : [];
   const classNames = new Map<number, string>();
-  db.select({ id: classInfo.id, name: classInfo.name }).from(classInfo).all().forEach((c) => classNames.set(c.id, c.name));
-  const attempts = db.select().from(examAttempt).where(eq(examAttempt.exam_id, examId)).all();
-  const events = db.select().from(examProctorEvent).where(eq(examProctorEvent.exam_id, examId)).all();
+  (await db.select({ id: classInfo.id, name: classInfo.name }).from(classInfo).execute()).forEach((c) => classNames.set(c.id, c.name));
+  const attempts = await db.select().from(examAttempt).where(eq(examAttempt.exam_id, examId)).execute();
+  const events = await db.select().from(examProctorEvent).where(eq(examProctorEvent.exam_id, examId)).execute();
 
   const attemptBySid = new Map(attempts.map((a) => [a.student_id, a]));
   const eventsBySid = new Map<number, typeof events>();
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!r.user) return NextResponse.json({ error: null }, { status: r.status });
   const db = getDb();
   const examId = parseInt((await params).id);
-  const row = db.select().from(exam).where(eq(exam.id, examId)).get();
+  const row = (await db.select().from(exam).where(eq(exam.id, examId)).execute())[0];
   if (!row) return NextResponse.json({ error: '考试不存在' }, { status: 404 });
   if (row.teacher_id !== r.user.userId) return NextResponse.json({ error: '无权限' }, { status: 403 });
 
@@ -76,16 +76,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   let gaveExtend = 0;
   for (const sid of studentIds) {
-    const att = db.select().from(examAttempt).where(and(eq(examAttempt.exam_id, examId), eq(examAttempt.student_id, sid))).get();
+    const att = (await db.select().from(examAttempt).where(and(eq(examAttempt.exam_id, examId), eq(examAttempt.student_id, sid))).execute())[0];
     if (!att) continue;
     if (action === 'terminate') {
-      db.update(examAttempt).set({ updated_at: new Date().toISOString() }).where(eq(examAttempt.id, att.id)).run();
+      await db.update(examAttempt).set({ updated_at: new Date().toISOString() }).where(eq(examAttempt.id, att.id)).execute();
       await finalizeExamSubmission(att.id, 'terminate');
     } else if (action === 'extend') {
       const extraMin = Number(body.extra_minutes) || 5;
       const base = new Date(att.deadline).getTime();
       const newDeadline = new Date(base + extraMin * 60000).toISOString();
-      db.update(examAttempt).set({ deadline: newDeadline, updated_at: new Date().toISOString() }).where(eq(examAttempt.id, att.id)).run();
+      await db.update(examAttempt).set({ deadline: newDeadline, updated_at: new Date().toISOString() }).where(eq(examAttempt.id, att.id)).execute();
       gaveExtend += 1;
     }
   }

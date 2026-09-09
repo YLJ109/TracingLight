@@ -6,8 +6,8 @@ import { exam, examEnroll, user, classInfo, course, question } from '@/storage/d
 import { normalizeScores, defaultProctorConfig, normalizeOptions } from '@/lib/exam-core';
 import { writeAudit } from '@/lib/audit';
 
-function getExam(db: any, id: number) {
-  return db.select().from(exam).where(eq(exam.id, id)).get();
+async function getExam(db: any, id: number) {
+  return (await db.select().from(exam).where(eq(exam.id, id)).execute())[0];
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -15,26 +15,27 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!r.user) return NextResponse.json({ error: null }, { status: r.status });
   const db = getDb();
   const id = parseInt((await params).id);
-  const row = getExam(db, id);
+  const row = await getExam(db, id);
   if (!row) return NextResponse.json({ error: '考试不存在' }, { status: 404 });
   if (row.teacher_id !== r.user.userId) return NextResponse.json({ error: '无权限' }, { status: 403 });
 
-  const enrolls = db.select({
+  const enrolls = await db.select({
     student_id: examEnroll.student_id, class_id: examEnroll.class_id, enroll_status: examEnroll.enroll_status,
-  }).from(examEnroll).where(eq(examEnroll.exam_id, id)).all();
+  }).from(examEnroll).where(eq(examEnroll.exam_id, id)).execute();
   const studentIds = enrolls.map((e: any) => e.student_id);
   const students = studentIds.length
-    ? db.select({ id: user.id, real_name: user.real_name, username: user.username, class_id: user.class_id }).from(user).where(inArray(user.id, studentIds)).all()
+    ? await db.select({ id: user.id, real_name: user.real_name, username: user.username, class_id: user.class_id }).from(user).where(inArray(user.id, studentIds)).execute()
     : [];
   const classNames = new Map<number, string>();
-  db.select({ id: classInfo.id, name: classInfo.name }).from(classInfo).all().forEach((c: any) => classNames.set(c.id, c.name));
+  (await db.select({ id: classInfo.id, name: classInfo.name }).from(classInfo).execute()).forEach((c: any) => classNames.set(c.id, c.name));
 
-  const courseName = db.select({ name: course.name }).from(course).where(eq(course.id, row.course_id)).get()?.name || '';
+  const courseName = (await db.select({ name: course.name }).from(course).where(eq(course.id, row.course_id)).execute())[0]?.name || '';
 
-  const questions = (row.question_ids as number[]).map((qid: number) => {
-    const q = db.select({ id: question.id, question_type: question.question_type, difficulty: question.difficulty, content: question.content, options: question.options, knowledge_point_id: question.knowledge_point_id }).from(question).where(eq(question.id, qid)).get();
-    return q ? { ...q, options: normalizeOptions(q.options) } : q;
-  }).filter(Boolean);
+  const questions: any[] = [];
+  for (const qid of (row.question_ids as number[])) {
+    const q = (await db.select({ id: question.id, question_type: question.question_type, difficulty: question.difficulty, content: question.content, options: question.options, knowledge_point_id: question.knowledge_point_id }).from(question).where(eq(question.id, qid)).execute())[0];
+    if (q) questions.push({ ...q, options: normalizeOptions(q.options) });
+  }
 
   return NextResponse.json({
     exam: { ...row, course_name: courseName },
@@ -48,7 +49,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if (!r.user) return NextResponse.json({ error: null }, { status: r.status });
   const db = getDb();
   const id = parseInt((await params).id);
-  const row = getExam(db, id);
+  const row = await getExam(db, id);
   if (!row) return NextResponse.json({ error: '考试不存在' }, { status: 404 });
   if (row.teacher_id !== r.user.userId) return NextResponse.json({ error: '无权限' }, { status: 403 });
   if (row.status !== 'draft') return NextResponse.json({ error: '已发布考试不可编辑，只能调整时间或公布开关' }, { status: 400 });
@@ -77,12 +78,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
   // 题目变更则重算分值
   if (body.question_ids?.length) {
-    const teacherCourseIds = new Set(db.select({ id: course.id }).from(course).where(eq(course.teacher_id, r.user.userId)).all().map((c: any) => c.id));
-    const qs = db.select({ id: question.id, question_type: question.question_type, difficulty: question.difficulty })
-      .from(question).where(inArray(question.id, body.question_ids)).all();
+    const teacherCourseIds = new Set((await db.select({ id: course.id }).from(course).where(eq(course.teacher_id, r.user.userId)).execute()).map((c: any) => c.id));
+    const qs = await db.select({ id: question.id, question_type: question.question_type, difficulty: question.difficulty })
+      .from(question).where(inArray(question.id, body.question_ids)).execute();
     if (qs.length !== body.question_ids.length) return NextResponse.json({ error: '部分题目不存在' }, { status: 400 });
     for (const q of qs) {
-      const qrow = db.select({ course_id: question.course_id }).from(question).where(eq(question.id, q.id)).get();
+      const qrow = (await db.select({ course_id: question.course_id }).from(question).where(eq(question.id, q.id)).execute())[0];
       if (qrow && !teacherCourseIds.has(qrow.course_id)) return NextResponse.json({ error: '含无权题目' }, { status: 403 });
     }
     patch.question_ids = body.question_ids;
@@ -90,16 +91,16 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     patch.has_subjective = qs.some((q: any) => !['single_choice', 'multi_choice', 'judgment', 'fill_blank'].includes(q.question_type));
   }
 
-  db.update(exam).set(patch).where(eq(exam.id, id)).run();
+  await db.update(exam).set(patch).where(eq(exam.id, id)).execute();
 
   // 名单重建（仅 draft）：先清后建
-  db.delete(examEnroll).where(eq(examEnroll.exam_id, id)).run();
+  await db.delete(examEnroll).where(eq(examEnroll.exam_id, id)).execute();
   if (patch.course_id) {
     const classIds = body.class_ids ?? [];
     if (classIds.length) {
-      const students = db.select({ id: user.id, class_id: user.class_id }).from(user)
-        .where(and(eq(user.role, 'student'), eq(user.is_active, true), inArray(user.class_id, classIds))).all();
-      for (const s of students) db.insert(examEnroll).values({ exam_id: id, student_id: s.id, class_id: s.class_id }).run();
+      const students = await db.select({ id: user.id, class_id: user.class_id }).from(user)
+        .where(and(eq(user.role, 'student'), eq(user.is_active, true), inArray(user.class_id, classIds))).execute();
+      for (const s of students) await db.insert(examEnroll).values({ exam_id: id, student_id: s.id, class_id: s.class_id }).execute();
     }
   }
 
@@ -125,10 +126,10 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   if (!r.user) return NextResponse.json({ error: null }, { status: r.status });
   const db = getDb();
   const id = parseInt((await params).id);
-  const row = getExam(db, id);
+  const row = await getExam(db, id);
   if (!row) return NextResponse.json({ error: '考试不存在' }, { status: 404 });
   if (row.teacher_id !== r.user.userId) return NextResponse.json({ error: '无权限' }, { status: 403 });
-  db.delete(exam).where(eq(exam.id, id)).run();
+  await db.delete(exam).where(eq(exam.id, id)).execute();
 
   // 删除考试埋点（静默，失败不影响响应）
   try {

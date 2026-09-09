@@ -40,14 +40,14 @@ export async function POST(request: NextRequest) {
     const studentId = user.userId;
 
     // 归属 + 完整作业信息（用于状态/时间窗/重交规则校验）
-    const asgn = db.select()
+    const asgn = (await db.select()
       .from(assignment)
       .where(eq(assignment.id, Number(assignment_id)))
       .limit(1)
-      .all()[0];
+      .execute())[0];
     if (!asgn) return NextResponse.json({ error: '作业不存在' }, { status: 404 });
     // 越权防护：仅本班课程作业可提交
-    if (!canAccessCourse(user, asgn.course_id)) return NextResponse.json({ error: '无权参与该作业' }, { status: 403 });
+    if (!(await canAccessCourse(user, asgn.course_id))) return NextResponse.json({ error: '无权参与该作业' }, { status: 403 });
     const validQuestionIds = (asgn.question_ids || []) as number[];
     const invalidQids = answers.map((a) => a.question_id).filter((qid) => !validQuestionIds.includes(Number(qid)));
     if (invalidQids.length > 0) {
@@ -57,12 +57,12 @@ export async function POST(request: NextRequest) {
     const now = new Date().toISOString();
 
     // 已存在的作答：草稿存字段 + 正式提交的状态/重交规则校验
-    const existingAnswers = db.select().from(answer)
+    const existingAnswers = await db.select().from(answer)
       .where(and(
         eq(answer.assignment_id, assignment_id),
         eq(answer.student_id, studentId)
       ))
-      .all();
+      .execute();
     const existingMap = new Map(existingAnswers.map((a) => [a.question_id, a]));
     const isCurrentlySubmitted = existingAnswers.length > 0 && existingAnswers.every((a) => a.is_submitted);
     const isReturned = existingAnswers.some((a) => a.returned);
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
     // 字数限制（主观题）与选择数量限制（多选）。草稿保存跳过，避免阻断中途存档。
     if (!saveOnly) {
       const qRows = validQuestionIds.length > 0
-        ? db.select().from(question).where(inArray(question.id, validQuestionIds)).all()
+        ? await db.select().from(question).where(inArray(question.id, validQuestionIds)).execute()
         : [];
       const qMap = new Map(qRows.map((q) => [q.id, q]));
       for (const a of answers) {
@@ -132,15 +132,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Upsert: delete existing answers, then insert new ones
-    const result = db.transaction(() => {
+    const result = await db.transaction(async (tx) => {
       for (const qId of answers.map((a) => a.question_id)) {
-        db.delete(answer)
+        await tx.delete(answer)
           .where(and(
             eq(answer.assignment_id, assignment_id),
             eq(answer.student_id, studentId),
             eq(answer.question_id, qId)
           ))
-          .run();
+          .execute();
       }
 
       const rows = answers.map((a) => {
@@ -175,16 +175,16 @@ export async function POST(request: NextRequest) {
         };
       });
 
-      db.insert(answer).values(rows).run();
+      await tx.insert(answer).values(rows).execute();
 
       // Return the inserted data
-      return db.select()
+      return tx.select()
         .from(answer)
         .where(and(
           eq(answer.assignment_id, assignment_id),
           eq(answer.student_id, studentId),
         ))
-        .all();
+        .execute();
     });
 
     // 关键写路径即时落盘：提交成功后立刻持久化，避免崩溃丢失（T-2）
@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
     const objectiveGrades: Array<{ question_id: number; total_score: number; full_score: number }> = [];
     if (!saveOnly && result.length > 0) {
       const qRows = validQuestionIds.length > 0
-        ? db.select().from(question).where(inArray(question.id, validQuestionIds)).all()
+        ? await db.select().from(question).where(inArray(question.id, validQuestionIds)).execute()
         : [];
       const ansById = new Map(result.map((r) => [r.question_id, r]));
       for (const q of qRows) {
@@ -244,10 +244,10 @@ export async function POST(request: NextRequest) {
 
         // 对当前学生在本作业的主观题作答做班级内查重（与其余已提交同学）
         const monoSubjRows = validQuestionIds.length > 0
-          ? db.select({ id: question.id, question_type: question.question_type })
+          ? (await db.select({ id: question.id, question_type: question.question_type })
               .from(question)
               .where(inArray(question.id, validQuestionIds))
-              .all()
+              .execute())
               .filter((q) => !isObjectiveType(q.question_type))
           : [];
         let maxSimilarity = 0;
@@ -256,14 +256,14 @@ export async function POST(request: NextRequest) {
           for (const q of monoSubjRows) {
             const mine = answers.find((a) => a.question_id === q.id)?.student_answer || '';
             if (!htmlToPlainText(mine).trim()) continue;
-            const peers = db.select({ student_id: answer.student_id, student_answer: answer.student_answer })
+            const peers = (await db.select({ student_id: answer.student_id, student_answer: answer.student_answer })
               .from(answer)
               .where(and(
                 eq(answer.assignment_id, assignment_id),
                 eq(answer.question_id, q.id),
                 eq(answer.is_submitted, true),
               ))
-              .all()
+              .execute())
               .filter((r) => r.student_id !== studentId);
             const all = [{ student_id: studentId, text: mine }, ...peers.map((p) => ({ student_id: p.student_id, text: p.student_answer || '' }))];
             similarity = Math.max(similarity, computePlagiarism(all).max_similarity);
@@ -291,10 +291,10 @@ export async function POST(request: NextRequest) {
           start_at: m.start_at || null,
         };
 
-        const existingMonitor = db.select({ id: answerMonitor.id })
+        const existingMonitor = (await db.select({ id: answerMonitor.id })
           .from(answerMonitor)
           .where(and(eq(answerMonitor.assignment_id, assignment_id), eq(answerMonitor.student_id, studentId)))
-          .limit(1).all()[0];
+          .limit(1).execute())[0];
         const monitorRow = {
           assignment_id,
           student_id: studentId,
@@ -310,9 +310,9 @@ export async function POST(request: NextRequest) {
           updated_at: now,
         };
         if (existingMonitor) {
-          db.update(answerMonitor).set(monitorRow).where(eq(answerMonitor.id, existingMonitor.id)).run();
+          await db.update(answerMonitor).set(monitorRow).where(eq(answerMonitor.id, existingMonitor.id)).execute();
         } else {
-          db.insert(answerMonitor).values(monitorRow).run();
+          await db.insert(answerMonitor).values(monitorRow).execute();
         }
         try { saveDb(); } catch { /* 兜底 */ }
       } catch (e) {

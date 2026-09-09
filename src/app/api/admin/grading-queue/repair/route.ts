@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'action 必须是 retry 或 force_complete' }, { status: 400 });
     }
 
-    const rows = db.select().from(gradingTask).where(eq(gradingTask.id, taskId)).all();
+    const rows = await db.select().from(gradingTask).where(eq(gradingTask.id, taskId)).execute();
     if (rows.length === 0) return NextResponse.json({ error: '批改任务不存在' }, { status: 404 });
     const task = rows[0];
 
@@ -49,15 +49,15 @@ export async function POST(request: NextRequest) {
         }
       }
       const score = forceScore !== undefined ? forceScore : (task.total_score ?? 0);
-      db.update(gradingTask)
+      await db.update(gradingTask)
         .set({ status: 'completed', total_score: score, error_message: null, completed_at: now })
         .where(eq(gradingTask.id, taskId))
-        .run();
+        .execute();
       toStatus = 'completed';
       detail = `force_complete 原${task.status}→completed 分=${score}${remark ? ` 备注:${remark}` : ''}`;
     } else {
       // retry：重置为 pending，计数+1，清理错误信息（交由批改服务重新处理）
-      db.update(gradingTask)
+      await db.update(gradingTask)
         .set({
           status: 'pending',
           retry_count: (task.retry_count || 0) + 1,
@@ -65,19 +65,19 @@ export async function POST(request: NextRequest) {
           completed_at: null,
         })
         .where(eq(gradingTask.id, taskId))
-        .run();
+        .execute();
       toStatus = 'pending';
       detail = `retry 原${task.status}→pending 重试第${(task.retry_count || 0) + 1}次${remark ? ` 备注:${remark}` : ''}`;
     }
 
-    db.insert(auditLog).values({
+    await db.insert(auditLog).values({
       operator_id: authUser.userId,
       operator_name: authUser.username,
       action: 'repair_grading_task',
       target_type: 'grading_task',
       target_id: String(taskId),
       detail,
-    }).run();
+    }).execute();
     saveDb();
 
     return NextResponse.json({ success: true, taskId, toStatus });

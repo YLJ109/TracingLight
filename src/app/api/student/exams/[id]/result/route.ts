@@ -12,37 +12,37 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const db = getDb();
   const examId = parseInt((await params).id);
 
-  const ex = db.select().from(exam).where(eq(exam.id, examId)).get();
+  const ex = (await db.select().from(exam).where(eq(exam.id, examId)).execute())[0];
   if (!ex) return NextResponse.json({ error: '考试不存在' }, { status: 404 });
 
-  const attempt = db.select().from(examAttempt).where(and(eq(examAttempt.exam_id, examId), eq(examAttempt.student_id, r.user.userId))).get();
+  const attempt = (await db.select().from(examAttempt).where(and(eq(examAttempt.exam_id, examId), eq(examAttempt.student_id, r.user.userId))).execute())[0];
   if (!attempt) return NextResponse.json({ error: '未参加考试' }, { status: 403 });
   const finished = ['submitted', 'auto_submitted', 'terminated'].includes(attempt.status ?? '');
   if (!finished) return NextResponse.json({ can_view: false, reason: 'not_finished' });
   // 成绩公布前不得查看参考答案/评分（教师批改复核并手动公布后才可复盘）
   if (finished && !ex.grades_published) return NextResponse.json({ can_view: false, reason: 'not_published' });
 
-  const courseName = db.select({ name: course.name }).from(course).where(eq(course.id, ex.course_id)).get()?.name || '';
+  const courseName = ((await db.select({ name: course.name }).from(course).where(eq(course.id, ex.course_id)).execute())[0]?.name || '');
 
-  const answers = db.select().from(examAnswer).where(eq(examAnswer.attempt_id, attempt.id)).all();
+  const answers = await db.select().from(examAnswer).where(eq(examAnswer.attempt_id, attempt.id)).execute();
   const myAnswerIds = answers.map((a) => a.id);
   // 只取本学生自己的判分，避免多学生共享同一 exam 时串行错乱
   const gradings = myAnswerIds.length
-    ? db.select().from(examGrading).where(and(eq(examGrading.exam_id, examId), inArray(examGrading.answer_id, myAnswerIds))).all()
+    ? await db.select().from(examGrading).where(and(eq(examGrading.exam_id, examId), inArray(examGrading.answer_id, myAnswerIds))).execute()
     : [];
-  const appeals = db.select().from(examAppeal).where(eq(examAppeal.exam_id, examId)).all();
+  const appeals = await db.select().from(examAppeal).where(eq(examAppeal.exam_id, examId)).execute();
   const qids = ex.question_ids as number[];
-  const qRows = db.select({
+  const qRows = await db.select({
     id: question.id, question_type: question.question_type, difficulty: question.difficulty,
     content: question.content, options: question.options, answer: question.answer, analysis: question.analysis,
     knowledge_point_id: question.knowledge_point_id,
-  }).from(question).where(inArray(question.id, qids)).all();
+  }).from(question).where(inArray(question.id, qids)).execute();
   const qMap = new Map(qRows.map((q) => [q.id, q]));
 
   const kpIdSet = new Set(qRows.map((q) => q.knowledge_point_id));
   const kpNameMap = new Map<string, string>();
   if (kpIdSet.size) {
-    const kps = db.select({ id: knowledgePoint.id, name: knowledgePoint.name }).from(knowledgePoint).where(inArray(knowledgePoint.id, [...kpIdSet])).all();
+    const kps = await db.select({ id: knowledgePoint.id, name: knowledgePoint.name }).from(knowledgePoint).where(inArray(knowledgePoint.id, [...kpIdSet])).execute();
     for (const k of kps) kpNameMap.set(String(k.id), k.name);
   }
 

@@ -25,11 +25,11 @@ export async function GET(request: NextRequest) {
     const pageSize = Math.min(50, Math.max(1, parseInt(searchParams.get('pageSize') || '20', 10) || 20));
 
     // 状态统计
-    const statusGroups = db
+    const statusGroups = await db
       .select({ status: gradingTask.status, c: count() })
       .from(gradingTask)
       .groupBy(gradingTask.status)
-      .all();
+      .execute();
     const stats = { pending: 0, processing: 0, completed: 0, failed: 0, stuck: 0 };
     const statusMap: Record<string, 'pending' | 'processing' | 'completed' | 'failed'> = {
       pending: 'pending', processing: 'processing', completed: 'completed', failed: 'failed',
@@ -40,11 +40,11 @@ export async function GET(request: NextRequest) {
     }
 
     // 卡住：processing 且创建时间超过阈值
-    const processingRows = db
+    const processingRows = await db
       .select({ created_at: gradingTask.created_at })
       .from(gradingTask)
       .where(eq(gradingTask.status, 'processing'))
-      .all();
+      .execute();
     const cutoff = Date.now() - STUCK_MINUTES * 60 * 1000;
     for (const r of processingRows) {
       if (toDate(r.created_at).getTime() < cutoff) stats.stuck += 1;
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
     }
     const dayFill: Record<string, { pending: number; completed: number }> = {};
     for (const k of dayKeys) dayFill[k] = { pending: 0, completed: 0 };
-    const allTasks = db.select({ status: gradingTask.status, created_at: gradingTask.created_at }).from(gradingTask).all();
+    const allTasks = await db.select({ status: gradingTask.status, created_at: gradingTask.created_at }).from(gradingTask).execute();
     for (const t of allTasks) {
       const k = toDate(t.created_at).toISOString().slice(0, 10);
       if (!dayFill[k]) continue;
@@ -98,8 +98,8 @@ export async function GET(request: NextRequest) {
       .orderBy(desc(gradingTask.id));
 
     const withStatus = status ? query.where(eq(gradingTask.status, status)) : query;
-    const total = withStatus.all().length;
-    const list = withStatus.limit(pageSize).offset((page - 1) * pageSize).all();
+    const total = (await withStatus.execute()).length;
+    const list = await withStatus.limit(pageSize).offset((page - 1) * pageSize).execute();
 
     return NextResponse.json({
       success: true,

@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   const kpId = searchParams.get('knowledge_point_id');
   const q = searchParams.get('q');
 
-  const teacherCourseIds = getTeacherCourseIds(r.user.userId);
+  const teacherCourseIds = await getTeacherCourseIds(r.user.userId);
   const filters = [eq(question.is_active, true), eq(question.locked, false)];
   if (courseId) {
     if (!teacherCourseIds.includes(parseInt(courseId))) return NextResponse.json({ error: '无权操作该课程' }, { status: 403 });
@@ -31,14 +31,14 @@ export async function GET(request: NextRequest) {
   if (kpId) filters.push(eq(question.knowledge_point_id, parseInt(kpId)));
   if (q) filters.push(like(question.content, `%${q}%`));
 
-  const questions = db.select({
+  const questions = await db.select({
     id: question.id, question_type: question.question_type, difficulty: question.difficulty,
     content: question.content, options: question.options, knowledge_point_id: question.knowledge_point_id,
     default_score: question.default_score,
-  }).from(question).where(and(...filters)).orderBy(desc(question.created_at)).all();
+  }).from(question).where(and(...filters)).orderBy(desc(question.created_at)).execute();
 
   const kpMap = new Map<number, string>();
-  db.select({ id: knowledgePoint.id, name: knowledgePoint.name }).from(knowledgePoint).all().forEach((k: any) => kpMap.set(k.id, k.name));
+  (await db.select({ id: knowledgePoint.id, name: knowledgePoint.name }).from(knowledgePoint).execute()).forEach((k: any) => kpMap.set(k.id, k.name));
 
   return NextResponse.json({ questions: questions.map((qq: any) => ({
     ...qq,

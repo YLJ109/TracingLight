@@ -14,18 +14,18 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!r.user) return NextResponse.json({ error: null }, { status: r.status });
   const db = getDb();
   const examId = parseInt((await params).id);
-  const row = db.select().from(exam).where(eq(exam.id, examId)).get();
+  const row = (await db.select().from(exam).where(eq(exam.id, examId)).execute())[0];
   if (!row) return NextResponse.json({ error: '考试不存在' }, { status: 404 });
   if (row.teacher_id !== r.user.userId) return NextResponse.json({ error: '无权限' }, { status: 403 });
 
-  const pending = db.select().from(examGrading).where(and(eq(examGrading.exam_id, examId), eq(examGrading.status, 'pending'))).all();
+  const pending = await db.select().from(examGrading).where(and(eq(examGrading.exam_id, examId), eq(examGrading.status, 'pending'))).execute();
   const qids = pending.map((p) => p.question_id);
   const questions = qids.length
-    ? new Map(db.select().from(question).where(inArray(question.id, qids)).all().map((q) => [q.id, q]))
+    ? new Map((await db.select().from(question).where(inArray(question.id, qids)).execute()).map((q) => [q.id, q]))
     : new Map();
   const stuIds = pending.map((p) => p.student_id);
   const students = stuIds.length
-    ? new Map(db.select({ id: user.id, real_name: user.real_name, username: user.username }).from(user).where(inArray(user.id, stuIds)).all().map((s) => [s.id, s]))
+    ? new Map((await db.select({ id: user.id, real_name: user.real_name, username: user.username }).from(user).where(inArray(user.id, stuIds)).execute()).map((s) => [s.id, s]))
     : new Map();
 
   const grouped: Array<any> = [];
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!r.user) return NextResponse.json({ error: null }, { status: r.status });
   const db = getDb();
   const examId = parseInt((await params).id);
-  const row = db.select().from(exam).where(eq(exam.id, examId)).get();
+  const row = (await db.select().from(exam).where(eq(exam.id, examId)).execute())[0];
   if (!row) return NextResponse.json({ error: '考试不存在' }, { status: 404 });
   if (row.teacher_id !== r.user.userId) return NextResponse.json({ error: '无权限' }, { status: 403 });
 
@@ -76,13 +76,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // AI 批量批改：对 pending 主观题逐题调 AI 生成「建议分/评语/批注/薄弱点」，
   // 仅写为建议（status 仍 pending），教师复核后「采纳 AI 分」或手动改分，再手动公布成绩。
   if (body.action === 'ai_batch') {
-    const pend = db.select().from(examGrading).where(and(eq(examGrading.exam_id, examId), eq(examGrading.status, 'pending'))).all();
+    const pend = await db.select().from(examGrading).where(and(eq(examGrading.exam_id, examId), eq(examGrading.status, 'pending'))).execute();
     const qids = [...new Set(pend.map((p) => p.question_id))];
     const qMap = qids.length
-      ? new Map(db.select().from(question).where(inArray(question.id, qids)).all().map((q) => [q.id, q]))
+      ? new Map((await db.select().from(question).where(inArray(question.id, qids)).execute()).map((q) => [q.id, q]))
       : new Map();
     const kpName = async (id: number) =>
-      db.select({ name: knowledgePoint.name }).from(knowledgePoint).where(eq(knowledgePoint.id, id)).get()?.name || '';
+      (await db.select({ name: knowledgePoint.name }).from(knowledgePoint).where(eq(knowledgePoint.id, id)).execute())[0]?.name || '';
     let done = 0;
     let fail = 0;
     for (const g of pend) {
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         const res = await computeGrade(q as any, g.student_answer || '', await kpName(g.knowledge_point_id), undefined, null, full);
         const totalScore = typeof res.total_score === 'number' ? res.total_score : null;
         const correct = totalScore != null && totalScore >= full;
-        db.update(examGrading).set({
+        await db.update(examGrading).set({
           total_score: totalScore,
           overall_comment: res.overall_comment || null,
           dimension_scores: res.dimension_scores ?? null,
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           unmastered_knowledge_ids: correct ? (res.unmastered_knowledge_ids?.length ? res.unmastered_knowledge_ids : []) : (res.unmastered_knowledge_ids?.length ? res.unmastered_knowledge_ids : [g.knowledge_point_id]),
           error_type: res.error_type || null,
           ai_generated_probability: res.ai_generated_probability ?? null,
-        }).where(eq(examGrading.id, g.id)).run();
+        }).where(eq(examGrading.id, g.id)).execute();
         done++;
       } catch (e) {
         console.error('Exam AI batch grading failed', g.id, e);
@@ -116,13 +116,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const now = new Date().toISOString();
   for (const it of body.items) {
-    const g = db.select().from(examGrading).where(eq(examGrading.id, it.grading_id)).get();
+    const g = (await db.select().from(examGrading).where(eq(examGrading.id, it.grading_id)).execute())[0];
     if (!g || g.exam_id !== examId) continue;
     const score = Number(it.score);
     const comment = it.comment || g.overall_comment; // 未填评语则保留 AI 评语
-    db.update(examGrading).set({
+    await db.update(examGrading).set({
       total_score: score, status: 'completed', overall_comment: comment, completed_at: now,
-    }).where(eq(examGrading.id, g.id)).run();
+    }).where(eq(examGrading.id, g.id)).execute();
 
     // 幂等守卫：已批改且分值未变的重放（教师复核存档/接口重放），
     // 仅保留评语而不再重复回写掌握度与错题本，避免 error_count/掌握度被重复叠加；
@@ -132,15 +132,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const correct = score >= (g.full_score || 1);
     // 统一掌握度回写（与作业/申诉同一口径：指数平滑，按得分率计，答错累计错误计数）
-    syncMasteryFromGrading({ studentId: g.student_id, knowledgePointId: g.knowledge_point_id, score, fullScore: g.full_score || 0, isCorrect: correct });
+    await syncMasteryFromGrading({ studentId: g.student_id, knowledgePointId: g.knowledge_point_id, score, fullScore: g.full_score || 0, isCorrect: correct });
 
     // 错题本联动：答错且非空答 → 入错题本（幂等，经统一入口 recordErrorBook 写入真实 AI 归因）；答对 → 仅当已有错题记录时标记已掌握并清除复习排期。
     // 与考试客观题共用同一入口（exam-grading.recordErrorBook）：新题调用 error-analysis 生成 error_analysis/knowledge_explanation/learning_suggestion，
     // AI 失败静默落 null，学生端由 /api/ai/analyze-error 兜底补全，不阻塞批改主流程。
-    const exist = db.select().from(errorBook)
-      .where(and(eq(errorBook.student_id, g.student_id), eq(errorBook.question_id, g.question_id))).get();
+    const exist = (await db.select().from(errorBook)
+      .where(and(eq(errorBook.student_id, g.student_id), eq(errorBook.question_id, g.question_id))).execute())[0];
     if (!correct && (g.student_answer || '').trim() && !exist) {
-      const q = db.select().from(question).where(eq(question.id, g.question_id)).get();
+      const q = (await db.select().from(question).where(eq(question.id, g.question_id)).execute())[0];
       if (q) {
         const gradable: GradableQuestion = {
           id: q.id,
@@ -153,7 +153,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         await recordErrorBook(g.exam_id || examId, g.student_id, gradable, g.student_answer || '', g.error_type || 'subjective');
       }
     } else if (correct && exist) {
-      db.update(errorBook).set({ review_status: 'mastered', next_review_at: null, reviewed_at: now }).where(eq(errorBook.id, exist.id)).run();
+      await db.update(errorBook).set({ review_status: 'mastered', next_review_at: null, reviewed_at: now }).where(eq(errorBook.id, exist.id)).execute();
     }
   }
   try { saveDb(); } catch { /* 定时持久化兜底 */ }

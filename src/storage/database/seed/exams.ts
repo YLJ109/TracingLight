@@ -12,7 +12,7 @@ import { datePlus, normalizeScores } from '../../../lib/seed/rng';
 
 const now = () => new Date();
 
-export function seedExams(db: Drizzle, ctx: SeedCtx) {
+export async function seedExams(db: Drizzle, ctx: SeedCtx) {
   const { rng, nextId } = ctx;
 
   for (const cid of ctx.courseIds) {
@@ -40,7 +40,7 @@ export function seedExams(db: Drizzle, ctx: SeedCtx) {
       const endAt = datePlus(now(), dayOff, futureE ? 10 : 11, 0);
       const title = e === 6 ? '期末考试' : e === 5 ? '期中考试' : `单元测验${e}`;
 
-      db.insert(schema.exam).values({
+      await db.insert(schema.exam).values({
         id: examId, course_id: cid, teacher_id: teacherId,
         title, description: '请在规定时间内独立完成，遵守考试纪律。', exam_type: examType,
         time_mode: rng.pick(['fixed', 'window'] as const),
@@ -52,7 +52,7 @@ export function seedExams(db: Drizzle, ctx: SeedCtx) {
         proctor_config: { faceCheck: rng.bool(0.8), fullscreen: true, forbidCopy: true, switchLimit: rng.int(3, 6) },
         randomized: true,
         status: futureE ? 'scheduled' : 'closed',
-      } as any).run();
+      } as any).execute();
 
       // 名单（含缺考/缓考标记）
       const enrolls: any[] = [];
@@ -65,7 +65,7 @@ export function seedExams(db: Drizzle, ctx: SeedCtx) {
           allow: enrollStatus === 'normal', enroll_status: enrollStatus,
         });
       }
-      db.insert(schema.examEnroll).values(enrolls).run();
+      await db.insert(schema.examEnroll).values(enrolls).execute();
       const enrollIdByStudent = new Map<number, number>();
       enrolls.forEach((en) => { if (en.enroll_status === 'normal') enrollIdByStudent.set(en.student_id, en.id); });
 
@@ -151,12 +151,12 @@ export function seedExams(db: Drizzle, ctx: SeedCtx) {
           });
         }
       }
-      if (attempts.length) insertChunked(db, schema.examAttempt, attempts);
-      if (ansRows.length) insertChunked(db, schema.examAnswer, ansRows);
-      if (gradingRows.length) insertChunked(db, schema.examGrading, gradingRows);
-      if (errRows.length) insertChunked(db, schema.errorBook, errRows);
-      if (appealRows.length) insertChunked(db, schema.examAppeal, appealRows);
-      if (proctorRows.length) insertChunked(db, schema.examProctorEvent, proctorRows);
+      if (attempts.length) await insertChunked(db, schema.examAttempt, attempts);
+      if (ansRows.length) await insertChunked(db, schema.examAnswer, ansRows);
+      if (gradingRows.length) await insertChunked(db, schema.examGrading, gradingRows);
+      if (errRows.length) await insertChunked(db, schema.errorBook, errRows);
+      if (appealRows.length) await insertChunked(db, schema.examAppeal, appealRows);
+      if (proctorRows.length) await insertChunked(db, schema.examProctorEvent, proctorRows);
     }
   }
 }

@@ -12,23 +12,23 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const db = getDb();
   const examId = parseInt((await params).id);
 
-  const ex = db.select().from(exam).where(eq(exam.id, examId)).get();
+  const ex = (await db.select().from(exam).where(eq(exam.id, examId)).execute())[0];
   if (!ex) return NextResponse.json({ error: '考试不存在' }, { status: 404 });
 
-  const attempt = db.select().from(examAttempt).where(and(eq(examAttempt.exam_id, examId), eq(examAttempt.student_id, r.user.userId))).get();
+  const attempt = (await db.select().from(examAttempt).where(and(eq(examAttempt.exam_id, examId), eq(examAttempt.student_id, r.user.userId))).execute())[0];
   if (!attempt) return NextResponse.json({ error: '请先开始考试' }, { status: 400 });
   const finished = ['submitted', 'auto_submitted', 'terminated'].includes(attempt.status ?? '');
   if (finished) return NextResponse.json({ error: 'ALREADY_SUBMITTED', already_submitted: true, submitted_via: attempt.submitted_via }, { status: 200 });
 
-  const student = db.select({ id: user.id, real_name: user.real_name, username: user.username, avatar_url: user.avatar_url }).from(user).where(eq(user.id, r.user.userId)).get();
-  const courseName = db.select({ name: course.name }).from(course).where(eq(course.id, ex.course_id)).get()?.name || '';
+  const student = (await db.select({ id: user.id, real_name: user.real_name, username: user.username, avatar_url: user.avatar_url }).from(user).where(eq(user.id, r.user.userId)).execute())[0];
+  const courseName = ((await db.select({ name: course.name }).from(course).where(eq(course.id, ex.course_id)).execute())[0]?.name || '');
 
   // 题目（不含答案）
   const qids = ex.question_ids as number[];
-  const qRows = db.select({
+  const qRows = await db.select({
     id: question.id, question_type: question.question_type, difficulty: question.difficulty,
     content: question.content, options: question.options, knowledge_point_id: question.knowledge_point_id,
-  }).from(question).where(inArray(question.id, qids)).all();
+  }).from(question).where(inArray(question.id, qids)).execute();
 
   const optionsByQuestion: Record<number, Array<{ key: string; text: string }>> = {};
   for (const q of qRows) optionsByQuestion[q.id] = normalizeOptions(q.options);
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const paper = buildPaper(examId, r.user.userId, qids, ex.randomized !== false, optionsByQuestion);
 
   // 已存作答
-  const answers = db.select().from(examAnswer).where(eq(examAnswer.attempt_id, attempt.id)).all();
+  const answers = await db.select().from(examAnswer).where(eq(examAnswer.attempt_id, attempt.id)).execute();
 
   // 每题满分（归一化）
   const scores = (ex.question_scores as Record<string, number>) || {};

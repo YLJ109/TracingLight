@@ -10,24 +10,24 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (!r.user) return NextResponse.json({ error: null }, { status: r.status });
   const db = getDb();
   const examId = parseInt((await params).id);
-  const row = db.select().from(exam).where(eq(exam.id, examId)).get();
+  const row = (await db.select().from(exam).where(eq(exam.id, examId)).execute())[0];
   if (!row) return NextResponse.json({ error: '考试不存在' }, { status: 404 });
   if (row.teacher_id !== r.user.userId) return NextResponse.json({ error: '无权限' }, { status: 403 });
 
-  const courseName = db.select({ name: course.name }).from(course).where(eq(course.id, row.course_id)).get()?.name || '';
-  const enrolls = db.select().from(examEnroll).where(eq(examEnroll.exam_id, examId)).all();
+  const courseName = (await db.select({ name: course.name }).from(course).where(eq(course.id, row.course_id)).execute())[0]?.name || '';
+  const enrolls = await db.select().from(examEnroll).where(eq(examEnroll.exam_id, examId)).execute();
   const studentIds = enrolls.map((e) => e.student_id);
   const studentsByName = new Map<number, { id: number; real_name: string; username: string; class_id: number | null }>();
   if (studentIds.length) {
-    db.select({ id: user.id, real_name: user.real_name, username: user.username, class_id: user.class_id })
-      .from(user).where(inArray(user.id, studentIds)).all().forEach((s) => studentsByName.set(s.id, s));
+    (await db.select({ id: user.id, real_name: user.real_name, username: user.username, class_id: user.class_id })
+      .from(user).where(inArray(user.id, studentIds)).execute()).forEach((s) => studentsByName.set(s.id, s));
   }
   const classNames = new Map<number, string>();
-  db.select({ id: classInfo.id, name: classInfo.name }).from(classInfo).all().forEach((c) => classNames.set(c.id, c.name));
+  (await db.select({ id: classInfo.id, name: classInfo.name }).from(classInfo).execute()).forEach((c) => classNames.set(c.id, c.name));
 
-  const attempts = db.select().from(examAttempt).where(eq(examAttempt.exam_id, examId)).all();
+  const attempts = await db.select().from(examAttempt).where(eq(examAttempt.exam_id, examId)).execute();
   const attemptBySid = new Map(attempts.map((a) => [a.student_id, a]));
-  const gradings = db.select().from(examGrading).where(eq(examGrading.exam_id, examId)).all();
+  const gradings = await db.select().from(examGrading).where(eq(examGrading.exam_id, examId)).execute();
   const gradingsBySid = new Map<number, typeof gradings>();
   for (const g of gradings) {
     if (!gradingsBySid.has(g.student_id)) gradingsBySid.set(g.student_id, []);
@@ -68,13 +68,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   // —— 题目诊断：按题统计作答人数/得分率/正确率 ——
   const qids = (row.question_ids as number[]) || [];
   const qRows = qids.length
-    ? new Map(db.select({ id: question.id, question_type: question.question_type, content: question.content, knowledge_point_id: question.knowledge_point_id })
-        .from(question).where(inArray(question.id, qids)).all().map((q) => [q.id, q]))
+    ? new Map((await db.select({ id: question.id, question_type: question.question_type, content: question.content, knowledge_point_id: question.knowledge_point_id })
+        .from(question).where(inArray(question.id, qids)).execute()).map((q) => [q.id, q]))
     : new Map();
   const answersByQ = new Map<number, Array<{ student_id: number }>>();
   if (studentIds.length) {
-    db.select({ question_id: examAnswer.question_id, student_id: examAnswer.student_id })
-      .from(examAnswer).where(inArray(examAnswer.exam_id, [examId])).all()
+    (await db.select({ question_id: examAnswer.question_id, student_id: examAnswer.student_id })
+      .from(examAnswer).where(inArray(examAnswer.exam_id, [examId])).execute())
       .forEach((a) => { if (!answersByQ.has(a.question_id)) answersByQ.set(a.question_id, []); answersByQ.get(a.question_id)!.push(a); });
   }
   const fullScoreOf = (qid: number): number => {
@@ -112,7 +112,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     });
   }
   const kpRows = [...weakKpCount.keys()].length
-    ? new Map(db.select({ id: knowledgePoint.id, name: knowledgePoint.name }).from(knowledgePoint).where(inArray(knowledgePoint.id, [...weakKpCount.keys()])).all().map((k) => [k.id, k]))
+    ? new Map((await db.select({ id: knowledgePoint.id, name: knowledgePoint.name }).from(knowledgePoint).where(inArray(knowledgePoint.id, [...weakKpCount.keys()])).execute()).map((k) => [k.id, k]))
     : new Map();
   const weakKnowledgePoints = [...weakKpCount.entries()]
     .map(([kid, v]) => ({ id: kid, name: kpRows.get(kid)?.name || `知识点${kid}`, wrong_count: v.count }))

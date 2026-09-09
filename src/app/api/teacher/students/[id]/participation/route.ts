@@ -17,11 +17,11 @@ export async function GET(
     const studentId = parsed.value!;
 
     // 跨租户隔离：仅允许查看自己授课范围内的学生
-    if (!isStudentInTeacherScope(authUser.userId, studentId)) {
+    if (!await isStudentInTeacherScope(authUser.userId, studentId)) {
       return NextResponse.json({ error: '学生不在您的授课范围内' }, { status: 403 });
     }
 
-    const score = computeParticipationScore(studentId);
+    const score = await computeParticipationScore(studentId);
     return NextResponse.json({ success: true, data: score });
   } catch (e) {
     if (e && typeof (e as { status?: number }).status === 'number') return e as NextResponse;

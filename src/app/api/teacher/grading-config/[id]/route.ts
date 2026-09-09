@@ -30,8 +30,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const { id } = await params;
     const db = getDb();
 
-    const target = db.select().from(gradingConfig)
-      .where(eq(gradingConfig.id, Number(id))).limit(1).all()[0];
+    const target = (await db.select().from(gradingConfig)
+      .where(eq(gradingConfig.id, Number(id))).limit(1).execute())[0];
     if (!target || target.teacher_id !== authUser.userId) {
       return NextResponse.json({ success: false, error: '规则不存在或无权操作' }, { status: 403 });
     }
@@ -54,10 +54,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       update.grade_levels = lv.parsed ?? [];
     }
 
-    db.update(gradingConfig).set(update).where(eq(gradingConfig.id, Number(id))).run();
+    await db.update(gradingConfig).set(update).where(eq(gradingConfig.id, Number(id))).execute();
     try { saveDb(); } catch { /* 定时持久化兜底 */ }
 
-    const updated = db.select().from(gradingConfig).where(eq(gradingConfig.id, Number(id))).limit(1).all()[0];
+    const updated = (await db.select().from(gradingConfig).where(eq(gradingConfig.id, Number(id))).limit(1).execute())[0];
     return NextResponse.json({ success: true, data: updated });
   } catch (e) {
     console.error('Update grading config error:', e);
@@ -73,13 +73,13 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const { id } = await params;
     const db = getDb();
 
-    const target = db.select().from(gradingConfig)
-      .where(eq(gradingConfig.id, Number(id))).limit(1).all()[0];
+    const target = (await db.select().from(gradingConfig)
+      .where(eq(gradingConfig.id, Number(id))).limit(1).execute())[0];
     if (!target || target.teacher_id !== authUser.userId) {
       return NextResponse.json({ success: false, error: '规则不存在或无权操作' }, { status: 403 });
     }
 
-    db.delete(gradingConfig).where(eq(gradingConfig.id, Number(id))).run();
+    await db.delete(gradingConfig).where(eq(gradingConfig.id, Number(id))).execute();
     try { saveDb(); } catch { /* 定时持久化兜底 */ }
     return NextResponse.json({ success: true });
   } catch (e) {

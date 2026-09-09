@@ -31,27 +31,27 @@ export async function GET(request: NextRequest) {
     if (courseId) asgnFilters.push(eq(assignment.course_id, parseInt(courseId)));
     if (status) asgnFilters.push(eq(assignment.status, status));
 
-    const assignments = db.select().from(assignment)
+    const assignments = await db.select().from(assignment)
       .where(and(...asgnFilters))
       .orderBy(desc(assignment.created_at))
-      .all();
+      .execute();
 
     // Get all students (filtered by class)
     // 跨租户隔离：仅当前教师授课班级下的学生
-    const classIds = getTeacherClassIds(authUser.userId);
+    const classIds = await getTeacherClassIds(authUser.userId);
     const studentFilters = [eq(user.role, 'student'), eq(user.is_active, true)];
     if (classIds.length > 0) studentFilters.push(inArray(user.class_id, classIds));
 
-    const allStudents = db.select({
+    const allStudents = await db.select({
       id: user.id,
       real_name: user.real_name,
       username: user.username,
       student_level: user.student_level,
       class_id: user.class_id,
-    }).from(user).where(and(...studentFilters)).all();
+    }).from(user).where(and(...studentFilters)).execute();
 
     // Get all grading records（仅 completed；退回/重批旧行 status=superseded 不计入）
-    const allGradings = db.select({
+    const allGradings = await db.select({
       id: gradingTask.id,
       assignment_id: gradingTask.assignment_id,
       student_id: gradingTask.student_id,
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
       status: gradingTask.status,
     }).from(gradingTask)
       .where(eq(gradingTask.status, 'completed'))
-      .all();
+      .execute();
 
     // 按 (student, question) 去重取最新一条 completed
     function dedupByStudentQuestion(rows: typeof allGradings): typeof allGradings {
@@ -77,37 +77,37 @@ export async function GET(request: NextRequest) {
     }
 
     // Get all answer records
-    const allAnswers = db.select({
+    const allAnswers = await db.select({
       id: answer.id,
       assignment_id: answer.assignment_id,
       student_id: answer.student_id,
       is_submitted: answer.is_submitted,
-    }).from(answer).all();
+    }).from(answer).execute();
 
     // Get course list（跨租户：取「授课课程 ∪ 本人创建的作业所覆盖课程」并集，
     // 保证课程筛选/新建选择能覆盖到作业实际归属的课程，避免课程显示不全）
-    const myCourseIdsDrop = getTeacherCourseIds(authUser.userId);
-    const myAssignmentCourseIds = db.selectDistinct({ course_id: assignment.course_id })
+    const myCourseIdsDrop = await getTeacherCourseIds(authUser.userId);
+    const myAssignmentCourseIds = (await db.selectDistinct({ course_id: assignment.course_id })
       .from(assignment)
       .where(eq(assignment.teacher_id, authUser.userId))
-      .all()
+      .execute())
       .map((r) => r.course_id)
       .filter((v): v is number => v != null);
     const unionCourseIds = [...new Set([...myCourseIdsDrop, ...myAssignmentCourseIds])];
     const courses = unionCourseIds.length > 0
-      ? db.select({
+      ? await db.select({
           id: course.id,
           name: course.name,
-        }).from(course).where(inArray(course.id, unionCourseIds)).orderBy(course.id).all()
+        }).from(course).where(inArray(course.id, unionCourseIds)).orderBy(course.id).execute()
       : [];
 
     // Get class list（跨租户：仅本人授课班级）
-    const myClassIdsDrop = getTeacherClassIds(authUser.userId);
+    const myClassIdsDrop = await getTeacherClassIds(authUser.userId);
     const classes = myClassIdsDrop.length > 0
-      ? db.select({
+      ? await db.select({
           id: classInfo.id,
           name: classInfo.name,
-        }).from(classInfo).where(inArray(classInfo.id, myClassIdsDrop)).orderBy(classInfo.id).all()
+        }).from(classInfo).where(inArray(classInfo.id, myClassIdsDrop)).orderBy(classInfo.id).execute()
       : [];
 
     // Build enriched statistics for each assignment
@@ -201,14 +201,14 @@ export async function POST(request: NextRequest) {
     let hasSubjective = false;
     let questionScores: Record<number, number> | undefined = undefined;
     if (questionIds.length > 0) {
-      const qRows = db.select({
+      const qRows = await db.select({
         id: question.id,
         question_type: question.question_type,
         difficulty: question.difficulty,
       })
         .from(question)
         .where(inArray(question.id, questionIds))
-        .all();
+        .execute();
       hasSubjective = qRows.some(q => !isObjectiveType(q.question_type));
       // 每题分值：前端可按难度/题型微调传入 question_scores；未传则服务端自动分配（合计=100）
       if (body.question_scores && typeof body.question_scores === 'object') {
@@ -225,12 +225,12 @@ export async function POST(request: NextRequest) {
       : (hasSubjective ? 'teacher_review' : 'auto');
 
     // 校验课程归属，防止往其他教师的课程发布作业（跨租户）
-    const teacherCourseIds = getTeacherCourseIds(authUser.userId);
+    const teacherCourseIds = await getTeacherCourseIds(authUser.userId);
     if (!body.course_id || !teacherCourseIds.includes(Number(body.course_id))) {
       return NextResponse.json({ error: '课程不存在或不在您的授课范围内' }, { status: 403 });
     }
 
-    const result = db.insert(assignment).values({
+    const result = await db.insert(assignment).values({
       course_id: body.course_id,
       // 归属强制取自 token，杜绝伪造 teacher_id（IDOR）
       teacher_id: authUser.userId,
@@ -264,27 +264,27 @@ export async function POST(request: NextRequest) {
             similarity_threshold: Math.min(1, Math.max(0, Number(body.monitor_config.similarity_threshold) || 0.8)),
           }
         : undefined,
-    }).returning().all();
+    }).returning().execute();
 
     const data = result[0];
 
     // 发布作业时，通知该课程班级的学生
     if (body.status !== 'draft') {
-      const courseRow = db.select({ class_id: course.class_id, name: course.name })
-        .from(course).where(eq(course.id, body.course_id)).get();
+      const courseRow = (await db.select({ class_id: course.class_id, name: course.name })
+        .from(course).where(eq(course.id, body.course_id)).execute())[0];
       if (courseRow?.class_id) {
-        const students = db.select({ id: user.id })
+        const students = await db.select({ id: user.id })
           .from(user)
           .where(and(eq(user.role, 'student'), eq(user.class_id, courseRow.class_id), eq(user.is_active, true)))
-          .all();
+          .execute();
         for (const s of students) {
-          db.insert(notification).values({
+          await db.insert(notification).values({
             user_id: s.id,
             type: 'assignment',
             title: '新作业发布',
             content: `老师在《${courseRow.name}》发布了作业「${body.title}」`,
             link: '/student/assignments',
-          }).run();
+          }).execute();
         }
       }
     }

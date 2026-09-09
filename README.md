@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-blue)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)](https://www.typescriptlang.org)
 [![AI](https://img.shields.io/badge/AI-智谱%20GLM--4--Flash-green)](https://open.bigmodel.cn)
-[![Database](https://img.shields.io/badge/DB-SQLite-lightgrey)](https://sqlite.org)
+[![Database](https://img.shields.io/badge/DB-PostgreSQL-4169e1)](https://postgresql.org)
 
 </div>
 
@@ -210,7 +210,15 @@
 |------|---------|---------|
 | Node.js | ≥ 20.x | [nodejs.org](https://nodejs.org) 下载 LTS 版 |
 | pnpm | ≥ 9.x | `npm install -g pnpm` |
+| PostgreSQL | ≥ 14 | 见下「启动 PostgreSQL」 |
 | 智谱 API Key | — | [open.bigmodel.cn](https://open.bigmodel.cn) 免费注册获取（启动后在管理端配置即可） |
+
+> **启动 PostgreSQL**（本地开发推荐用 Docker，避免与系统 5432 冲突用 5433）：
+> ```bash
+> docker run -d --name tracinglight-pg -p 5433:5432 \
+>   -e POSTGRES_USER=tracinglight -e POSTGRES_PASSWORD=tracinglight_pw \
+>   -e POSTGRES_DB=tracinglight postgres:16
+> ```
 
 ---
 
@@ -232,6 +240,7 @@
 | `start.bat update` | 更新模式：构建 + 启动 | 拉取新代码后更新 |
 | `build.bat` | `next build` 生产构建（可传 `pull` 先拉取） | 代码改动后部署前验证 |
 | `init-db.bat` | 只删数据库 → 重新建表 → 重新导入种子数据 | 重置数据 |
+| `backfill-dimensions.bat` | 为历史已完成但缺失维度分的批改回填六维能力分（幂等，仅补 NULL） | 重置数据 / 换库后，教师端详情六维雷达无数据时 |
 
 ---
 
@@ -404,7 +413,7 @@ SQLite + Drizzle ORM，共 55+ 张业务表，分四层：基础数据（学校/
 | AI 功能报错 | Key 未配置 / 是占位符 / 无效 | 管理端→系统设置配置真实 Key；或 `.env` 设 `ZHIPU_API_KEY` |
 | 头像上传后 404 | 未重启 / 旧上传目录 | 重启项目（server.ts 现已按需转发 uploads） |
 | 端口 5000 被占用 | 其他服务占用 | 关掉占用进程或改 `.env` 中 `PORT` |
-| better-sqlite3 报错 | 依赖未正确安装 | 删除 `node_modules` 重装（本地编译需对应 Node 版本） |
+| 数据库连接失败 | PostgreSQL 未启动 / 连接串错误 | 启动 PG（如 `docker run -p 5433:5432 ...`），检查 `.env` 的 `DATABASE_URL` |
 | 页面空白 | 构建产物损坏 | 删除 `.next`，重新 `pnpm build` |
 
 ---

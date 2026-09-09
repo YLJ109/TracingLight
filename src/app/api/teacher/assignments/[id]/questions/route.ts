@@ -18,9 +18,9 @@ export async function GET(
     const assignmentId = parseInt(id);
 
     // 获取作业信息
-    const asgnRows = db.select().from(assignment)
+    const asgnRows = await db.select().from(assignment)
       .where(eq(assignment.id, assignmentId))
-      .limit(1).all();
+      .limit(1).execute();
     const asgn = asgnRows[0] || null;
 
     if (!asgn) {
@@ -31,14 +31,14 @@ export async function GET(
     if (asgn.teacher_id !== authUser.userId) {
       return NextResponse.json({ error: '无权访问该作业' }, { status: 403 });
     }
-    const myClassIds = getTeacherClassIds(authUser.userId);
+    const myClassIds = await getTeacherClassIds(authUser.userId);
 
     // 获取关联的课程名称
-    const courseRow = db.select({ id: assignment.course_id, name: course.name })
+    const courseRow = (await db.select({ id: assignment.course_id, name: course.name })
       .from(assignment)
       .innerJoin(course, eq(assignment.course_id, course.id))
       .where(eq(assignment.id, assignmentId))
-      .limit(1).all()[0] || null;
+      .limit(1).execute())[0] || null;
 
     const assignmentWithCourse = {
       ...asgn,
@@ -49,20 +49,20 @@ export async function GET(
     const questionIds: number[] = (asgn.question_ids as number[]) || [];
     let questions: any[] = [];
     if (questionIds.length > 0) {
-      questions = db.select().from(question)
+      questions = await db.select().from(question)
         .where(inArray(question.id, questionIds))
         .orderBy(question.id)
-        .all();
+        .execute();
     }
 
     // 为每道题附加知识点名称
     const kpIds = [...new Set(questions.map((q) => q.knowledge_point_id).filter(Boolean))];
     const kpMap = new Map<number, string>();
     if (kpIds.length > 0) {
-      const kps = db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
+      const kps = await db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
         .from(knowledgePoint)
         .where(inArray(knowledgePoint.id, kpIds as number[]))
-        .all();
+        .execute();
       kps.forEach((kp) => kpMap.set(kp.id, kp.name));
     }
     const questionsWithKp = questions.map((q) => ({
@@ -73,27 +73,27 @@ export async function GET(
     }));
 
     // 获取提交统计
-    const submittedCountRows = db.select({ id: answer.id })
+    const submittedCountRows = await db.select({ id: answer.id })
       .from(answer)
       .where(and(
         eq(answer.assignment_id, assignmentId),
         eq(answer.is_submitted, true),
       ))
-      .all();
+      .execute();
     const submittedCount = submittedCountRows.length;
 
     // 获取批改统计（status=completed 才算已批；退回/重批旧行 superseded 不计入；按 question 去重）
-    const gradedCountRows = db.select({ id: gradingTask.id, question_id: gradingTask.question_id })
+    const gradedCountRows = await db.select({ id: gradingTask.id, question_id: gradingTask.question_id })
       .from(gradingTask)
       .where(and(
         eq(gradingTask.assignment_id, assignmentId),
         eq(gradingTask.status, 'completed'),
       ))
-      .all();
+      .execute();
     const gradedCount = new Set(gradedCountRows.map((r) => r.question_id)).size;
 
     // 获取平均分（优先覆盖分；按 question 去重取最新）
-    const scores = db.select({
+    const scores = await db.select({
       question_id: gradingTask.question_id,
       total_score: gradingTask.total_score,
       teacher_override_score: gradingTask.teacher_override_score,
@@ -104,7 +104,7 @@ export async function GET(
         eq(gradingTask.assignment_id, assignmentId),
         eq(gradingTask.status, 'completed'),
       ))
-      .all();
+      .execute();
     const latestScoresMap = new Map<number, typeof scores[number]>();
     for (const s of scores) {
       const prev = latestScoresMap.get(s.question_id);
@@ -118,7 +118,7 @@ export async function GET(
 
     // 学生集合：仅本人授课班级的学生
     const allStudents = myClassIds.length > 0
-      ? db.select({
+      ? await db.select({
           id: user.id,
           real_name: user.real_name,
           student_level: user.student_level,
@@ -128,19 +128,19 @@ export async function GET(
             eq(user.is_active, true),
             inArray(user.class_id, myClassIds)
           ))
-          .all()
+          .execute()
       : [];
 
     // Get all answers for this assignment
-    const allAnswers = db.select({
+    const allAnswers = await db.select({
       student_id: answer.student_id,
       is_submitted: answer.is_submitted,
     }).from(answer)
       .where(eq(answer.assignment_id, assignmentId))
-      .all();
+      .execute();
 
     // Get all gradings for this assignment（仅 completed，避免退回旧行重复计入）
-    const allGradings = db.select({
+    const allGradings = await db.select({
       id: gradingTask.id,
       student_id: gradingTask.student_id,
       question_id: gradingTask.question_id,
@@ -153,7 +153,7 @@ export async function GET(
         eq(gradingTask.assignment_id, assignmentId),
         eq(gradingTask.status, 'completed'),
       ))
-      .all();
+      .execute();
 
     const submissions = allStudents.map((student) => {
       const studentAnswers = allAnswers.filter((a) => a.student_id === student.id);

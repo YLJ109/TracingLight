@@ -13,10 +13,10 @@ import { eq, and } from 'drizzle-orm';
  */
 
 /** 校验会话归属；返回会话或 null */
-function ownedSession(db: ReturnType<typeof getDb>, sessionId: number, userId: number) {
-  return db.select().from(qaSession)
+async function ownedSession(db: ReturnType<typeof getDb>, sessionId: number, userId: number) {
+  return (await db.select().from(qaSession)
     .where(and(eq(qaSession.id, sessionId), eq(qaSession.user_id, userId)))
-    .limit(1).all()[0] || null;
+    .limit(1).execute())[0] || null;
 }
 
 export async function GET(request: NextRequest) {
@@ -26,13 +26,13 @@ export async function GET(request: NextRequest) {
     const id = Number(request.nextUrl.searchParams.get('id'));
     if (!id) return NextResponse.json({ error: '缺少 id' }, { status: 400 });
     const db = getDb();
-    if (!ownedSession(db, id, authUser.userId)) {
+    if (!(await ownedSession(db, id, authUser.userId))) {
       return NextResponse.json({ error: '会话不存在' }, { status: 404 });
     }
-    const messages = db.select().from(qaMessage)
+    const messages = await db.select().from(qaMessage)
       .where(eq(qaMessage.session_id, id))
       .orderBy(qaMessage.id)
-      .all();
+      .execute();
     return NextResponse.json({ success: true, data: { session_id: id, messages } });
   } catch (e) {
     console.error('Session get error:', e);
@@ -50,11 +50,11 @@ export async function POST(request: NextRequest) {
       const body = await request.json();
       if (body?.title && String(body.title).trim()) title = String(body.title).trim().slice(0, 50);
     } catch { /* 无 body 也可 */ }
-    const created = db.insert(qaSession).values({
+    const created = await db.insert(qaSession).values({
       user_id: authUser.userId,
       title,
       updated_at: new Date().toISOString(),
-    }).returning().all();
+    }).returning().execute();
     try { saveDb(); } catch { /* 定时持久化兜底 */ }
     return NextResponse.json({ success: true, data: created[0] });
   } catch (e) {
@@ -74,17 +74,17 @@ export async function PUT(request: NextRequest) {
     if (!id || !['rename', 'clear'].includes(action)) {
       return NextResponse.json({ error: '参数错误' }, { status: 400 });
     }
-    if (!ownedSession(db, id, authUser.userId)) {
+    if (!(await ownedSession(db, id, authUser.userId))) {
       return NextResponse.json({ error: '会话不存在' }, { status: 404 });
     }
 
     if (action === 'rename') {
       const title = String(body?.title || '').trim();
       if (!title) return NextResponse.json({ error: '标题不能为空' }, { status: 400 });
-      db.update(qaSession).set({ title: title.slice(0, 50) }).where(eq(qaSession.id, id)).run();
+      await db.update(qaSession).set({ title: title.slice(0, 50) }).where(eq(qaSession.id, id)).execute();
     } else {
       // clear：清空该会话全部消息（保留会话本体）
-      db.delete(qaMessage).where(eq(qaMessage.session_id, id)).run();
+      await db.delete(qaMessage).where(eq(qaMessage.session_id, id)).execute();
     }
     try { saveDb(); } catch { /* 定时持久化兜底 */ }
     return NextResponse.json({ success: true });
@@ -101,11 +101,11 @@ export async function DELETE(request: NextRequest) {
     const db = getDb();
     const id = Number(request.nextUrl.searchParams.get('id'));
     if (!id) return NextResponse.json({ error: '缺少 id' }, { status: 400 });
-    if (!ownedSession(db, id, authUser.userId)) {
+    if (!(await ownedSession(db, id, authUser.userId))) {
       return NextResponse.json({ error: '会话不存在' }, { status: 404 });
     }
-    db.delete(qaMessage).where(eq(qaMessage.session_id, id)).run();
-    db.delete(qaSession).where(eq(qaSession.id, id)).run();
+    await db.delete(qaMessage).where(eq(qaMessage.session_id, id)).execute();
+    await db.delete(qaSession).where(eq(qaSession.id, id)).execute();
     try { saveDb(); } catch { /* 定时持久化兜底 */ }
     return NextResponse.json({ success: true });
   } catch (e) {

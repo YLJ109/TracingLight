@@ -17,18 +17,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!question_id || !reason?.trim()) return NextResponse.json({ error: '请填写申诉原因' }, { status: 400 });
 
   // 校验该题确属于本考生
-  const g = db.select().from(examGrading)
-    .where(and(eq(examGrading.exam_id, examId), eq(examGrading.student_id, r.user.userId), eq(examGrading.question_id, question_id))).get();
+  const g = (await db.select().from(examGrading)
+    .where(and(eq(examGrading.exam_id, examId), eq(examGrading.student_id, r.user.userId), eq(examGrading.question_id, question_id))).execute())[0];
   if (!g) return NextResponse.json({ error: '无权对该题申诉' }, { status: 403 });
 
   // 是否已有未处理申诉
-  const exist = db.select().from(examAppeal)
-    .where(and(eq(examAppeal.exam_id, examId), eq(examAppeal.student_id, r.user.userId), eq(examAppeal.question_id, question_id), eq(examAppeal.status, 'pending'))).get();
+  const exist = (await db.select().from(examAppeal)
+    .where(and(eq(examAppeal.exam_id, examId), eq(examAppeal.student_id, r.user.userId), eq(examAppeal.question_id, question_id), eq(examAppeal.status, 'pending'))).execute())[0];
   if (exist) return NextResponse.json({ error: '该题已有待处理申诉' }, { status: 400 });
 
-  const ins = db.insert(examAppeal).values({
+  const ins = (await db.insert(examAppeal).values({
     exam_id: examId, student_id: r.user.userId, question_id, grading_id: grading_id || g.id, reason: reason.trim(),
-  }).returning({ id: examAppeal.id }).get();
+  }).returning({ id: examAppeal.id }).execute())[0];
 
   return NextResponse.json({ ok: true, appeal_id: ins.id });
 }

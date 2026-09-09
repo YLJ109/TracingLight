@@ -21,17 +21,17 @@ export async function POST(request: NextRequest) {
 
     // 归属校验：先确认目标属于当前用户可见课程
     if (targetType === 'post') {
-      const post = db.select({ course_id: discussionPost.course_id }).from(discussionPost).where(eq(discussionPost.id, targetId)).limit(1).all()[0];
+      const post = (await db.select({ course_id: discussionPost.course_id }).from(discussionPost).where(eq(discussionPost.id, targetId)).limit(1).execute())[0];
       if (!post) return NextResponse.json({ error: '帖子不存在' }, { status: 404 });
       if (!canAccessCourse(authUser, post.course_id)) return NextResponse.json({ error: '无权操作' }, { status: 403 });
     } else {
-      const reply = db.select({ post_id: discussionReply.post_id }).from(discussionReply).where(eq(discussionReply.id, targetId)).limit(1).all()[0];
+      const reply = (await db.select({ post_id: discussionReply.post_id }).from(discussionReply).where(eq(discussionReply.id, targetId)).limit(1).execute())[0];
       if (!reply) return NextResponse.json({ error: '回复不存在' }, { status: 404 });
-      const post = db.select({ course_id: discussionPost.course_id }).from(discussionPost).where(eq(discussionPost.id, reply.post_id)).limit(1).all()[0];
+      const post = (await db.select({ course_id: discussionPost.course_id }).from(discussionPost).where(eq(discussionPost.id, reply.post_id)).limit(1).execute())[0];
       if (!post || !canAccessCourse(authUser, post.course_id)) return NextResponse.json({ error: '无权操作' }, { status: 403 });
     }
 
-    const existing = db.select().from(discussionLike)
+    const existing = (await db.select().from(discussionLike)
       .where(
         and(
           eq(discussionLike.target_type, targetType),
@@ -39,34 +39,34 @@ export async function POST(request: NextRequest) {
           eq(discussionLike.user_id, authUser.userId),
         ),
       )
-      .all()[0];
+      .execute())[0];
 
     if (existing) {
       // 取消点赞
-      db.delete(discussionLike).where(eq(discussionLike.id, existing.id)).run();
+      await db.delete(discussionLike).where(eq(discussionLike.id, existing.id)).execute();
       if (targetType === 'post') {
-        const post = db.select({ like_count: discussionPost.like_count }).from(discussionPost).where(eq(discussionPost.id, targetId)).limit(1).all()[0];
-        db.update(discussionPost).set({ like_count: Math.max(0, (post?.like_count || 0) - 1) }).where(eq(discussionPost.id, targetId)).run();
+        const post = (await db.select({ like_count: discussionPost.like_count }).from(discussionPost).where(eq(discussionPost.id, targetId)).limit(1).execute())[0];
+        await db.update(discussionPost).set({ like_count: Math.max(0, (post?.like_count || 0) - 1) }).where(eq(discussionPost.id, targetId)).execute();
       } else {
-        const reply = db.select({ like_count: discussionReply.like_count }).from(discussionReply).where(eq(discussionReply.id, targetId)).limit(1).all()[0];
-        db.update(discussionReply).set({ like_count: Math.max(0, (reply?.like_count || 0) - 1) }).where(eq(discussionReply.id, targetId)).run();
+        const reply = (await db.select({ like_count: discussionReply.like_count }).from(discussionReply).where(eq(discussionReply.id, targetId)).limit(1).execute())[0];
+        await db.update(discussionReply).set({ like_count: Math.max(0, (reply?.like_count || 0) - 1) }).where(eq(discussionReply.id, targetId)).execute();
       }
       saveDb();
       return NextResponse.json({ success: true, liked: false });
     }
 
     // 点赞
-    db.insert(discussionLike).values({
+    await db.insert(discussionLike).values({
       target_type: targetType,
       target_id: targetId,
       user_id: authUser.userId,
-    }).run();
+    }).execute();
     if (targetType === 'post') {
-      const post = db.select({ like_count: discussionPost.like_count }).from(discussionPost).where(eq(discussionPost.id, targetId)).limit(1).all()[0];
-      db.update(discussionPost).set({ like_count: (post?.like_count || 0) + 1 }).where(eq(discussionPost.id, targetId)).run();
+      const post = (await db.select({ like_count: discussionPost.like_count }).from(discussionPost).where(eq(discussionPost.id, targetId)).limit(1).execute())[0];
+      await db.update(discussionPost).set({ like_count: (post?.like_count || 0) + 1 }).where(eq(discussionPost.id, targetId)).execute();
     } else {
-      const reply = db.select({ like_count: discussionReply.like_count }).from(discussionReply).where(eq(discussionReply.id, targetId)).limit(1).all()[0];
-      db.update(discussionReply).set({ like_count: (reply?.like_count || 0) + 1 }).where(eq(discussionReply.id, targetId)).run();
+      const reply = (await db.select({ like_count: discussionReply.like_count }).from(discussionReply).where(eq(discussionReply.id, targetId)).limit(1).execute())[0];
+      await db.update(discussionReply).set({ like_count: (reply?.like_count || 0) + 1 }).where(eq(discussionReply.id, targetId)).execute();
     }
     saveDb();
     return NextResponse.json({ success: true, liked: true });

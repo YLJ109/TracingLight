@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') || 'ability'; // ability | ideology
     // 无 course_id 时自动取该学生第一门可访问课程，杜绝硬编码幻数 id
-    const courseId = parseInt(searchParams.get('course_id') || '', 10) || getAccessibleCourseIds(authUser)[0] || 0;
+    const courseId = parseInt(searchParams.get('course_id') || '', 10) || (await getAccessibleCourseIds(authUser))[0] || 0;
     // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
     const studentId = authUser.userId;
     const db = getDb();
@@ -47,12 +47,12 @@ export async function GET(request: NextRequest) {
     const cached = getCached(cacheKey);
     if (cached) return NextResponse.json({ success: true, data: cached, cached: true });
 
-    const courseKps = db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
+    const courseKps = await db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
       .from(knowledgePoint)
       .where(eq(knowledgePoint.course_id, courseId))
-      .all();
-    const allKps = db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
-      .from(knowledgePoint).all();
+      .execute();
+    const allKps = await db.select({ id: knowledgePoint.id, name: knowledgePoint.name })
+      .from(knowledgePoint).execute();
     const kpIdToCourse = new Map(allKps.map((k) => [k.id, k]));
 
     // ── 与知识图谱同一套掌握度口径：knowledgeMasteryLog > grading_task > 模拟 ──
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     const logMasteries: Record<number, number> = {};
     if (studentId && courseKps.length > 0) {
       const courseKpIds = courseKps.map((k) => k.id);
-      const logs = db.select({
+      const logs = await db.select({
         knowledge_point_id: knowledgeMasteryLog.knowledge_point_id,
         mastery_rate: knowledgeMasteryLog.mastery_rate,
         recorded_at: knowledgeMasteryLog.recorded_at,
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
           eq(knowledgeMasteryLog.student_id, studentId),
           inArray(knowledgeMasteryLog.knowledge_point_id, courseKpIds)
         ))
-        .all();
+        .execute();
       if (logs && logs.length > 0) {
         const best: Record<number, { rate: number; date: string }> = {};
         for (const log of logs) {
@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
         }
         for (const [k, v] of Object.entries(best)) logMasteries[Number(k)] = v.rate;
       }
-      const grades = db.select({
+      const grades = await db.select({
         knowledge_point_id: gradingTask.knowledge_point_id,
         total_score: sql<number>`COALESCE(${gradingTask.teacher_override_score}, ${gradingTask.total_score})`,
       })
@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
           eq(gradingTask.student_id, studentId),
           inArray(gradingTask.knowledge_point_id, courseKpIds)
         ))
-        .all();
+        .execute();
       if (grades && grades.length > 0) {
         const sums: Record<number, { total: number; count: number }> = {};
         for (const g of grades) {
@@ -119,9 +119,9 @@ export async function GET(request: NextRequest) {
         : { label: '待加强', color: '#ef4444' };
 
     if (type === 'ability') {
-      const abilities = db.select().from(abilityPoint)
-        .where(eq(abilityPoint.course_id, courseId)).all();
-      const links = db.select().from(abilityKnowledge).all();
+      const abilities = await db.select().from(abilityPoint)
+        .where(eq(abilityPoint.course_id, courseId)).execute();
+      const links = await db.select().from(abilityKnowledge).execute();
       const data = abilities.map((a) => {
         const linked = links
           .filter((l) => l.ability_id === a.id)
@@ -158,9 +158,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, data });
     }
 
-    const ideologies = db.select().from(ideologyPoint)
-      .where(eq(ideologyPoint.course_id, courseId)).all();
-    const links = db.select().from(ideologyKnowledge).all();
+    const ideologies = await db.select().from(ideologyPoint)
+      .where(eq(ideologyPoint.course_id, courseId)).execute();
+    const links = await db.select().from(ideologyKnowledge).execute();
     const data = ideologies.map((i) => ({
       id: i.id,
       name: i.name,

@@ -28,38 +28,38 @@ export async function GET(request: NextRequest) {
 
     // ===== 顶层指标 =====
     const totalStudents = Number(
-      db.select({ c: sql<number>`count(*)` }).from(user)
-        .where(and(eq(user.role, 'student'), eq(user.is_active, true))).all()[0]?.c ?? 0
+      (await db.select({ c: sql<number>`count(*)` }).from(user)
+        .where(and(eq(user.role, 'student'), eq(user.is_active, true))).execute())[0]?.c ?? 0
     );
     const totalTeachers = Number(
-      db.select({ c: sql<number>`count(*)` }).from(user)
-        .where(and(eq(user.role, 'teacher'), eq(user.is_active, true))).all()[0]?.c ?? 0
+      (await db.select({ c: sql<number>`count(*)` }).from(user)
+        .where(and(eq(user.role, 'teacher'), eq(user.is_active, true))).execute())[0]?.c ?? 0
     );
-    const totalCourses = Number(db.select({ c: sql<number>`count(*)` }).from(course).all()[0]?.c ?? 0);
-    const totalAssignments = Number(db.select({ c: sql<number>`count(*)` }).from(assignment).all()[0]?.c ?? 0);
+    const totalCourses = Number((await db.select({ c: sql<number>`count(*)` }).from(course).execute())[0]?.c ?? 0);
+    const totalAssignments = Number((await db.select({ c: sql<number>`count(*)` }).from(assignment).execute())[0]?.c ?? 0);
 
     // 今日活跃：今日签到 + 今日{ learner behavior }人数
-    const todaySigners = db.select({ userId: signInRecord.user_id })
-      .from(signInRecord).where(eq(signInRecord.sign_date, today)).all();
+    const todaySigners = await db.select({ userId: signInRecord.user_id })
+      .from(signInRecord).where(eq(signInRecord.sign_date, today)).execute();
     const todayActiveSet = new Set<number>(todaySigners.map((s) => s.userId));
-    const behaviorToday = db.select({ student_id: learningBehaviorLog.student_id })
-      .from(learningBehaviorLog).where(sql`date(${learningBehaviorLog.last_watched_at}) = date(${today})`).all();
+    const behaviorToday = await db.select({ student_id: learningBehaviorLog.student_id })
+      .from(learningBehaviorLog).where(sql`date(${learningBehaviorLog.last_watched_at}) = date(${today})`).execute();
     behaviorToday.forEach((b) => todayActiveSet.add(b.student_id));
     const todayActive = todayActiveSet.size;
 
     // ===== 作业完成率 =====
-    const submittedStudents = db.select({ sid: sql<string>`count(distinct ${gradingTask.student_id})` })
-      .from(gradingTask).where(eq(gradingTask.status, 'completed')).all()[0];
+    const submittedStudents = (await db.select({ sid: sql<string>`count(distinct ${gradingTask.student_id})` })
+      .from(gradingTask).where(eq(gradingTask.status, 'completed')).execute())[0];
     const completedTasks = Number(
-      db.select({ c: sql<number>`count(*)` }).from(gradingTask)
-        .where(eq(gradingTask.status, 'completed')).all()[0]?.c ?? 0
+      (await db.select({ c: sql<number>`count(*)` }).from(gradingTask)
+        .where(eq(gradingTask.status, 'completed')).execute())[0]?.c ?? 0
     );
 
     // ===== 掌握度（全部记录平均 + 分布） =====
-    const masteryRows = db.select({
+    const masteryRows = await db.select({
       kp_id: knowledgeMasteryLog.knowledge_point_id,
       rate: knowledgeMasteryLog.mastery_rate,
-    }).from(knowledgeMasteryLog).all();
+    }).from(knowledgeMasteryLog).execute();
     const totalMastery = masteryRows.length;
     const avgMastery = totalMastery > 0
       ? Math.round(masteryRows.reduce((s, m) => s + (m.rate || 0), 0) / totalMastery) : 0;
@@ -68,10 +68,10 @@ export async function GET(request: NextRequest) {
     const weak = masteryRows.filter((m) => (m.rate || 0) < 60).length;
 
     // ===== 课程掌握度对比 =====
-    const courses = db.select({ id: course.id, name: course.name, short_name: course.short_name })
-      .from(course).all();
-    const kpByCourse = db.select({ id: knowledgePoint.id, course_id: knowledgePoint.course_id })
-      .from(knowledgePoint).all();
+    const courses = await db.select({ id: course.id, name: course.name, short_name: course.short_name })
+      .from(course).execute();
+    const kpByCourse = await db.select({ id: knowledgePoint.id, course_id: knowledgePoint.course_id })
+      .from(knowledgePoint).execute();
     const courseKpMap = new Map<number, number[]>();
     kpByCourse.forEach((k) => {
       const arr = courseKpMap.get(k.course_id) || [];
@@ -102,10 +102,10 @@ export async function GET(request: NextRequest) {
       d.setDate(d.getDate() - i);
       days.push(fmtDate(d));
     }
-    const signRows = db.select({
+    const signRows = await db.select({
       sign_date: signInRecord.sign_date,
       userId: signInRecord.user_id,
-    }).from(signInRecord).where(gte(signInRecord.sign_date, days[0])).all();
+    }).from(signInRecord).where(gte(signInRecord.sign_date, days[0])).execute();
     const signByDay = new Map<string, Set<number>>();
     signRows.forEach((s) => {
       if (!signByDay.has(s.sign_date)) signByDay.set(s.sign_date, new Set());
@@ -118,18 +118,18 @@ export async function GET(request: NextRequest) {
 
     // ===== 实时监控：待批改任务数 + 薄弱知识点 TOP5 =====
     const pendingGradingTasks = Number(
-      db.select({ c: sql<number>`count(*)` }).from(gradingTask)
-        .where(eq(gradingTask.status, 'pending')).all()[0]?.c ?? 0
+      (await db.select({ c: sql<number>`count(*)` }).from(gradingTask)
+        .where(eq(gradingTask.status, 'pending')).execute())[0]?.c ?? 0
     );
     const pendingExamTasks = Number(
-      db.select({ c: sql<number>`count(*)` }).from(examGrading)
-        .where(eq(examGrading.status, 'pending')).all()[0]?.c ?? 0
+      (await db.select({ c: sql<number>`count(*)` }).from(examGrading)
+        .where(eq(examGrading.status, 'pending')).execute())[0]?.c ?? 0
     );
     const pendingTasks = pendingGradingTasks + pendingExamTasks;
 
-    const kpNameRows = db.select({
+    const kpNameRows = await db.select({
       id: knowledgePoint.id, name: knowledgePoint.name, course_id: knowledgePoint.course_id,
-    }).from(knowledgePoint).all();
+    }).from(knowledgePoint).execute();
     const kpNameMap = new Map(kpNameRows.map((k) => [k.id, k.name]));
     const kpCourseMap = new Map(kpNameRows.map((k) => [k.id, k.course_id]));
     const courseNameMap = new Map(courses.map((c) => [c.id, c.short_name || c.name]));

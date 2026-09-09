@@ -17,47 +17,47 @@ import type { ServerUser } from '@/lib/server-auth';
  * 决策 D1：以 DB 行 `user.class_id` 为准；会话 `authUser.classId` 仅作缓存，
  * 不一致时以 DB 值覆盖，杜绝「学情 vs 作业课程数不一致」。
  */
-export function resolveStudentClassId(authUser: ServerUser): number | null {
+export async function resolveStudentClassId(authUser: ServerUser): Promise<number | null> {
   const db = getDb();
-  const row = db.select({ class_id: user.class_id }).from(user).where(eq(user.id, authUser.userId)).limit(1).all()[0];
+  const row = (await db.select({ class_id: user.class_id }).from(user).where(eq(user.id, authUser.userId)).limit(1).execute())[0];
   const dbClassId = row?.class_id ?? null;
   return dbClassId ?? authUser.classId ?? null;
 }
 
 /** 判断当前用户是否有权访问指定课程 */
-export function canAccessCourse(authUser: ServerUser, courseId: number): boolean {
+export async function canAccessCourse(authUser: ServerUser, courseId: number): Promise<boolean> {
   const db = getDb();
   if (authUser.role === 'admin') return true;
-  const row = db.select().from(course).where(eq(course.id, courseId)).limit(1).all()[0];
+  const row = (await db.select().from(course).where(eq(course.id, courseId)).limit(1).execute())[0];
   if (!row) return false;
   if (authUser.role === 'teacher') return row.teacher_id === authUser.userId;
   if (authUser.role === 'student') {
-    return row.class_id != null && row.class_id === resolveStudentClassId(authUser);
+    return row.class_id != null && row.class_id === (await resolveStudentClassId(authUser));
   }
   return false;
 }
 
 /** 返回当前用户有权访问的全部课程 ID（讨论区列表用） */
-export function getAccessibleCourseIds(authUser: ServerUser): number[] {
+export async function getAccessibleCourseIds(authUser: ServerUser): Promise<number[]> {
   const db = getDb();
   if (authUser.role === 'admin') {
-    return db.select({ id: course.id }).from(course).all().map((r) => r.id);
+    return (await db.select({ id: course.id }).from(course).execute()).map((r) => r.id);
   }
   if (authUser.role === 'teacher') {
-    return db.select({ id: course.id }).from(course).where(eq(course.teacher_id, authUser.userId)).all().map((r) => r.id);
+    return (await db.select({ id: course.id }).from(course).where(eq(course.teacher_id, authUser.userId)).execute()).map((r) => r.id);
   }
   if (authUser.role === 'student') {
-    const classId = resolveStudentClassId(authUser);
+    const classId = await resolveStudentClassId(authUser);
     if (classId == null) return [];
-    return db.select({ id: course.id }).from(course).where(eq(course.class_id, classId)).all().map((r) => r.id);
+    return (await db.select({ id: course.id }).from(course).where(eq(course.class_id, classId)).execute()).map((r) => r.id);
   }
   return [];
 }
 
 /** 解析用户可见名（学生/教师统一显示真实姓名，附带角色标识） */
-export function resolveAuthorInfo(authorId: number): { name: string; role: string } {
+export async function resolveAuthorInfo(authorId: number): Promise<{ name: string; role: string }> {
   const db = getDb();
-  const row = db.select({ real_name: user.real_name, role: user.role }).from(user).where(eq(user.id, authorId)).limit(1).all()[0];
+  const row = (await db.select({ real_name: user.real_name, role: user.role }).from(user).where(eq(user.id, authorId)).limit(1).execute())[0];
   return {
     name: row?.real_name || '未知用户',
     role: row?.role || 'student',

@@ -24,8 +24,8 @@ export async function GET(
     const db = getDb();
     const assignmentId = parseInt(id);
 
-    const asgnRows = db.select().from(assignment)
-      .where(eq(assignment.id, assignmentId)).limit(1).all();
+    const asgnRows = await db.select().from(assignment)
+      .where(eq(assignment.id, assignmentId)).limit(1).execute();
     const asgn = asgnRows[0] || null;
     if (!asgn) return NextResponse.json({ error: '作业不存在' }, { status: 404 });
     if (asgn.teacher_id !== authUser.userId) {
@@ -35,15 +35,16 @@ export async function GET(
     const config = parsePeerConfig(asgn.peer_review);
 
     // 提交人数统计
-    const courseRow = db.select({ class_id: course.class_id })
-      .from(course).where(eq(course.id, asgn.course_id)).get();
-    const submittedRows = db.select({ student_id: answer.student_id })
+    const courseRows = await db.select({ class_id: course.class_id })
+      .from(course).where(eq(course.id, asgn.course_id)).execute();
+    const courseRow = courseRows[0] || null;
+    const submittedRows = await db.select({ student_id: answer.student_id })
       .from(answer)
       .where(and(eq(answer.assignment_id, assignmentId), eq(answer.is_submitted, true)))
-      .groupBy(answer.student_id).all();
+      .groupBy(answer.student_id).execute();
     const totalRows = courseRow?.class_id
-      ? db.select({ id: user.id }).from(user)
-          .where(and(eq(user.role, 'student'), eq(user.class_id, courseRow.class_id))).all()
+      ? await db.select({ id: user.id }).from(user)
+          .where(and(eq(user.role, 'student'), eq(user.class_id, courseRow.class_id))).execute()
       : [];
     const submissions = {
       submitted: submittedRows.length,
@@ -51,22 +52,22 @@ export async function GET(
     };
 
     // 全部互评记录
-    const reviewRows = db.select().from(peerReview)
+    const reviewRows = await db.select().from(peerReview)
       .where(eq(peerReview.assignment_id, assignmentId))
-      .orderBy(desc(peerReview.created_at)).all();
+      .orderBy(desc(peerReview.created_at)).execute();
 
     const userIds = [...new Set(reviewRows.flatMap((r) => [r.reviewer_id, r.reviewee_id]))];
     const userMap = new Map<number, string>();
     if (userIds.length > 0) {
-      const us = db.select({ id: user.id, real_name: user.real_name })
-        .from(user).where(inArray(user.id, userIds)).all();
+      const us = await db.select({ id: user.id, real_name: user.real_name })
+        .from(user).where(inArray(user.id, userIds)).execute();
       us.forEach((u) => userMap.set(u.id, u.real_name));
     }
     const qIds = [...new Set(reviewRows.map((r) => r.question_id))];
     const qMap = new Map<number, { content: string; question_type: string }>();
     if (qIds.length > 0) {
-      const qs = db.select({ id: question.id, content: question.content, question_type: question.question_type })
-        .from(question).where(inArray(question.id, qIds)).all();
+      const qs = await db.select({ id: question.id, content: question.content, question_type: question.question_type })
+        .from(question).where(inArray(question.id, qIds)).execute();
       qs.forEach((q) => qMap.set(q.id, { content: q.content, question_type: q.question_type }));
     }
 
@@ -127,8 +128,8 @@ export async function PUT(
     const db = getDb();
     const assignmentId = parseInt(id);
 
-    const asgnRows = db.select().from(assignment)
-      .where(eq(assignment.id, assignmentId)).limit(1).all();
+    const asgnRows = await db.select().from(assignment)
+      .where(eq(assignment.id, assignmentId)).limit(1).execute();
     const asgn = asgnRows[0] || null;
     if (!asgn) return NextResponse.json({ error: '作业不存在' }, { status: 404 });
     if (asgn.teacher_id !== authUser.userId) {
@@ -145,7 +146,7 @@ export async function PUT(
       reveal_name: typeof body.reveal_name === 'boolean' ? body.reveal_name : prev.reveal_name,
     };
 
-    db.update(assignment).set({ peer_review: next }).where(eq(assignment.id, assignmentId)).run();
+    await db.update(assignment).set({ peer_review: next }).where(eq(assignment.id, assignmentId)).execute();
     saveDb();
 
     return NextResponse.json({ success: true, data: { config: next } });

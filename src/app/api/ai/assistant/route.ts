@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAIClient , aiErrorResponse } from "@/lib/ai/client";
 import { requireAuth } from "@/lib/server-auth";
-import { getDb, saveDb, ensureColumn } from "@/storage/database/db";
+import { getDb, saveDb } from "@/storage/database/db";
 import { qaSession, qaMessage, user, course, knowledgePoint, errorBook } from "@/storage/database/shared/schema";
 import { inArray } from "drizzle-orm";
 import { eq, and, desc } from "drizzle-orm";
@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     const db = getDb();
 
     // 会话列表（不含消息——消息按需经 /session?id= 加载，避免列表接口随历史膨胀）
-    const sessions = db.select({
+    const sessions = await db.select({
       id: qaSession.id,
       title: qaSession.title,
       created_at: qaSession.created_at,
@@ -45,12 +45,12 @@ export async function GET(request: NextRequest) {
     }).from(qaSession)
       .where(eq(qaSession.user_id, authUser.userId))
       .orderBy(desc(qaSession.updated_at), desc(qaSession.id))
-      .all();
+      .execute();
 
     const counts = new Map<number, number>();
     for (const s of sessions) {
-      const c = db.select({ id: qaMessage.id }).from(qaMessage)
-        .where(eq(qaMessage.session_id, s.id)).all();
+      const c = await db.select({ id: qaMessage.id }).from(qaMessage)
+        .where(eq(qaMessage.session_id, s.id)).execute();
       counts.set(s.id, c.length);
     }
 
@@ -70,8 +70,6 @@ export async function POST(request: NextRequest) {
     const authUser = await requireAuth(request);
     if (!authUser) return NextResponse.json({ error: "未登录" }, { status: 401 });
     const db = getDb();
-    // 运行兜底：确保已有进程的 qa_message 具备 attachment 列（缺列则补）
-    ensureColumn('qa_message', 'attachment', 'ALTER TABLE qa_message ADD COLUMN attachment TEXT');
     const body = await request.json();
     const message: string = (body.message || '').trim();
     const rawAttachments = Array.isArray(body.attachments) ? body.attachments as IncomingAttachment[] : [];
@@ -86,50 +84,50 @@ export async function POST(request: NextRequest) {
     // 获取或创建会话
     let sessionId = body.session_id ? Number(body.session_id) : null;
     if (sessionId) {
-      const s = db.select().from(qaSession)
+      const s = (await db.select().from(qaSession)
         .where(and(eq(qaSession.id, sessionId), eq(qaSession.user_id, authUser.userId)))
-        .get();
+        .execute())[0];
       if (!s) sessionId = null;
     }
     if (!sessionId) {
-      const created = db.insert(qaSession).values({
+      const created = await db.insert(qaSession).values({
         user_id: authUser.userId,
         title: message.slice(0, 20) || titleFallback,
-      }).returning().all();
+      }).returning().execute();
       sessionId = created[0]?.id;
     }
 
     // 取历史消息（上下文记忆：最近 30 条）
-    const historyMsgs = db.select().from(qaMessage)
+    const historyMsgs = await db.select().from(qaMessage)
       .where(eq(qaMessage.session_id, sessionId!))
       .orderBy(qaMessage.id)
       .limit(30)
-      .all();
+      .execute();
 
     // 保存用户消息
-    db.insert(qaMessage).values({ session_id: sessionId!, role: 'user', content: message, attachment: build.persist ? JSON.stringify(build.persist) : null }).run();
+    await db.insert(qaMessage).values({ session_id: sessionId!, role: 'user', content: message, attachment: build.persist ? JSON.stringify(build.persist) : null }).execute();
 
     // ── 轻量 RAG：检索该学生的课程知识点、错题薄弱点，注入上下文让答疑贴合学情 ──
     let contextBlock = '';
     try {
-      const stu = db.select({ class_id: user.class_id }).from(user)
-        .where(eq(user.id, authUser.userId)).limit(1).all()[0];
+      const stu = (await db.select({ class_id: user.class_id }).from(user)
+        .where(eq(user.id, authUser.userId)).limit(1).execute())[0];
       if (stu?.class_id) {
-        const courses = db.select({ id: course.id, name: course.name }).from(course)
-          .where(eq(course.class_id, stu.class_id)).all();
+        const courses = await db.select({ id: course.id, name: course.name }).from(course)
+          .where(eq(course.class_id, stu.class_id)).execute();
         const courseIds = courses.map((c) => c.id);
         if (courseIds.length > 0) {
-          const kps = db.select({ id: knowledgePoint.id, name: knowledgePoint.name, course_id: knowledgePoint.course_id })
+          const kps = await db.select({ id: knowledgePoint.id, name: knowledgePoint.name, course_id: knowledgePoint.course_id })
             .from(knowledgePoint)
             .where(inArray(knowledgePoint.course_id, courseIds))
-            .all();
-          const errs = db.select({
+            .execute();
+          const errs = await db.select({
             kp_id: errorBook.knowledge_point_id,
             error_type: errorBook.error_type,
             review_status: errorBook.review_status,
           }).from(errorBook)
             .where(and(eq(errorBook.student_id, authUser.userId)))
-            .all();
+            .execute();
           // 关键词过滤：优先保留与提问相关的知识点（含在 message 中或错题关联）
           const msgLower = message.toLowerCase();
           const relevantKps = kps.filter((k) => k.name && (msgLower.includes(k.name.slice(0, 2)) || k.name.length <= 4));
@@ -147,7 +145,7 @@ export async function POST(request: NextRequest) {
       console.error('Assistant context error:', ctxErr);
     }
 
-    const client = createAIClient();
+    const client = await createAIClient();
     const messages = [
       { role: "system" as const, content: SYSTEM_PROMPT + contextBlock },
       ...historyMsgs
@@ -159,9 +157,9 @@ export async function POST(request: NextRequest) {
     const result = await client.invoke(messages, { model: build.hasImage ? VISION_MODEL : undefined, temperature: 0.5, max_tokens: 1024 });
 
     // 保存 AI 回复
-    db.insert(qaMessage).values({ session_id: sessionId!, role: 'assistant', content: result.content }).run();
-    db.update(qaSession).set({ updated_at: new Date().toISOString() })
-      .where(eq(qaSession.id, sessionId!)).run();
+    await db.insert(qaMessage).values({ session_id: sessionId!, role: 'assistant', content: result.content }).execute();
+    await db.update(qaSession).set({ updated_at: new Date().toISOString() })
+      .where(eq(qaSession.id, sessionId!)).execute();
     saveDb();
 
     return NextResponse.json({ success: true, data: { reply: result.content, session_id: sessionId } });

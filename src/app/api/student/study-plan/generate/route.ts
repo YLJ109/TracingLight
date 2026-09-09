@@ -59,23 +59,24 @@ export async function POST(request: NextRequest) {
     const db = getDb();
     // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
     const sid = authUser.userId;
-    const cid = course_id ? parseInt(course_id) : 1;
+    // 考试按学生所属班级过滤（绕过前端可选传入的 course_id，杜绝硬编码 1 —— PG 种子课程 id 从 31 起）
+    const cid = authUser.classId ?? 0;
 
     // 1. 获取学生课表
-    const schedules = db.select()
+    const schedules = await db.select()
       .from(studentSchedule)
       .where(eq(studentSchedule.student_id, sid))
-      .all();
+      .execute();
 
     // 2. 获取薄弱知识点
-    const masteryLogs = db.select({
+    const masteryLogs = await db.select({
       knowledge_point_id: knowledgeMasteryLog.knowledge_point_id,
       mastery_rate: knowledgeMasteryLog.mastery_rate,
     })
       .from(knowledgeMasteryLog)
       .where(eq(knowledgeMasteryLog.student_id, sid))
       .orderBy(desc(knowledgeMasteryLog.recorded_at))
-      .all();
+      .execute();
 
     const weakKps: string[] = [];
     if (masteryLogs.length > 0) {
@@ -84,11 +85,11 @@ export async function POST(request: NextRequest) {
         if (!seen.has(m.knowledge_point_id) && isWeakMastery(m.mastery_rate)) {
           seen.add(m.knowledge_point_id);
           // Look up knowledge point name
-          const kpRow = db.select({ name: knowledgePoint.name })
+          const kpRow = await db.select({ name: knowledgePoint.name })
             .from(knowledgePoint)
             .where(eq(knowledgePoint.id, m.knowledge_point_id))
             .limit(1)
-            .all();
+            .execute();
           weakKps.push(kpRow[0]?.name || `知识点${m.knowledge_point_id}`);
         }
       }
@@ -96,21 +97,21 @@ export async function POST(request: NextRequest) {
 
     // 3. 获取考试安排
     const today = new Date().toISOString().split("T")[0];
-    const exams = db.select()
+    const exams = await db.select()
       .from(examSchedule)
       .where(and(
         eq(examSchedule.class_id, cid),
         gte(examSchedule.exam_date, today)
       ))
       .orderBy(asc(examSchedule.exam_date))
-      .all();
+      .execute();
 
     // 4. 获取学生信息
-    const studentRows = db.select({ real_name: user.real_name })
+    const studentRows = await db.select({ real_name: user.real_name })
       .from(user)
       .where(eq(user.id, sid))
       .limit(1)
-      .all();
+      .execute();
     const student = studentRows[0] || null;
 
     // 5. 调用AI生成学习计划
@@ -148,7 +149,7 @@ ${JSON.stringify(examInfo, null, 2)}
 
 请严格按照JSON格式输出学习计划。`;
 
-    const client = createAIClient();
+    const client = await createAIClient();
     const plan = await invokeStructured<StudyPlanResult>(client, PLAN_SYSTEM_PROMPT, userPrompt, 0.5);
 
     // 修正日期：AI 返回的日期不可靠，强制映射为「明天开始的连续 N 天」
@@ -175,8 +176,8 @@ ${JSON.stringify(examInfo, null, 2)}
         is_ai_generated: true,
       }));
 
-      db.transaction(() => {
-        db.insert(studyPlan).values(planItems).run();
+      await db.transaction(async (tx) => {
+        await tx.insert(studyPlan).values(planItems).execute();
       });
       saveDb();
     }

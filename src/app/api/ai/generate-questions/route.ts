@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     const db = getDb();
 
     // 1. 获取知识点信息
-    const kpRows = db.select().from(knowledgePoint).where(eq(knowledgePoint.id, knowledge_point_id)).limit(1).all();
+    const kpRows = await db.select().from(knowledgePoint).where(eq(knowledgePoint.id, knowledge_point_id)).limit(1).execute();
     const kp = kpRows[0] || null;
 
     if (!kp) {
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 单独查询关联的课程
-    const courseRows = db.select().from(course).where(eq(course.id, kp.course_id)).limit(1).all();
+    const courseRows = await db.select().from(course).where(eq(course.id, kp.course_id)).limit(1).execute();
     const courseData = courseRows[0] || null;
 
     // 跨租户隔离：出题课程必须为本人授课课程，防越权向他人课程/知识点出题
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
 
     // 2. 调用 AI 出题
     const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
-    const client = createAIClient(customHeaders);
+    const client = await createAIClient(customHeaders);
 
     const typeMap: Record<string, string> = {
       single_choice: "单选题",
@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
     const persist = body?.persist !== false;
     if (persist) {
       try {
-        inserted = db.insert(question).values(questionsToInsert).returning().all();
+        inserted = await db.insert(question).values(questionsToInsert).returning().execute();
       } catch (insErr) {
         console.error("Insert questions error:", insErr);
       }

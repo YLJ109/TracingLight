@@ -16,11 +16,11 @@ export async function GET(request: NextRequest) {
     const kpId = sp.get('knowledge_point_id') ? Number(sp.get('knowledge_point_id')) : null;
 
     // 仅返回学生自己班级课程的教材，杜绝跨课程可见
-    const accessibleIds = getAccessibleCourseIds(authUser);
+    const accessibleIds = await getAccessibleCourseIds(authUser);
     const inScope = accessibleIds.length ? accessibleIds : [-1];
     const materials = courseId
-      ? db.select().from(learningMaterial).where(and(inArray(learningMaterial.course_id, inScope), eq(learningMaterial.course_id, courseId))).all()
-      : db.select().from(learningMaterial).where(inArray(learningMaterial.course_id, inScope)).all();
+      ? await db.select().from(learningMaterial).where(and(inArray(learningMaterial.course_id, inScope), eq(learningMaterial.course_id, courseId))).execute()
+      : await db.select().from(learningMaterial).where(inArray(learningMaterial.course_id, inScope)).execute();
 
     // 按知识点过滤：knowledge_point_ids（JSON）
     const materialsFiltered = kpId
@@ -35,12 +35,12 @@ export async function GET(request: NextRequest) {
       : materials;
 
     // 当前学生的行为日志
-    const logs = db.select().from(learningBehaviorLog)
-      .where(eq(learningBehaviorLog.student_id, authUser.userId)).all();
+    const logs = await db.select().from(learningBehaviorLog)
+      .where(eq(learningBehaviorLog.student_id, authUser.userId)).execute();
     const logMap = new Map(logs.map((l) => [l.material_id, l]));
 
     // 课程名映射
-    const courses = db.select({ id: course.id, name: course.name }).from(course).all();
+    const courses = await db.select({ id: course.id, name: course.name }).from(course).execute();
     const courseMap = new Map(courses.map((c) => [c.id, c.name]));
 
     const data = materialsFiltered.map((m) => {

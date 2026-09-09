@@ -38,23 +38,23 @@ export async function GET(request: NextRequest) {
   if (courseId) filters.push(eq(exam.course_id, parseInt(courseId)));
   if (status) filters.push(eq(exam.status, status));
 
-  const exams = db.select().from(exam).where(and(...filters)).orderBy(desc(exam.created_at)).all();
+  const exams = await db.select().from(exam).where(and(...filters)).orderBy(desc(exam.created_at)).execute();
   const examIds = exams.map((e) => e.id);
 
   // 报名/参考统计
   const enrolls = examIds.length
-    ? db.select({ exam_id: examEnroll.exam_id, student_id: examEnroll.student_id, enroll_status: examEnroll.enroll_status }).from(examEnroll).where(inArray(examEnroll.exam_id, examIds)).all()
+    ? await db.select({ exam_id: examEnroll.exam_id, student_id: examEnroll.student_id, enroll_status: examEnroll.enroll_status }).from(examEnroll).where(inArray(examEnroll.exam_id, examIds)).execute()
     : [];
   const attempts = examIds.length
-    ? db.select({ exam_id: examAttempt.exam_id, student_id: examAttempt.student_id, status: examAttempt.status }).from(examAttempt).where(inArray(examAttempt.exam_id, examIds)).all()
+    ? await db.select({ exam_id: examAttempt.exam_id, student_id: examAttempt.student_id, status: examAttempt.status }).from(examAttempt).where(inArray(examAttempt.exam_id, examIds)).execute()
     : [];
   const gradings = examIds.length
-    ? db.select({ exam_id: examGrading.exam_id, student_id: examGrading.student_id }).from(examGrading).where(inArray(examGrading.exam_id, examIds)).all()
+    ? await db.select({ exam_id: examGrading.exam_id, student_id: examGrading.student_id }).from(examGrading).where(inArray(examGrading.exam_id, examIds)).execute()
     : [];
 
   const courseNames = new Map<number, string>();
   if (examIds.length) {
-    const cs = db.select({ id: course.id, name: course.name }).from(course).all();
+    const cs = await db.select({ id: course.id, name: course.name }).from(course).execute();
     cs.forEach((c) => courseNames.set(c.id, c.name));
   }
 
@@ -88,15 +88,15 @@ export async function POST(request: NextRequest) {
   if (!body.question_ids?.length) return NextResponse.json({ error: '请选择考试题目' }, { status: 400 });
 
   // 跨租户隔离：仅允许本人课程的题目
-  const teacherCourseIds = new Set(getTeacherCourseIds(r.user.userId));
+  const teacherCourseIds = new Set(await getTeacherCourseIds(r.user.userId));
   if (!teacherCourseIds.has(body.course_id)) return NextResponse.json({ error: '无权使用该课程' }, { status: 403 });
 
   // 加载题目（校验归属 + 取类型/难度做满分归一化）
-  const qs = db.select({ id: question.id, question_type: question.question_type, difficulty: question.difficulty })
-    .from(question).where(inArray(question.id, body.question_ids)).all();
+  const qs = await db.select({ id: question.id, question_type: question.question_type, difficulty: question.difficulty })
+    .from(question).where(inArray(question.id, body.question_ids)).execute();
   if (qs.length !== body.question_ids.length) return NextResponse.json({ error: '部分题目不存在或已失效' }, { status: 400 });
   for (const q of qs) {
-    const qrow = db.select({ course_id: question.course_id }).from(question).where(eq(question.id, q.id)).get();
+    const qrow = (await db.select({ course_id: question.course_id }).from(question).where(eq(question.id, q.id)).execute())[0];
     if (qrow && !teacherCourseIds.has(qrow.course_id)) return NextResponse.json({ error: '含无权使用题目' }, { status: 403 });
   }
 
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
   const now = new Date().toISOString();
   const proctorConfig = body.proctor_config ?? defaultProctorConfig();
 
-  const inserted = db.insert(exam).values({
+  const inserted = (await db.insert(exam).values({
     teacher_id: r.user.userId,
     course_id: body.course_id,
     title: body.title.trim(),
@@ -129,19 +129,19 @@ export async function POST(request: NextRequest) {
     status: 'draft',
     created_at: now,
     updated_at: now,
-  }).returning({ id: exam.id }).get();
+  }).returning({ id: exam.id }).execute())[0];
   if (!inserted) return NextResponse.json({ error: '创建失败' }, { status: 500 });
 
   // 名单展开：所选班级的学生生成考试报名
   const classIds = body.class_ids ?? [];
   if (classIds.length) {
-    const teacherClassIds = new Set(getTeacherClassIds(r.user.userId));
+    const teacherClassIds = new Set(await getTeacherClassIds(r.user.userId));
     const validClasses = classIds.filter((c) => teacherClassIds.has(c));
     if (validClasses.length) {
-      const students = db.select({ id: user.id, class_id: user.class_id })
-        .from(user).where(and(eq(user.role, 'student'), eq(user.is_active, true), inArray(user.class_id, validClasses))).all();
+      const students = await db.select({ id: user.id, class_id: user.class_id })
+        .from(user).where(and(eq(user.role, 'student'), eq(user.is_active, true), inArray(user.class_id, validClasses))).execute();
       for (const s of students) {
-        db.insert(examEnroll).values({ exam_id: inserted.id, student_id: s.id, class_id: s.class_id }).run();
+        await db.insert(examEnroll).values({ exam_id: inserted.id, student_id: s.id, class_id: s.class_id }).execute();
       }
     }
   }

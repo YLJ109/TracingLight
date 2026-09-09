@@ -15,42 +15,42 @@ export async function GET(request: NextRequest) {
     const sid = user.userId;
 
     // 仅返回本班课程的作业；隐藏纯「草稿」；已截止/已批改公布(closed)须对学生可见
-    const accessibleIds = getAccessibleCourseIds(user);
-    const assignments = db.select()
+    const accessibleIds = await getAccessibleCourseIds(user);
+    const assignments = await db.select()
       .from(assignment)
       .where(and(
         inArray(assignment.course_id, accessibleIds.length ? accessibleIds : [-1]),
         ne(assignment.status, 'draft'),
       ))
       .orderBy(desc(assignment.created_at))
-      .all();
+      .execute();
 
     // Batch-get courses
     const courseIds = [...new Set(assignments.map((a) => a.course_id))];
     let courseMap = new Map<number, typeof course.$inferSelect>();
     if (courseIds.length > 0) {
-      const courses = db.select().from(course).where(inArray(course.id, courseIds)).all();
+      const courses = await db.select().from(course).where(inArray(course.id, courseIds)).execute();
       courseMap = new Map(courses.map((c) => [c.id, c]));
     }
 
     // For each assignment, get student answers and grading results
-    const enrichedData = assignments.map((asgn) => {
+    const enrichedData = await Promise.all(assignments.map(async (asgn) => {
       const questionCount = (asgn.question_ids as number[] || []).length;
 
       // Student submission status（含退回标记）
-      const studentAnswers = db.select({ is_submitted: answer.is_submitted, returned: answer.returned })
+      const studentAnswers = await db.select({ is_submitted: answer.is_submitted, returned: answer.returned })
         .from(answer)
         .where(and(
           eq(answer.assignment_id, asgn.id),
           eq(answer.student_id, sid)
         ))
-        .all();
+        .execute();
 
       const isSubmitted = studentAnswers.length > 0 && studentAnswers.every((a) => a.is_submitted);
       const isReturned = studentAnswers.length > 0 && studentAnswers.some((a) => a.returned);
 
       // Grading results
-      const gradingTasks = db.select({
+      const gradingTasks = await db.select({
         total_score: gradingTask.total_score,
         teacher_override_score: gradingTask.teacher_override_score,
         status: gradingTask.status,
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
           eq(gradingTask.assignment_id, asgn.id),
           eq(gradingTask.student_id, sid)
         ))
-        .all();
+        .execute();
 
       const allGraded = gradingTasks.length > 0 &&
         gradingTasks.every((g) => g.status === 'completed');
@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
         is_submitted: isSubmitted,
         returned: isReturned,
       };
-    });
+    }));
 
     return NextResponse.json({ success: true, data: enrichedData });
   } catch (e) {

@@ -61,11 +61,11 @@ export async function getServerUser(request: Request): Promise<ServerUser | null
 
     // 验证用户仍在数据库中且处于激活状态
     const db = getDb();
-    const rows = db.select()
+    const rows = await db.select()
       .from(userTable)
       .where(eq(userTable.id, payload.userId))
       .limit(1)
-      .all();
+      .execute();
 
     if (rows.length === 0) return null;
 

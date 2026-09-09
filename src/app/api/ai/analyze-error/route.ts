@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     const db = getDb();
 
     // 1. 获取错题信息
-    const ebRows = db.select().from(errorBook).where(eq(errorBook.id, error_book_id)).limit(1).all();
+    const ebRows = await db.select().from(errorBook).where(eq(errorBook.id, error_book_id)).limit(1).execute();
     const ebData = ebRows[0] || null;
 
     if (!ebData) {
@@ -50,10 +50,10 @@ export async function POST(request: NextRequest) {
 
     // 单独查询关联的 question 和 knowledge_point（练习类错题无题库 question_id，跳过 AI 解析）
     const questionData = ebData.question_id
-      ? (db.select().from(question).where(eq(question.id, ebData.question_id)).limit(1).all()[0] || null)
+      ? ((await db.select().from(question).where(eq(question.id, ebData.question_id)).limit(1).execute())[0] || null)
       : null;
 
-    const kpRows = db.select().from(knowledgePoint).where(eq(knowledgePoint.id, ebData.knowledge_point_id)).limit(1).all();
+    const kpRows = await db.select().from(knowledgePoint).where(eq(knowledgePoint.id, ebData.knowledge_point_id)).limit(1).execute();
     const kp = kpRows[0] || null;
 
     if (!questionData || !kp) {
@@ -61,12 +61,12 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. 获取学生层级
-    const studentRows = db.select({ student_level: user.student_level }).from(user).where(eq(user.id, ebData.student_id)).limit(1).all();
+    const studentRows = await db.select({ student_level: user.student_level }).from(user).where(eq(user.id, ebData.student_id)).limit(1).execute();
     const studentData = studentRows[0] || null;
 
     // 3. 调用 AI 错题解析
     const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
-    const client = createAIClient(customHeaders);
+    const client = await createAIClient(customHeaders);
 
     const prompt = buildErrorAnalysisPrompt({
       questionContent: questionData.content,
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     );
 
     // 4. 更新错题本
-    db.update(errorBook)
+    await db.update(errorBook)
       .set({
         error_analysis: result.error_analysis,
         knowledge_explanation: result.knowledge_explanation,
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
         review_status: "reviewing",
       })
       .where(eq(errorBook.id, error_book_id))
-      .run();
+      .execute();
 
     // 5. 将生成的练习题存入题库
     if (result.similar_questions?.length > 0) {
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
         default_score: 10,
         source: "ai_error_analysis" as const,
       }));
-      db.insert(question).values(newQuestions).run();
+      await db.insert(question).values(newQuestions).execute();
     }
 
     saveDb();

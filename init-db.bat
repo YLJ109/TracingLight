@@ -42,25 +42,23 @@ if not exist "node_modules" (
     exit /b 1
 )
 
-REM ---------- 2. Clean database ----------
-echo  [1/2] Deleting old database...
-if exist "data\tracinglight.db" (
-    del /q "data\tracinglight.db"
-    echo    Old database deleted
-)
-if exist "data\_test.db" del /q "data\_test.db"
+REM ---------- 2. Reset PostgreSQL data ----------
+echo  [1/2] Truncating all PostgreSQL tables...
+del /q "data\.pg_seeded" 2>nul
 if not exist "data" mkdir data
 echo.
 
 REM ---------- 3. Seed ----------
-echo  [2/2] Seeding database, please wait...
+echo  [2/2] Pushing schema + seeding database, please wait...
+call npx drizzle-kit push >nul 2>&1
 call npx tsx src/storage/database/seed.ts
 if errorlevel 1 (
     echo.
-    echo  [ERROR] Seed failed.
+    echo  [ERROR] Seed failed. Check PostgreSQL is reachable.
     pause
     exit /b 1
 )
+echo. > "data\.pg_seeded"
 
 echo.
 echo  ============================================

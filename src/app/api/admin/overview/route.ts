@@ -10,16 +10,16 @@ export async function GET(request: NextRequest) {
     if (!authUser) return NextResponse.json({ error: '未登录或无权访问' }, { status: 401 });
     const db = getDb();
 
-    const users = db.select().from(user).all();
-    const courses = db.select().from(course).all();
-    const schools = db.select().from(school).all();
-    const colleges = db.select().from(college).all();
-    const majors = db.select().from(major).all();
-    const classes = db.select().from(classInfo).all();
-    const questions = db.select({ id: question.id, question_type: question.question_type })
-      .from(question).where(eq(question.is_active, true)).all();
-    const assignments = db.select().from(assignment).all();
-    const exams = db.select().from(examSchedule).all();
+    const users = await db.select().from(user).execute();
+    const courses = await db.select().from(course).execute();
+    const schools = await db.select().from(school).execute();
+    const colleges = await db.select().from(college).execute();
+    const majors = await db.select().from(major).execute();
+    const classes = await db.select().from(classInfo).execute();
+    const questions = await db.select({ id: question.id, question_type: question.question_type })
+      .from(question).where(eq(question.is_active, true)).execute();
+    const assignments = await db.select().from(assignment).execute();
+    const exams = await db.select().from(examSchedule).execute();
 
     const roleCount = users.reduce((acc: Record<string, number>, u) => {
       acc[u.role] = (acc[u.role] || 0) + 1;

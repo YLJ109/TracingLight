@@ -10,7 +10,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!r.user) return NextResponse.json({ error: null }, { status: r.status });
   const db = getDb();
   const id = parseInt((await params).id);
-  const row = db.select().from(exam).where(eq(exam.id, id)).get();
+  const row = (await db.select().from(exam).where(eq(exam.id, id)).execute())[0];
   if (!row) return NextResponse.json({ error: '考试不存在' }, { status: 404 });
   if (row.teacher_id !== r.user.userId) return NextResponse.json({ error: '无权限' }, { status: 403 });
 
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   let status = row.status;
   if (action === 'publish') {
     if (row.status !== 'draft') return NextResponse.json({ error: '仅草稿可发布' }, { status: 400 });
-    const enr = db.select({ id: examEnroll.id }).from(examEnroll).where(eq(examEnroll.exam_id, id)).all();
+    const enr = await db.select({ id: examEnroll.id }).from(examEnroll).where(eq(examEnroll.exam_id, id)).execute();
     if (enr.length === 0) return NextResponse.json({ error: '请先选择考试班级（至少1人）' }, { status: 400 });
     status = nowMs >= new Date(row.start_at).getTime() ? 'active' : 'scheduled';
   } else if (action === 'activate') {
@@ -32,16 +32,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     status = 'draft';
   }
 
-  db.update(exam).set({ status, updated_at: new Date().toISOString() }).where(eq(exam.id, id)).run();
+  await db.update(exam).set({ status, updated_at: new Date().toISOString() }).where(eq(exam.id, id)).execute();
 
   // 发布 → 站内通知开考提醒
   if (action === 'publish') {
-    const enrolls = db.select({ student_id: examEnroll.student_id }).from(examEnroll).where(eq(examEnroll.exam_id, id)).all();
+    const enrolls = await db.select({ student_id: examEnroll.student_id }).from(examEnroll).where(eq(examEnroll.exam_id, id)).execute();
     for (const enr of enrolls) {
-      db.insert(notification).values({
+      await db.insert(notification).values({
         user_id: enr.student_id, type: 'exam', title: `${row.title} 已发布`, content: `《${row.title}》开考时间：${row.start_at}，请准时参考。`,
         link: '/student/exams',
-      }).run();
+      }).execute();
     }
   }
 

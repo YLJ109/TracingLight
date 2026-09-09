@@ -26,11 +26,11 @@ export async function PATCH(req: NextRequest) {
     }
 
     // 逐一校验归属：所有目标题目必须属于本人课程
-    const myCourseIds = getTeacherCourseIds(authUser.userId);
-    const rows = db.select({ id: question.id, course_id: question.course_id })
+    const myCourseIds = await getTeacherCourseIds(authUser.userId);
+    const rows = await db.select({ id: question.id, course_id: question.course_id })
       .from(question)
       .where(inArray(question.id, ids))
-      .all();
+      .execute();
     const validIds = rows.filter((r) => myCourseIds.includes(r.course_id)).map((r) => r.id);
     if (validIds.length !== ids.length) {
       return NextResponse.json({ success: false, error: '存在无权操作的题目' }, { status: 403 });
@@ -47,10 +47,10 @@ export async function PATCH(req: NextRequest) {
       setObj.locked = body.locked === true;
     }
 
-    db.update(question)
+    await db.update(question)
       .set(setObj)
       .where(inArray(question.id, validIds))
-      .run();
+      .execute();
     saveDb();
 
     return NextResponse.json({ success: true, updated: validIds.length });

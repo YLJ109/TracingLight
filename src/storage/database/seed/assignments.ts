@@ -16,7 +16,7 @@ import { genSubjectiveAttempt, type QMeta } from './attempt';
 const today = () => new Date();
 const dPlus = (days: number) => datePlus(today(), days);
 
-export function seedAssignments(db: Drizzle, ctx: SeedCtx) {
+export async function seedAssignments(db: Drizzle, ctx: SeedCtx) {
   const { rng, nextId } = ctx;
   const titleOf = (i: number) => `${i <= 2 ? '单元' : '综合'}作业${i}`;
 
@@ -43,7 +43,7 @@ export function seedAssignments(db: Drizzle, ctx: SeedCtx) {
       else if (answeredPending) { start = dPlus(-(5 + a)); end = dPlus(-(3 + a)); }
       else { start = dPlus(a); end = dPlus(a + 5); }
 
-      db.insert(schema.assignment).values({
+      await db.insert(schema.assignment).values({
         id: aId, course_id: cid, teacher_id: teacherId, title: titleOf(a),
         description: `请按时完成本份${titleOf(a)}，客观题直接作答，主观题需完整作答并注明解题过程。`,
         question_ids: select, total_score: total,
@@ -55,7 +55,7 @@ export function seedAssignments(db: Drizzle, ctx: SeedCtx) {
         question_scores: qscores,
         monitor_config: { copyDisable: true, fullscreen: false, minDurationSec: 300 },
         peer_review: { enabled: false },
-      } as any).run();
+      } as any).execute();
 
       const answers: any[] = [];
       const gradings: any[] = [];
@@ -118,9 +118,9 @@ export function seedAssignments(db: Drizzle, ctx: SeedCtx) {
           }
         }
       }
-      if (answers.length) insertChunked(db, schema.answer, answers);
-      if (gradings.length) insertChunked(db, schema.gradingTask, gradings);
-      if (errors.length) insertChunked(db, schema.errorBook, errors);
+      if (answers.length) await insertChunked(db, schema.answer, answers);
+      if (gradings.length) await insertChunked(db, schema.gradingTask, gradings);
+      if (errors.length) await insertChunked(db, schema.errorBook, errors);
     }
   }
 }
@@ -147,7 +147,7 @@ function masteryUpdate(ctx: SeedCtx, sid: number, kpid: number, score: number, f
   else ctx.masteryAcc.set(key, { sum: rate, cnt: 1, kpid });
 }
 
-export function flushMastery(db: Drizzle, ctx: SeedCtx) {
+export async function flushMastery(db: Drizzle, ctx: SeedCtx) {
   const { nextId } = ctx;
   const rows: any[] = [];
   for (const [key, v] of ctx.masteryAcc) {
@@ -160,14 +160,14 @@ export function flushMastery(db: Drizzle, ctx: SeedCtx) {
       recorded_at: datePlus(today(), 0, 0, 0).slice(0, 10),
     });
   }
-  insertChunked(db, schema.knowledgeMasteryLog, rows);
+  await insertChunked(db, schema.knowledgeMasteryLog, rows);
 }
 
 /** SQLite 默认变量上限约 999：将批量插入按 400 行 / 批切分，避免 too many SQL variables */
-export function insertChunked(db: Drizzle, table: any, rows: any[], batchSize = 400) {
+export async function insertChunked(db: Drizzle, table: any, rows: any[], batchSize = 400) {
   if (rows.length === 0) return;
   for (let i = 0; i < rows.length; i += batchSize) {
-    db.insert(table).values(rows.slice(i, i + batchSize)).run();
+    await db.insert(table).values(rows.slice(i, i + batchSize)).execute();
   }
 }
 

@@ -11,11 +11,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!r.user) return NextResponse.json({ error: null }, { status: r.status });
   const db = getDb();
   const id = parseInt((await params).id);
-  const row = db.select().from(exam).where(eq(exam.id, id)).get();
+  const row = (await db.select().from(exam).where(eq(exam.id, id)).execute())[0];
   if (!row) return NextResponse.json({ error: '考试不存在' }, { status: 404 });
   if (row.teacher_id !== r.user.userId) return NextResponse.json({ error: '无权限' }, { status: 403 });
 
-  db.update(exam).set({ grades_published: true, updated_at: new Date().toISOString() }).where(eq(exam.id, id)).run();
+  await db.update(exam).set({ grades_published: true, updated_at: new Date().toISOString() }).where(eq(exam.id, id)).execute();
 
   // 考试公布成绩埋点（静默，失败不影响响应）
   writeAudit({

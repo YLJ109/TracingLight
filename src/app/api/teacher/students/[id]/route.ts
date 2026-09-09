@@ -31,7 +31,7 @@ export async function GET(
     const db = getDb();
 
     // 1. 学生基本信息（显式列选择，不加载 password）
-    const studentRows = db.select({
+    const studentRows = await db.select({
       id: user.id,
       username: user.username,
       real_name: user.real_name,
@@ -40,7 +40,7 @@ export async function GET(
       avatar_url: user.avatar_url,
     }).from(user)
       .where(and(eq(user.id, studentId), eq(user.role, 'student')))
-      .limit(1).all();
+      .limit(1).execute();
     const student = studentRows[0] || null;
 
     if (!student) {
@@ -48,43 +48,43 @@ export async function GET(
     }
 
     // 跨租户隔离：校验该学生属于当前教师授课班级，杜绝越权查看他人学生
-    if (!isStudentInTeacherScope(authUser.userId, studentId)) {
+    if (!await isStudentInTeacherScope(authUser.userId, studentId)) {
       return NextResponse.json({ error: '学生不在您的授课范围内' }, { status: 403 });
     }
 
     // Get class name for student
     let className = '';
     if (student.class_id) {
-      const classRow = db.select({ name: classInfo.name })
+      const classRow = (await db.select({ name: classInfo.name })
         .from(classInfo)
         .where(eq(classInfo.id, student.class_id))
-        .limit(1).all()[0];
+        .limit(1).execute())[0];
       className = classRow?.name || '';
     }
 
     // 2. 所有批改记录
-    const gradings = db.select().from(gradingTask)
+    const gradings = await db.select().from(gradingTask)
       .where(eq(gradingTask.student_id, studentId))
       .orderBy(desc(gradingTask.created_at))
-      .all();
+      .execute();
 
     // 3. 错题本
-    const errors = db.select().from(errorBook)
+    const errors = await db.select().from(errorBook)
       .where(eq(errorBook.student_id, studentId))
       .orderBy(desc(errorBook.created_at))
-      .all();
+      .execute();
 
     // 4. 知识掌握度
-    const mastery = db.select().from(knowledgeMasteryLog)
+    const mastery = await db.select().from(knowledgeMasteryLog)
       .where(eq(knowledgeMasteryLog.student_id, studentId))
       .orderBy(desc(knowledgeMasteryLog.recorded_at))
-      .all();
+      .execute();
 
     // 5. 作答记录
-    const answers = db.select().from(answer)
+    const answers = await db.select().from(answer)
       .where(eq(answer.student_id, studentId))
       .orderBy(desc(answer.created_at))
-      .all();
+      .execute();
 
     // ===== 批量获取关联数据 =====
 
@@ -100,9 +100,9 @@ export async function GET(
     // Fetch assignments in batch
     const assignmentsMap = new Map<number, typeof assignment.$inferSelect>();
     if (assignmentIds.length > 0) {
-      const asgns = db.select().from(assignment)
+      const asgns = await db.select().from(assignment)
         .where(inArray(assignment.id, assignmentIds))
-        .all();
+        .execute();
       asgns.forEach((a) => assignmentsMap.set(a.id, a));
     }
 
@@ -112,10 +112,10 @@ export async function GET(
     )];
     const coursesMap = new Map<number, string>();
     if (courseIds.length > 0) {
-      const crs = db.select({ id: course.id, name: course.name })
+      const crs = await db.select({ id: course.id, name: course.name })
         .from(course)
         .where(inArray(course.id, courseIds))
-        .all();
+        .execute();
       crs.forEach((c) => coursesMap.set(c.id, c.name));
     }
 
@@ -129,9 +129,9 @@ export async function GET(
     ];
     const questionsMap = new Map<number, typeof question.$inferSelect>();
     if (questionIds.length > 0) {
-      const qs = db.select().from(question)
+      const qs = await db.select().from(question)
         .where(inArray(question.id, questionIds))
-        .all();
+        .execute();
       qs.forEach((q) => questionsMap.set(q.id, q));
     }
 
@@ -146,9 +146,9 @@ export async function GET(
     ];
     const kpMap = new Map<number, typeof knowledgePoint.$inferSelect>();
     if (kpIds.length > 0) {
-      const kps = db.select().from(knowledgePoint)
+      const kps = await db.select().from(knowledgePoint)
         .where(inArray(knowledgePoint.id, kpIds))
-        .all();
+        .execute();
       kps.forEach((kp) => kpMap.set(kp.id, kp));
     }
 
@@ -297,23 +297,35 @@ export async function GET(
     const completedGradings = gradings.filter((g) => g.status === 'completed');
     const dimensionTotals: Record<string, { total: number; count: number }> = {};
 
+    // dimension_scores 各维度已按 0-100 归一化存储（客观题与 AI 一致），
+    // 这里直接累加平均即可，切勿再乘 100/full_score，否则会把分整体放大到顶格。
     completedGradings.forEach((g) => {
       const ds = g.dimension_scores as Record<string, number> | null;
-      const scale = 100 / (g.full_score || 10);
-      if (ds) {
-        Object.entries(ds).forEach(([key, value]) => {
-          if (!dimensionTotals[key]) dimensionTotals[key] = { total: 0, count: 0 };
-          dimensionTotals[key].total += value * scale;
-          dimensionTotals[key].count += 1;
-        });
-      }
+      if (!ds || typeof ds !== 'object') return;
+      Object.entries(ds).forEach(([key, value]) => {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return;
+        if (!dimensionTotals[key]) dimensionTotals[key] = { total: 0, count: 0 };
+        dimensionTotals[key].total += num;
+        dimensionTotals[key].count += 1;
+      });
     });
 
+    // 某维无明细数据（如客观题无「拓展能力」，或历史批改未落维度分）时，
+    // 用学生整体均分作为可靠回退，避免雷达塌缩成中心一个点（误显示全部为 0）。
+    const dimAvg = (key: string): number | null => {
+      const d = dimensionTotals[key];
+      return d && d.count > 0
+        ? Math.max(0, Math.min(100, Math.round(d.total / d.count)))
+        : null;
+    };
+    const radarFallback = Number.isFinite(overallAvg) ? Math.round(overallAvg) : 0;
+
     const radarData = {
-      knowledgeAccuracy: Object.keys(dimensionTotals).length > 0 ? Math.round((dimensionTotals['knowledge_accuracy']?.total || 0) / Math.max(dimensionTotals['knowledge_accuracy']?.count || 1, 1)) : 0,
-      logicCompleteness: Object.keys(dimensionTotals).length > 0 ? Math.round((dimensionTotals['logic_completeness']?.total || 0) / Math.max(dimensionTotals['logic_completeness']?.count || 1, 1)) : 0,
-      expressionClarity: Object.keys(dimensionTotals).length > 0 ? Math.round((dimensionTotals['expression_clarity']?.total || 0) / Math.max(dimensionTotals['expression_clarity']?.count || 1, 1)) : 0,
-      expansionAbility: Object.keys(dimensionTotals).length > 0 ? Math.round((dimensionTotals['expansion']?.total || 0) / Math.max(dimensionTotals['expansion']?.count || 1, 1)) : 0,
+      knowledgeAccuracy: dimAvg('knowledge_accuracy') ?? radarFallback,
+      logicCompleteness: dimAvg('logic_completeness') ?? radarFallback,
+      expressionClarity: dimAvg('expression_clarity') ?? radarFallback,
+      expansionAbility: dimAvg('expansion') ?? radarFallback,
       completionRate: assignmentStats.length > 0 ? Math.round((assignmentStats.filter((a: any) => a.status === 'completed').length / assignmentStats.length) * 100) : 0,
       errorResolutionRate: errors.length > 0 ? Math.round((errors.filter((e) => e.review_status === 'mastered').length / errors.length) * 100) : 0,
     };

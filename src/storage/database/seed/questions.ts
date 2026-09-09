@@ -406,7 +406,7 @@ const BANKS: Array<{ match: string; bank: Bank }> = [
   { match: '操作系统', bank: OS_BANK },
 ];
 
-export function seedQuestions(db: Drizzle, ctx: SeedCtx) {
+export async function seedQuestions(db: Drizzle, ctx: SeedCtx) {
   const { nextId } = ctx;
 
   for (const cid of ctx.courseIds) {
@@ -426,7 +426,7 @@ export function seedQuestions(db: Drizzle, ctx: SeedCtx) {
       for (const q of pair) {
         const qid = nextId();
         const scores = typeScore(q.type);
-        db.insert(schema.question).values({
+        await db.insert(schema.question).values({
           id: qid, course_id: cid, knowledge_point_id: kp.kpId,
           question_type: q.type, difficulty: q.diff,
           content: q.content, options: q.options ?? null,
@@ -437,7 +437,7 @@ export function seedQuestions(db: Drizzle, ctx: SeedCtx) {
           max_chars: q.maxChars ?? (q.type === 'short_answer' ? 800 : q.type === 'programming' ? 4000 : null),
           min_select: q.type === 'multi_choice' ? 2 : null,
           max_select: q.type === 'multi_choice' ? 4 : null,
-        } as any).run();
+        } as any).execute();
         courseQ.push(qid);
         ctx.questionKp.set(qid, kp.kpId);
         ctx.questionMeta.set(qid, { type: q.type, difficulty: q.diff, kpId: kp.kpId, score: scores, answer: q.answer, analysis: q.analysis });

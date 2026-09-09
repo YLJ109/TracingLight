@@ -20,7 +20,8 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: (process.env.PORT || '5000').toString(),
-        DATABASE_PATH: './data/tracinglight.db',
+        DATABASE_DRIVER: 'postgres',
+        DATABASE_URL: (process.env.DATABASE_URL || 'postgres://tracinglight:tracinglight_pw@localhost:5433/tracinglight').toString(),
       },
       out_file: './logs/out.log',
       error_file: './logs/err.log',

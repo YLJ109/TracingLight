@@ -41,7 +41,7 @@ export async function gradeExamQuestion(
 ): Promise<{ graded: boolean; total_score: number | null; is_correct: boolean | null; error_type: string | null }> {
   if (isExamAnswerEmpty(studentAnswer)) {
     // 空答：0 分记录（不进错题本）
-    insertGradingRow(examId, studentId, question, studentAnswer, fullScore, 0, false, null, 'empty');
+    await insertGradingRow(examId, studentId, question, studentAnswer, fullScore, 0, false, null, 'empty');
     return { graded: true, total_score: 0, is_correct: false, error_type: 'empty' };
   }
 
@@ -50,9 +50,9 @@ export async function gradeExamQuestion(
     const result = await computeGrade(question as any, studentAnswer, (await kpName(question.knowledge_point_id)), undefined, null, fullScore);
     const correct = result.total_score >= fullScore;
     const errorType = correct ? null : (result.error_type || 'wrong');
-    insertGradingRow(examId, studentId, question, studentAnswer, fullScore, result.total_score, correct, result.unmastered_knowledge_ids, errorType);
+    await insertGradingRow(examId, studentId, question, studentAnswer, fullScore, result.total_score, correct, result.unmastered_knowledge_ids, errorType);
     // 掌握度回写（与作业口径一致：指数平滑，对题不增错，错题计错）
-    syncMasteryFromGrading({ studentId, knowledgePointId: question.knowledge_point_id, score: result.total_score, fullScore, isCorrect: correct });
+    await syncMasteryFromGrading({ studentId, knowledgePointId: question.knowledge_point_id, score: result.total_score, fullScore, isCorrect: correct });
     if (!correct && result.total_score < fullScore && !isEmptyAnswer(studentAnswer)) {
       await recordErrorBook(examId, studentId, question, studentAnswer, result.error_type || 'wrong');
     }
@@ -61,20 +61,20 @@ export async function gradeExamQuestion(
 
   // 主观题：提交时**不自动 AI 批改**，仅落一条 pending 待批记录（总分暂空）。
   // AI 批改由教师在批改台「AI 批量批改」触发，生成建议分后教师复核采纳，最后手动「公布成绩」学生才可见。
-  insertGradingRow(examId, studentId, question, studentAnswer, fullScore, null, null, [question.knowledge_point_id], null, 'pending');
+  await insertGradingRow(examId, studentId, question, studentAnswer, fullScore, null, null, [question.knowledge_point_id], null, 'pending');
   return { graded: false, total_score: null, is_correct: null, error_type: null };
 }
 
-function insertGradingRow(
+async function insertGradingRow(
   examId: number, studentId: number, question: GradableQuestion, studentAnswer: string,
   fullScore: number, score: number | null, correct: boolean | null,
   unmasteredIds: number[] | null, errorType: string | null, status: string = 'completed',
   aiInfo?: { dimension_scores?: unknown; annotations?: unknown; overall_comment?: string | null; ai_generated_probability?: number | null }
 ) {
   const db = getDb();
-  const ansRow = db.select().from(examAnswer)
+  const ansRow = (await db.select().from(examAnswer)
     .where(and(eq(examAnswer.exam_id, examId), eq(examAnswer.student_id, studentId), eq(examAnswer.question_id, question.id)))
-    .get();
+    .execute())[0];
   if (!ansRow) return;
   const vals = {
     exam_id: examId, student_id: studentId, question_id: question.id,
@@ -87,16 +87,16 @@ function insertGradingRow(
     ai_generated_probability: aiInfo?.ai_generated_probability ?? null,
   };
   // answer_id 非唯一索引，不能依赖 ON CONFLICT，改为显式存在检查（避免 SQLite 报错）
-  const existing = db.select().from(examGrading).where(eq(examGrading.answer_id, ansRow.id)).get();
+  const existing = (await db.select().from(examGrading).where(eq(examGrading.answer_id, ansRow.id)).execute())[0];
   if (existing) {
-    db.update(examGrading).set(vals).where(eq(examGrading.id, existing.id)).run();
+    await db.update(examGrading).set(vals).where(eq(examGrading.id, existing.id)).execute();
   } else {
-    db.insert(examGrading).values({ answer_id: ansRow.id, ...vals }).run();
+    await db.insert(examGrading).values({ answer_id: ansRow.id, ...vals }).execute();
   }
 }
 
 async function kpName(kpId: number): Promise<string> {
-  const s = getDb().select({ name: knowledgePoint.name }).from(knowledgePoint).where(eq(knowledgePoint.id, kpId)).get();
+  const s = (await getDb().select({ name: knowledgePoint.name }).from(knowledgePoint).where(eq(knowledgePoint.id, kpId)).limit(1).execute())[0];
   return s?.name || '';
 }
 
@@ -112,15 +112,15 @@ function isEmptyAnswer(a: string): boolean {
  */
 export async function recordErrorBook(examId: number, studentId: number, question: GradableQuestion, studentAnswer: string, errorType: string, attribution?: { error_analysis?: string | null; knowledge_explanation?: string | null; learning_suggestion?: string | null }) {
   const db = getDb();
-  const exist = db.select().from(errorBook)
-    .where(and(eq(errorBook.student_id, studentId), eq(errorBook.question_id, question.id))).get();
+  const exist = (await db.select().from(errorBook)
+    .where(and(eq(errorBook.student_id, studentId), eq(errorBook.question_id, question.id))).limit(1).execute())[0];
   if (exist) {
-    db.update(errorBook).set({
+    await db.update(errorBook).set({
       student_answer: studentAnswer, error_type: errorType, exam_id: examId,
       error_analysis: attribution?.error_analysis || exist.error_analysis,
       knowledge_explanation: attribution?.knowledge_explanation || exist.knowledge_explanation,
       learning_suggestion: attribution?.learning_suggestion || exist.learning_suggestion,
-    }).where(eq(errorBook.id, exist.id)).run();
+    }).where(eq(errorBook.id, exist.id)).execute();
     return;
   }
 
@@ -136,7 +136,7 @@ export async function recordErrorBook(examId: number, studentId: number, questio
         knowledgePointName: await kpName(question.knowledge_point_id),
       }).catch(() => null);
 
-  db.insert(errorBook).values({
+  await db.insert(errorBook).values({
     student_id: studentId, question_id: question.id, knowledge_point_id: question.knowledge_point_id,
     content: question.content, student_answer: studentAnswer, correct_answer: question.answer,
     error_type: errorType, review_status: 'pending', exam_id: examId,
@@ -145,5 +145,5 @@ export async function recordErrorBook(examId: number, studentId: number, questio
     error_analysis: analysis?.error_analysis || null,
     knowledge_explanation: analysis?.knowledge_explanation || null,
     learning_suggestion: analysis?.learning_suggestion || null,
-  }).run();
+  }).execute();
 }

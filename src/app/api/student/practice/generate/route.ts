@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     let kpId = kpIdFromBody;
     if (error_book_id) {
       // 归属校验：只能为自己错题生成练习
-      const err = db.select().from(errorBook).where(eq(errorBook.id, error_book_id)).limit(1).all()[0];
+      const err = (await db.select().from(errorBook).where(eq(errorBook.id, error_book_id)).limit(1).execute())[0];
       if (!err) return NextResponse.json({ error: '错题不存在' }, { status: 404 });
       if (err.student_id !== authUser.userId) {
         return NextResponse.json({ error: '无权操作该错题' }, { status: 403 });
@@ -52,14 +52,14 @@ export async function POST(request: NextRequest) {
 
     // 知识点与课程信息（AI 出题上下文）
     const kp = kpId
-      ? db.select({ id: knowledgePoint.id, name: knowledgePoint.name, description: knowledgePoint.description, course_id: knowledgePoint.course_id })
-          .from(knowledgePoint).where(eq(knowledgePoint.id, kpId)).limit(1).all()[0]
+      ? (await db.select({ id: knowledgePoint.id, name: knowledgePoint.name, description: knowledgePoint.description, course_id: knowledgePoint.course_id })
+          .from(knowledgePoint).where(eq(knowledgePoint.id, kpId)).limit(1).execute())[0]
       : null;
     if (!kp) return NextResponse.json({ error: '缺少知识点信息' }, { status: 400 });
-    const courseData = db.select({ name: course.name }).from(course).where(eq(course.id, kp.course_id)).limit(1).all()[0];
+    const courseData = (await db.select({ name: course.name }).from(course).where(eq(course.id, kp.course_id)).limit(1).execute())[0];
 
     // 练习题型：单选/填空交替（避免主观题，保证即时判分）
-    const client = createAIClient();
+    const client = await createAIClient();
     const prompt = buildQuestionGenPrompt({
       courseName: courseData?.name || '课程',
       knowledgePointName: kp.name,
