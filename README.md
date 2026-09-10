@@ -181,7 +181,7 @@
 
 ## 技术架构
 
-![溯光系统技术架构图](docs/imgs/architecture.jpg)
+![溯光系统技术架构图](docs/imgs/architecture.svg)
 
 ### 技术栈详情
 
@@ -192,7 +192,7 @@
 | **类型系统** | TypeScript | 5 | 严格类型检查 |
 | **UI 组件** | shadcn/ui | latest | Radix UI + Tailwind CSS 4 |
 | **数据可视化** | ECharts / d3.js | 6.x / 7.x | 雷达图、热力图、趋势图、知识图谱 |
-| **数据库** | SQLite (better-sqlite3) | 13.x | 实时落盘、零系统依赖、并发安全 |
+| **数据库** | PostgreSQL | 16+ | 直连本机/容器/云库，Drizzle 迁移，连接池容错 |
 | **ORM** | Drizzle ORM | 0.45 | 类型安全的查询构建器 |
 | **AI 模型** | 智谱 GLM-4-Flash | — | 免费额度, HTTP / SSE 流式 |
 | **认证** | JWT (jsonwebtoken) | 9.x | 自建 Token，改密后失效 |

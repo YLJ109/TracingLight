@@ -1,0 +1,174 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="1140" viewBox="0 0 920 1140" role="img" aria-label="溯光 TracingLight 系统架构图">
+  <defs>
+    <linearGradient id="hd" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1b2a6b"/>
+      <stop offset="0.55" stop-color="#5b5bd6"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="lv1" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#16a34a"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+    <linearGradient id="lv2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="lv3" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#38bdf8"/>
+    </linearGradient>
+    <linearGradient id="lv4" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ea580c"/>
+      <stop offset="1" stop-color="#fbbf24"/>
+    </linearGradient>
+    <linearGradient id="lv5" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0891b2"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="920" height="1140" fill="#0b1020"/>
+  <rect x="-40" y="-40" width="1000" height="1200" fill="none" stroke="#1e2747" stroke-width="2"/>
+
+  <!-- ===== 顶部标题栏 ===== -->
+  <rect x="0" y="0" width="920" height="88" fill="url(#hd)"/>
+  <circle cx="46" cy="44" r="22" fill="#ffffff22" stroke="#fff" stroke-width="2"/>
+  <text x="46" y="50" text-anchor="middle" font-size="22" fill="#fff" font-family="sans-serif" font-weight="bold">溯</text>
+  <text x="82" y="44" font-size="24" fill="#fff" font-family="sans-serif" font-weight="bold">溯光 TracingLight · 系统架构</text>
+  <text x="82" y="66" font-size="13" fill="#e2e8f0" font-family="sans-serif">高校智慧教育 · AI作业批改 · 学情分析平台</text>
+
+  <!-- 技术标签 -->
+  <g font-family="sans-serif" font-size="12" fill="#cbd5e1">
+    <g transform="translate(160,34)"><rect width="118" height="22" rx="11" fill="#00000044" stroke="#ffffff66"/><text x="59" y="15" text-anchor="middle">Next.js 16</text></g>
+    <g transform="translate(288,34)"><rect width="104" height="22" rx="11" fill="#00000044" stroke="#ffffff66"/><text x="52" y="15" text-anchor="middle">React 19</text></g>
+    <g transform="translate(402,34)"><rect width="106" height="22" rx="11" fill="#00000044" stroke="#ffffff66"/><text x="53" y="15" text-anchor="middle">TypeScript</text></g>
+    <g transform="translate(518,34)"><rect width="104" height="22" rx="11" fill="#00000044" stroke="#ffffff66"/><text x="52" y="15" text-anchor="middle">GLM-4</text></g>
+    <g transform="translate(632,34)"><rect width="118" height="22" rx="11" fill="#00000044" stroke="#ffffff66"/><text x="59" y="15" text-anchor="middle">PostgreSQL</text></g>
+    <g transform="translate(760,34)"><rect width="110" height="22" rx="11" fill="#00000044" stroke="#ffffff66"/><text x="55" y="15" text-anchor="middle">Drizzle</text></g>
+  </g>
+
+  <!-- ===== 通用层级 ===== -->
+  <g font-family="sans-serif">
+    <!-- 第1层 前端 -->
+    <rect x="24" y="128" width="872" height="150" rx="16" fill="#111a33" stroke="#23315e"/>
+    <circle cx="64" cy="164" r="20" fill="url(#lv1)"/>
+    <text x="64" y="170" text-anchor="middle" font-size="18" font-weight="bold" fill="#0b1020">1</text>
+    <text x="96" y="166" font-size="20" font-weight="bold" fill="#67e8f9">前端层 · Frontend</text>
+    <text x="96" y="188" font-size="12" fill="#8b9ac0">Next.js App Router · 三端统一 · 响应式 · ECharts 可视化</text>
+    <g fill="#0f1930" stroke="#1f2c55">
+      <rect x="48" y="202" width="200" height="58" rx="8"/>
+      <rect x="259" y="202" width="200" height="58" rx="8"/>
+      <rect x="470" y="202" width="200" height="58" rx="8"/>
+      <rect x="681" y="202" width="200" height="58" rx="8"/>
+    </g>
+    <g fill="#d7e3ff" text-anchor="middle">
+      <text x="148" y="228" font-size="14" font-weight="bold">教师端</text>
+      <text x="148" y="247" font-size="11" fill="#7f90bd">出题 / 批改 / 题库</text>
+      <text x="359" y="228" font-size="14" font-weight="bold">学生端</text>
+      <text x="359" y="247" font-size="11" fill="#7f90bd">学情 / 错题 / 答疑</text>
+      <text x="570" y="228" font-size="14" font-weight="bold">管理端</text>
+      <text x="570" y="247" font-size="11" fill="#7f90bd">机构 / 用户 / 配置</text>
+      <text x="781" y="228" font-size="14" font-weight="bold">数据可视化</text>
+      <text x="781" y="247" font-size="11" fill="#7f90bd">雷达 / 热力 / 图谱</text>
+    </g>
+    <path d="M460 282 l0 22" stroke="#5b6d9e" stroke-width="2"/><polygon points="460,310 454,300 466,300" fill="#5b6d9e"/>
+
+    <!-- 第2层 业务API -->
+    <rect x="24" y="316" width="872" height="150" rx="16" fill="#111a33" stroke="#23315e"/>
+    <circle cx="64" cy="352" r="20" fill="url(#lv2)"/>
+    <text x="64" y="358" text-anchor="middle" font-size="18" font-weight="bold" fill="#0b1020">2</text>
+    <text x="96" y="354" font-size="20" font-weight="bold" fill="#d8b4fe">业务 API 层 · App Router</text>
+    <text x="96" y="376" font-size="12" fill="#8b9ac0">统一鉴权 · REST 路由 · Server Actions</text>
+    <g fill="#0f1930" stroke="#1f2c55">
+      <rect x="48" y="390" width="200" height="58" rx="8"/>
+      <rect x="259" y="390" width="200" height="58" rx="8"/>
+      <rect x="470" y="390" width="200" height="58" rx="8"/>
+      <rect x="681" y="390" width="200" height="58" rx="8"/>
+    </g>
+    <g fill="#d7e3ff" text-anchor="middle">
+      <text x="148" y="416" font-size="14" font-weight="bold">认证 &amp; 账号</text>
+      <text x="148" y="435" font-size="11" fill="#7f90bd">JWT · 密码 · 头像</text>
+      <text x="359" y="416" font-size="14" font-weight="bold">作业 / 题库</text>
+      <text x="359" y="435" font-size="11" fill="#7f90bd">布置 · 批改 · 考试</text>
+      <text x="570" y="416" font-size="14" font-weight="bold">AI 服务</text>
+      <text x="570" y="435" font-size="11" fill="#7f90bd">出题 · 批改 · 推荐</text>
+      <text x="781" y="416" font-size="14" font-weight="bold">学情统计</text>
+      <text x="781" y="435" font-size="11" fill="#7f90bd">掌握度 · 排行</text>
+    </g>
+    <path d="M460 472 l0 22" stroke="#5b6d9e" stroke-width="2"/><polygon points="460,500 454,490 466,490" fill="#5b6d9e"/>
+
+    <!-- 第3层 AI能力服务 -->
+    <rect x="24" y="506" width="872" height="150" rx="16" fill="#111a33" stroke="#23315e"/>
+    <circle cx="64" cy="542" r="20" fill="url(#lv3)"/>
+    <text x="64" y="548" text-anchor="middle" font-size="18" font-weight="bold" fill="#0b1020">3</text>
+    <text x="96" y="544" font-size="20" font-weight="bold" fill="#93c5fd">AI 能力服务层</text>
+    <text x="96" y="566" font-size="12" fill="#8b9ac0">智能驱动核心业务 · AI 限流 · 超时兜底</text>
+    <g fill="#0f1930" stroke="#1f2c55">
+      <rect x="48" y="580" width="200" height="58" rx="8"/>
+      <rect x="259" y="580" width="200" height="58" rx="8"/>
+      <rect x="470" y="580" width="200" height="58" rx="8"/>
+      <rect x="681" y="580" width="200" height="58" rx="8"/>
+    </g>
+    <g fill="#d7e3ff" text-anchor="middle">
+      <text x="148" y="606" font-size="14" font-weight="bold">AI 智能出题</text>
+      <text x="148" y="625" font-size="11" fill="#7f90bd">批量生成 · 难度控制</text>
+      <text x="359" y="606" font-size="14" font-weight="bold">AI 自动批改</text>
+      <text x="359" y="625" font-size="11" fill="#7f90bd">多维评分 · 分数钳制</text>
+      <text x="570" y="606" font-size="14" font-weight="bold">错题分析</text>
+      <text x="570" y="625" font-size="11" fill="#7f90bd">溯源 · 关联知识点</text>
+      <text x="781" y="606" font-size="14" font-weight="bold">学习计划</text>
+      <text x="781" y="625" font-size="11" fill="#7f90bd">个性化周计划</text>
+    </g>
+    <path d="M460 662 l0 22" stroke="#5b6d9e" stroke-width="2"/><polygon points="460,690 454,680 466,680" fill="#5b6d9e"/>
+
+    <!-- 第4层 大模型底座 -->
+    <rect x="24" y="696" width="872" height="150" rx="16" fill="#111a33" stroke="#23315e"/>
+    <circle cx="64" cy="732" r="20" fill="url(#lv4)"/>
+    <text x="64" y="738" text-anchor="middle" font-size="18" font-weight="bold" fill="#0b1020">4</text>
+    <text x="96" y="734" font-size="20" font-weight="bold" fill="#fcd34d">大模型底座 · 智谱 GLM-4-Flash</text>
+    <text x="96" y="756" font-size="12" fill="#8b9ac0">open.bigmodel.cn · 免费额度 · HTTP / SSE 流式</text>
+    <g fill="#0f1930" stroke="#1f2c55">
+      <rect x="48" y="770" width="200" height="58" rx="8"/>
+      <rect x="259" y="770" width="200" height="58" rx="8"/>
+      <rect x="470" y="770" width="200" height="58" rx="8"/>
+      <rect x="681" y="770" width="200" height="58" rx="8"/>
+    </g>
+    <g fill="#d7e3ff" text-anchor="middle">
+      <text x="148" y="796" font-size="14" font-weight="bold">文本生成</text>
+      <text x="148" y="815" font-size="11" fill="#7f90bd">内容 / 评语</text>
+      <text x="359" y="796" font-size="14" font-weight="bold">JSON 结构化输出</text>
+      <text x="359" y="815" font-size="11" fill="#7f90bd">评分结构化</text>
+      <text x="570" y="796" font-size="14" font-weight="bold">流式响应</text>
+      <text x="570" y="815" font-size="11" fill="#7f90bd">打字机效果</text>
+      <text x="781" y="796" font-size="14" font-weight="bold">图片内容理解</text>
+      <text x="781" y="815" font-size="11" fill="#7f90bd">公式 / 手写识别</text>
+    </g>
+    <path d="M460 852 l0 22" stroke="#5b6d9e" stroke-width="2"/><polygon points="460,880 454,870 466,870" fill="#5b6d9e"/>
+
+    <!-- 第5层 数据持久层 -->
+    <rect x="24" y="886" width="872" height="150" rx="16" fill="#0f1831" stroke="#0e7490"/>
+    <circle cx="64" cy="922" r="20" fill="url(#lv5)"/>
+    <text x="64" y="928" text-anchor="middle" font-size="18" font-weight="bold" fill="#0b1020">5</text>
+    <text x="96" y="924" font-size="20" font-weight="bold" fill="#67e8f9">数据持久层 · Database</text>
+    <text x="96" y="946" font-size="12" fill="#8b9ac0">PostgreSQL（本机 / Docker / 云库可选）· 统一 drizzle-kit 迁移</text>
+    <g fill="#0f1930" stroke="#1f2c55">
+      <rect x="48" y="960" width="200" height="58" rx="8"/>
+      <rect x="259" y="960" width="200" height="58" rx="8"/>
+      <rect x="470" y="960" width="200" height="58" rx="8"/>
+      <rect x="681" y="960" width="200" height="58" rx="8"/>
+    </g>
+    <g fill="#d7e3ff" text-anchor="middle">
+      <text x="148" y="986" font-size="14" font-weight="bold">PostgreSQL</text>
+      <text x="148" y="1005" font-size="11" fill="#7f90bd">本机 5432 / Docker</text>
+      <text x="359" y="986" font-size="14" font-weight="bold">Drizzle ORM</text>
+      <text x="359" y="1005" font-size="11" fill="#7f90bd">类型安全查询</text>
+      <text x="570" y="986" font-size="14" font-weight="bold">55+ 业务表</text>
+      <text x="570" y="1005" font-size="11" fill="#7f90bd">教学 / 学情 / 规划</text>
+      <text x="781" y="986" font-size="14" font-weight="bold">连接池管理</text>
+      <text x="781" y="1005" font-size="11" fill="#7f90bd">泄漏释放 · 容错</text>
+    </g>
+
+    <!-- 底部说明 -->
+    <text x="460" y="1090" text-anchor="middle" font-size="12" fill="#64748b">去 SQLite · 全面直连 PostgreSQL，不再依赖 Supabase（保留其连接串作备用）</text>
+  </g>
+</svg>
