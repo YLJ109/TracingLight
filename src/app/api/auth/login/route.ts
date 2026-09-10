@@ -129,8 +129,15 @@ export async function POST(request: NextRequest) {
       sameSite: 'lax',
       path: '/',
       maxAge: 7 * 24 * 60 * 60, // 7 天
-      // L1：生产(https)环境启用 secure，防止 token 明文走 http。注意——若生产实际跑在 http 下应关闭此项
-      secure: process.env.NODE_ENV === 'production',
+      // L1：生产环境默认启用 secure（token 不落 http）。
+      // 但若实际跑在 HTTP 上（如内部服务器/Coze 沙箱无 https），浏览器会拒绝保存 Secure cookie，
+      // 导致登录成功后下一个请求无 token 而 401。故提供 COOKIE_SECURE 覆盖：
+      //   export COOKIE_SECURE=false   # HTTP 部署必须设为 false
+      //   export COOKIE_SECURE=true    # HTTPS 部署强制
+      // 未设置时：生产=secure，开发=httpOnly+非secure。
+      secure: process.env.COOKIE_SECURE != null
+        ? process.env.COOKIE_SECURE === 'true'
+        : process.env.NODE_ENV === 'production',
     });
     // 登录成功埋点（静默，失败不影响响应）
     writeAudit({
