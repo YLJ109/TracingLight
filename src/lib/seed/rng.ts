@@ -143,7 +143,7 @@ export function normalizeScores(qids: number[], scoreOf: (qid: number) => number
   const rawSum = raw.reduce((sum, r) => sum + r.s, 0);
   const scale = 100 / rawSum;
   const scaled = raw.map((r) => ({ qid: r.qid, v: Math.max(1, Math.round(r.s * scale)) }));
-  let assigned = scaled.reduce((s, r) => s + r.v, 0);
+  const assigned = scaled.reduce((s, r) => s + r.v, 0);
   // 四舍五入带来的 ± 差异，按原始分值降序用最大题吸收，保证合计恰为 100
   let diff = 100 - assigned;
   if (diff !== 0) {

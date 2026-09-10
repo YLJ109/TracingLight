@@ -884,7 +884,8 @@ export const examGrading = pgTable("exam_grading", {
   created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
   completed_at: text("completed_at"),
 }, (table) => [
-  index("xg_attempt_q_idx").on(table.answer_id),
+  // answer_id 唯一：一次考试作答只允许一条批改记录，杜绝并发交卷/重批产生的重复行
+  uniqueIndex("xg_answer_id_idx").on(table.answer_id),
   index("xg_exam_id_idx").on(table.exam_id),
   index("xg_student_id_idx").on(table.student_id),
 ]);

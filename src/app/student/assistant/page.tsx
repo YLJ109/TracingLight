@@ -131,29 +131,6 @@ export default function AssistantPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  // 带 ?q= 跳转：自动新建对话并发送该问题
-  useEffect(() => {
-    const q = (searchParams.get('q') || '').trim();
-    if (!q || autoAskRef.current === q) return;
-    autoAskRef.current = q;
-    (async () => {
-      try {
-        const res = await apiFetch('/api/ai/assistant/session', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
-        });
-        const d = await res.json();
-        if (!d.success) return;
-        const nsid: number = d.data.id;
-        setSessions((prev) => [{ id: nsid, title: d.data.title || q.slice(0, 20), updated_at: d.data.updated_at, message_count: 0 }, ...prev]);
-        setActiveId(nsid);
-        setMessages([]);
-        setPending([]);
-        send(q, nsid);
-      } catch { /* 静默 */ }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
-
   // 新消息 / 流式增量回显时自动下滑到底部；仅当用户停留在底部附近时跟随，避免打断上翻阅读
   useEffect(() => {
     const el = scrollRef.current;
@@ -347,6 +324,30 @@ export default function AssistantPage() {
       inputRef.current?.focus();
     }
   };
+
+  // 带 ?q= 跳转：自动新建对话并发送该问题
+  // 注意：必须在 send 声明之后定义，否则 React Compiler / react-hooks 报 "send accessed before declaration" TDZ 错误。
+  useEffect(() => {
+    const q = (searchParams.get('q') || '').trim();
+    if (!q || autoAskRef.current === q) return;
+    autoAskRef.current = q;
+    (async () => {
+      try {
+        const res = await apiFetch('/api/ai/assistant/session', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+        });
+        const d = await res.json();
+        if (!d.success) return;
+        const nsid: number = d.data.id;
+        setSessions((prev) => [{ id: nsid, title: d.data.title || q.slice(0, 20), updated_at: d.data.updated_at, message_count: 0 }, ...prev]);
+        setActiveId(nsid);
+        setMessages([]);
+        setPending([]);
+        send(q, nsid);
+      } catch { /* 静默 */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // ===== 附件上传 =====
   const handleAttach = async (files: FileList | null) => {

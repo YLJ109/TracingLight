@@ -216,6 +216,14 @@ export default function TeacherGradeDetailPage() {
   // 内容区过渡键：每次数据刷新递增，触发内容丝滑淡入（避免整页白屏刷新感）
   const [transitionKey, setTransitionKey] = useState(0);
 
+  // 定位到某学生；依赖 []，仅改 URL 查询串并设置 state。
+  // 必须在下方"默认进入第一个未批完学生"的 effect 之前声明，避免 TDZ/React Compiler 报错
+  const goToStudent = useCallback((sid: number) => {
+    const next = String(sid);
+    window.history.pushState({}, '', `${window.location.pathname}?studentId=${next}`);
+    setStudentId(next);
+  }, []);
+
   useEffect(() => {
     apiFetch(`/api/teacher/assignments/${id}/nav`)
       .then((r) => r.json())
@@ -245,12 +253,6 @@ export default function TeacherGradeDetailPage() {
     if (fromQuery) setStudentId(fromQuery);
   }, [studentId]);
 
-  const goToStudent = useCallback((sid: number) => {
-    const next = String(sid);
-    window.history.pushState({}, '', `${window.location.pathname}?studentId=${next}`);
-    setStudentId(next);
-  }, []);
-
   const goPrevStudent = useCallback(() => {
     if (!nav || !studentId) return;
     const cur = nav.queue.find((s) => s.studentId === Number(studentId));
@@ -266,6 +268,15 @@ export default function TeacherGradeDetailPage() {
     goToStudent(nav.queue[cur.index + 1].studentId);
   }, [nav, studentId, goToStudent]);
 
+  // 切作业：先清空当前学生与内容，新作业 nav 就绪后自动进入第一个待批学生；清空 data 展示骨架。
+  // 依赖 [router]，仅用 setter 与路由跳转，无后续引用依赖，须在下方"键盘快捷键"effect 前声明避免 TDZ。
+  const goToAssignment = useCallback((aid: number) => {
+    setStudentId('');
+    setData(null);
+    setTransitionKey((k) => k + 1);
+    router.push(`/teacher/assignments/${aid}/grade`);
+  }, [router]);
+
   // 键盘快捷键：←/→ 切换学生、Alt+←/→ 切作业
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -277,15 +288,6 @@ export default function TeacherGradeDetailPage() {
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nav]);
-
-  const goToAssignment = useCallback((aid: number) => {
-    // 切作业：先清空当前学生与内容，新作业 nav 就绪后自动进入第一个待批学生；
-    // 清空 data 展示骨架（导航条保持常显），而非整页白屏刷新。
-    setStudentId('');
-    setData(null);
-    setTransitionKey((k) => k + 1);
-    router.push(`/teacher/assignments/${aid}/grade`);
-  }, [router]);
 
   const fetchData = useCallback(async () => {
     if (!studentId) return;

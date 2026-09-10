@@ -63,14 +63,11 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
       navItems={navItems}
       topRight={
         <>
-          <span className="hidden sm:inline px-2.5 py-1 rounded-lg bg-violet-50 text-violet-600 text-xs font-medium">
-            计科2401班
-          </span>
           <EyeCareToggle />
           <NotificationBell role="teacher" />
         </>
       }
-      avatarChar={currentUser.real_name[0]}
+      avatarChar={(currentUser.real_name || '·')[0]}
       avatarUrl={currentUser.avatar_url}
       userName={currentUser.real_name}
       userMeta={<p className="text-xs text-slate-400">教师</p>}

@@ -27,7 +27,7 @@ function codeWrong(rng: Rng, answer: string): string {
   const lines = splitLines(answer);
   const kept = lines.filter((l) => !/(except|finally|raise|assert|except EOFError|else:|swallow|catch|throw)/.test(l));
   // 若剔除后太短，至少保留首尾各若干注释/函数头，避免空壳
-  let out = kept.length >= 2 ? kept : lines.slice(0, Math.max(2, Math.min(lines.length, 4)));
+  const out = kept.length >= 2 ? kept : lines.slice(0, Math.max(2, Math.min(lines.length, 4)));
   // 压缩缩进以模拟学生“省略空行”，并在末尾补一行收紧的 return/print 收尾
   if (out.length) {
     const last = out[out.length - 1];

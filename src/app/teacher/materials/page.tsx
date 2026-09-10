@@ -3,12 +3,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '@/lib/api-fetch';
 import { toast } from 'sonner';
-import { Star, Trash2, BookOpen, Loader2, Save, Library } from 'lucide-react';
+import { Star, Trash2, BookOpen, Loader2, Save, Library, Plus, Upload, X } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,6 +57,18 @@ export default function TeacherMaterialsPage() {
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [loadingMaterials, setLoadingMaterials] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // 新增材料弹窗状态
+  const [addOpen, setAddOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addFile, setAddFile] = useState<File | null>(null);
+  const [addForm, setAddForm] = useState({
+    title: '',
+    type: 'video',
+    chapter: '',
+    is_required: false,
+    url: '',
+  });
 
   // 加载教师授课课程下拉
   useEffect(() => {
@@ -153,6 +170,61 @@ export default function TeacherMaterialsPage() {
     }
   };
 
+  // 新增材料：可选上传文件，再 POST 创建记录
+  const handleAdd = async () => {
+    const title = addForm.title.trim();
+    if (!title) { toast.error('请输入材料标题'); return; }
+
+    let url = addForm.url.trim() || '';
+    setAdding(true);
+    try {
+      if (!url && addFile) {
+        const fd = new FormData();
+        fd.append('files', addFile);
+        const upRes = await apiFetch('/api/teacher/materials/upload', { method: 'POST', body: fd });
+        const upJson = await upRes.json();
+        if (upJson.success && upJson.data?.path) {
+          url = '/' + String(upJson.data.path);
+        } else {
+          toast.error(upJson.error || '文件上传失败');
+          setAdding(false);
+          return;
+        }
+      }
+
+      const res = await apiFetch('/api/teacher/materials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          course_id: Number(courseId),
+          title,
+          type: addForm.type,
+          chapter: addForm.chapter.trim() || undefined,
+          url: url || undefined,
+          is_required: addForm.is_required,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setMaterials((prev) => [...prev, json.data]);
+        setEdits((prev) => ({
+          ...prev,
+          [json.data.id]: { title: json.data.title, is_required: json.data.is_required, dirty: false },
+        }));
+        setAddOpen(false);
+        setAddForm({ title: '', type: 'video', chapter: '', is_required: false, url: '' });
+        setAddFile(null);
+        toast.success('材料添加成功');
+      } else {
+        toast.error(json.error || '添加失败');
+      }
+    } catch {
+      toast.error('网络异常，添加失败');
+    } finally {
+      setAdding(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -164,10 +236,15 @@ export default function TeacherMaterialsPage() {
             对指定课程的教材清单维护标题，并可标记「必学」章节（学生端按必学重点查看）。
           </p>
         </div>
-        <Button onClick={handleSave} disabled={!hasDirty || saving} className="gap-1.5">
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          保存修改
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" onClick={() => setAddOpen(true)} disabled={!courseId} className="gap-1.5">
+            <Plus className="w-4 h-4" /> 添加材料
+          </Button>
+          <Button onClick={handleSave} disabled={!hasDirty || saving} className="gap-1.5">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            保存修改
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -226,7 +303,7 @@ export default function TeacherMaterialsPage() {
                       />
                       {m.chapter && (
                         <Badge variant="outline" className="shrink-0 text-[11px]">
-                          第{m.chapter}章
+                          {m.chapter}
                         </Badge>
                       )}
                       <Badge variant="secondary" className="shrink-0 text-[11px]">
@@ -278,6 +355,102 @@ export default function TeacherMaterialsPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* 新增材料弹窗 */}
+      <Dialog open={addOpen} onOpenChange={(o) => { if (!adding) setAddOpen(o); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="w-5 h-5 text-violet-600" /> 添加学习材料
+            </DialogTitle>
+            <DialogDescription>为当前课程新增一条学习材料记录（可选上传文件）。</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="space-y-1.5">
+              <Label>材料标题</Label>
+              <Input
+                value={addForm.title}
+                onChange={(e) => setAddForm({ ...addForm, title: e.target.value })}
+                placeholder="例如：微视频1"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>材料类型</Label>
+                <Select value={addForm.type} onValueChange={(v) => setAddForm({ ...addForm, type: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="video">视频</SelectItem>
+                    <SelectItem value="document">文档</SelectItem>
+                    <SelectItem value="slide">课件</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>章节</Label>
+                <Input
+                  value={addForm.chapter}
+                  onChange={(e) => setAddForm({ ...addForm, chapter: e.target.value })}
+                  placeholder="例如：第1章 语法基础"
+                />
+              </div>
+            </div>
+            {addForm.type === 'video' && (
+              <div className="space-y-1.5">
+                <Label>视频链接（推荐哔哩哔哩链接）</Label>
+                <Input
+                  value={addForm.url}
+                  onChange={(e) => setAddForm({ ...addForm, url: e.target.value })}
+                  placeholder="例如：https://www.bilibili.com/video/BV1c4411e77t"
+                />
+                <p className="text-xs text-slate-400">粘贴B站视频链接会自动解析为内嵌播放器；留空+上传文件使用站内直链播放</p>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label>{addForm.type === 'video' ? '上传本地视频文件（可选）' : '上传文件（可选）'}</Label>
+              <label className="flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2.5 cursor-pointer hover:bg-slate-50">
+                <Upload className="w-4 h-4 text-slate-400 shrink-0" />
+                <span className="text-sm text-slate-500 truncate">
+                  {addFile ? addFile.name : '点击选择文件（视频/文档/课件，≤20MB）'}
+                </span>
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={(e) => setAddFile(e.target.files?.[0] ?? null)}
+                />
+                {addFile && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); setAddFile(null); }}
+                    className="text-slate-400 hover:text-red-600 ml-auto shrink-0"
+                    aria-label="移除文件"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </label>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
+              <div className="flex items-center gap-1.5">
+                <Star className={`w-4 h-4 ${addForm.is_required ? 'text-amber-400 fill-amber-400' : 'text-slate-300'}`} />
+                <span className="text-sm text-slate-600">{addForm.is_required ? '必学' : '选学'}</span>
+              </div>
+              <Switch
+                checked={addForm.is_required}
+                onCheckedChange={(v) => setAddForm({ ...addForm, is_required: v })}
+                aria-label="必学标记"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddOpen(false)} disabled={adding}>取消</Button>
+            <Button onClick={handleAdd} disabled={adding} className="gap-1.5">
+              {adding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              确认添加
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

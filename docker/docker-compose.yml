@@ -1,0 +1,31 @@
+# TracingLight - PostgreSQL (Docker 方式)
+# 仅托管数据库，前端/后端应用仍在本机 Node 运行（支持热更新）。
+# 用法：
+#   docker compose up -d   启动数据库（容器内 5432 映射到宿主机 5433，与 .env 默认连接串一致）
+#   docker compose down    停止并保留数据卷
+#   docker compose down -v 停止并删除数据（重置）
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tracinglight-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tracinglight
+      POSTGRES_PASSWORD: tracinglight_pw
+      POSTGRES_DB: tracinglight
+    ports:
+      # 宿主机 5433 -> 容器内 5432
+      # 若 5433 被占用，改左侧端口并同步修改 setup-docker.bat 生成的 DATABASE_URL
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tracinglight -d tracinglight"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  pgdata:

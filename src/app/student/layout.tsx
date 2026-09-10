@@ -99,7 +99,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
           <NotificationBell role="student" />
         </>
       }
-      avatarChar={currentUser.real_name[0]}
+      avatarChar={(currentUser.real_name || '·')[0]}
       avatarUrl={currentUser.avatar_url}
       userName={currentUser.real_name}
       userMeta={

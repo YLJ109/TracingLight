@@ -1,10 +1,12 @@
 @echo off
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
-title TracingLight - One-click Setup
+title TracingLight - Setup (Local PostgreSQL)
 
 echo ====================================================
-echo   TracingLight - One-click Setup / Init
+echo   TracingLight - Setup (Local PostgreSQL)
+echo   Requires your own PostgreSQL running on localhost:5433
+echo   Use setup-docker.bat for the Docker-managed database.
 echo ====================================================
 
 REM ---------- 1. check Node.js ----------

@@ -35,6 +35,54 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// POST /api/teacher/materials - 新增单条学习材料
+// body: { course_id, title, type, chapter?, url?, is_required? }
+export async function POST(request: NextRequest) {
+  try {
+    const user = await requireAuth(request, 'teacher');
+    if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
+    const db = getDb();
+
+    const body = await request.json();
+    const courseId = Number(body?.course_id);
+    if (!Number.isInteger(courseId) || courseId <= 0) {
+      return NextResponse.json({ error: '课程参数无效' }, { status: 400 });
+    }
+    // 权限：仅能往自己授课课程添加材料
+    if (!(await getTeacherCourseIds(user.userId)).includes(courseId)) {
+      return NextResponse.json({ error: '无权操作该课程材料' }, { status: 403 });
+    }
+
+    const title = String(body?.title ?? '').trim();
+    if (!title) return NextResponse.json({ error: '请输入材料标题' }, { status: 400 });
+
+    const type = String(body?.type ?? '');
+    if (!['video', 'document', 'slide'].includes(type)) {
+      return NextResponse.json({ error: '材料类型无效' }, { status: 400 });
+    }
+
+    const chapter = String(body?.chapter ?? '').trim() || null;
+    const url = String(body?.url ?? '').trim() || null;
+    const is_required = body?.is_required === true;
+
+    const [created] = await db.insert(learningMaterial).values({
+      course_id: courseId,
+      teacher_id: user.userId,
+      title,
+      type,
+      url,
+      chapter,
+      is_required,
+    }).returning().execute();
+
+    return NextResponse.json({ success: true, data: created }, { status: 201 });
+  } catch (e) {
+    if (e && typeof (e as { status?: number }).status === 'number') return e as NextResponse;
+    console.error('Create teacher material error:', e);
+    return NextResponse.json({ error: '新增学习材料失败' }, { status: 500 });
+  }
+}
+
 // PUT /api/teacher/materials - 批量保存材料（编辑标题 / 切换必学标记）
 // body: { items: [{ id, title?, is_required? }] }
 export async function PUT(request: NextRequest) {

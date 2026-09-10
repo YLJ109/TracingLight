@@ -453,7 +453,7 @@ export default function TeacherAssignmentDetailPage() {
                         sub.student_level === 'medium' ? 'bg-gradient-to-br from-blue-400 to-indigo-500' :
                         'bg-gradient-to-br from-red-400 to-rose-500'
                       }`}>
-                        {sub.real_name[0]}
+                        {(sub.real_name || '·')[0]}
                       </div>
                       <div>
                         <p className="font-semibold text-slate-800">{sub.real_name}</p>

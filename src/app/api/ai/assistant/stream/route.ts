@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAIClient, isAIConfigError } from "@/lib/ai/client";
+import { createAIClient, aiErrorResponse, isAIConfigError } from "@/lib/ai/client";
 import { requireAuth } from "@/lib/server-auth";
 import { getDb, saveDb } from "@/storage/database/db";
 import { qaSession, qaMessage } from "@/storage/database/shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { buildUserContent, VISION_MODEL, type IncomingAttachment } from "@/lib/ai/attachments";
+import { aiRateLimit } from "@/lib/ai/ratelimit";
 
 const SYSTEM_PROMPT = `你是「溯光 TracingLight」智慧教育平台的 AI 学习助手，面向高校学生提供学习答疑服务。
 
@@ -51,6 +52,13 @@ export async function POST(request: NextRequest) {
   const message = (body.message || '').trim();
   const rawAttachments = Array.isArray(body.attachments) ? body.attachments : [];
   if (!message && rawAttachments.length === 0) return NextResponse.json({ error: "消息不能为空" }, { status: 400 });
+  // M2：每用户限流 + 输入长度上限
+  if (!aiRateLimit(`assistant:${authUser.userId}`)) {
+    return NextResponse.json({ error: "提问过于频繁，请稍后再试" }, { status: 429 });
+  }
+  if (message.length > 4000) {
+    return NextResponse.json({ error: "提问内容过长（上限 4000 字）" }, { status: 400 });
+  }
 
   // 构造本轮 user content：图片多模态 + 文件文本注入；并产出持久化元数据
   const build = buildUserContent(message, rawAttachments);
@@ -74,11 +82,12 @@ export async function POST(request: NextRequest) {
   }
 
   // 取历史 + 保存用户消息（非流式部分先落库）——上下文记忆：最近 30 条
-  const historyMsgs = await db.select().from(qaMessage)
+  const latestMsgs = await db.select().from(qaMessage)
     .where(eq(qaMessage.session_id, sessionId!))
-    .orderBy(qaMessage.id)
+    .orderBy(desc(qaMessage.id))
     .limit(30)
     .execute();
+  const historyMsgs = latestMsgs.reverse();
   await db.insert(qaMessage).values({ session_id: sessionId!, role: 'user', content: message, attachment: build.persist ? JSON.stringify(build.persist) : null }).execute();
   try { saveDb(); } catch { /* 定时持久化兜底 */ }
 
@@ -113,7 +122,9 @@ export async function POST(request: NextRequest) {
           }
         } catch { /* 标题更新失败不影响主流程 */ }
         const client = await createAIClient();
-        for await (const chunk of client.stream(messages, { model, temperature: 0.5, max_tokens: 1024 })) {
+        // 传入 request.signal：客户端断开/取消时中止上游生成，避免继续烧钱
+        for await (const chunk of client.stream(messages, { model, temperature: 0.5, max_tokens: 1024, signal: request.signal })) {
+          if (request.signal?.aborted) break;
           if (chunk.content) {
             fullContent += chunk.content;
             send({ delta: chunk.content });

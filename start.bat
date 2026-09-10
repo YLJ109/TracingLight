@@ -6,6 +6,10 @@ title TracingLight - Start
 set NODE_ENV=production
 if not defined PORT set PORT=5000
 
+REM ---------- sanity: local PostgreSQL expected on 5433 ----------
+echo  (Direct mode: expects your local PostgreSQL on localhost:5433.)
+echo  (Docker users: use start-docker.bat instead.)
+
 if /i not "%~1"=="dev" goto prod
 goto dev
 

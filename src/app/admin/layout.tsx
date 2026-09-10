@@ -68,7 +68,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           溯光智慧教育平台
         </span>
       }
-      avatarChar={currentUser.real_name[0]}
+      avatarChar={(currentUser.real_name || '·')[0]}
       avatarUrl={currentUser.avatar_url}
       userName={currentUser.real_name}
       userMeta={<p className="text-xs text-slate-400">管理员</p>}

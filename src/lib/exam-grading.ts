@@ -86,13 +86,10 @@ async function insertGradingRow(
     status, completed_at: status === 'completed' ? new Date().toISOString() : null,
     ai_generated_probability: aiInfo?.ai_generated_probability ?? null,
   };
-  // answer_id 非唯一索引，不能依赖 ON CONFLICT，改为显式存在检查（避免 SQLite 报错）
-  const existing = (await db.select().from(examGrading).where(eq(examGrading.answer_id, ansRow.id)).execute())[0];
-  if (existing) {
-    await db.update(examGrading).set(vals).where(eq(examGrading.id, existing.id)).execute();
-  } else {
-    await db.insert(examGrading).values({ answer_id: ansRow.id, ...vals }).execute();
-  }
+  // answer_id 上已有唯一索引，用原子 UPSERT(ON CONFLICT) 保证并发交卷/重批不产生重复行
+  await db.insert(examGrading).values({ answer_id: ansRow.id, ...vals })
+    .onConflictDoUpdate({ target: examGrading.answer_id, set: vals })
+    .execute();
 }
 
 async function kpName(kpId: number): Promise<string> {

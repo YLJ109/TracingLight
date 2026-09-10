@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { mkdirSync, writeFileSync } from 'fs';
-import { join, extname } from 'path';
+import { mkdirSync, writeFileSync, unlinkSync, existsSync } from 'fs';
+import { join, extname, resolve, sep } from 'path';
 import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
 import { user as userTable } from '@/storage/database/shared/schema';
@@ -34,6 +34,15 @@ export async function POST(request: NextRequest) {
     }
 
     const buf = Buffer.from(await f.arrayBuffer());
+    // L3：内容魔数校验，防止仅伪造扩展名的非图片（如图片马）落盘
+    const sig = buf.subarray(0, 12);
+    const isPng = sig[0] === 0x89 && sig[1] === 0x50 && sig[2] === 0x4e && sig[3] === 0x47;
+    const isJpeg = sig[0] === 0xff && sig[1] === 0xd8 && sig[2] === 0xff;
+    const isGif = sig.subarray(0, 3).toString('ascii') === 'GIF';
+    const isWebp = sig.subarray(0, 4).toString('ascii') === 'RIFF' && sig.subarray(8, 12).toString('ascii') === 'WEBP';
+    if (!isPng && !isJpeg && !isGif && !isWebp) {
+      return NextResponse.json({ error: '文件内容不是有效图片' }, { status: 400 });
+    }
     const filename = `${authUser.userId}-${Date.now()}${ext}`;
     const dir = join(process.cwd(), 'public', 'uploads', 'avatars');
     mkdirSync(dir, { recursive: true });
@@ -44,6 +53,17 @@ export async function POST(request: NextRequest) {
       .set({ avatar_url: avatarUrl })
       .where(eq(userTable.id, authUser.userId))
       .execute();
+
+    // L4：清理旧头像文件，避免磁盘无限堆积（仅删除 avatars 目录内的旧文件，防路径穿越）
+    const prev = (await getDb().select({ avatar_url: userTable.avatar_url })
+      .from(userTable).where(eq(userTable.id, authUser.userId)).execute())[0];
+    if (prev?.avatar_url && prev.avatar_url !== avatarUrl && prev.avatar_url.startsWith('/uploads/avatars/')) {
+      try {
+        const oldPath = resolve(process.cwd(), 'public', '.' + prev.avatar_url);
+        const avatarsDir = resolve(process.cwd(), 'public', 'uploads', 'avatars') + sep;
+        if (oldPath.startsWith(avatarsDir) && existsSync(oldPath)) unlinkSync(oldPath);
+      } catch { /* 旧文件删除失败不影响头像更新 */ }
+    }
 
     return NextResponse.json({ success: true, avatar_url: avatarUrl });
   } catch (e) {

@@ -3,9 +3,10 @@ import { createAIClient , aiErrorResponse } from "@/lib/ai/client";
 import { requireAuth } from "@/lib/server-auth";
 import { getDb, saveDb } from "@/storage/database/db";
 import { qaSession, qaMessage, user, course, knowledgePoint, errorBook } from "@/storage/database/shared/schema";
-import { inArray } from "drizzle-orm";
+import { sql, inArray } from "drizzle-orm";
 import { eq, and, desc } from "drizzle-orm";
 import { buildUserContent, VISION_MODEL, type IncomingAttachment } from "@/lib/ai/attachments";
+import { aiRateLimit } from "@/lib/ai/ratelimit";
 
 const SYSTEM_PROMPT = `你是「溯光 TracingLight」智慧教育平台的 AI 学习助手，面向高校学生提供学习答疑服务。
 
@@ -47,11 +48,18 @@ export async function GET(request: NextRequest) {
       .orderBy(desc(qaSession.updated_at), desc(qaSession.id))
       .execute();
 
-    const counts = new Map<number, number>();
-    for (const s of sessions) {
-      const c = await db.select({ id: qaMessage.id }).from(qaMessage)
-        .where(eq(qaMessage.session_id, s.id)).execute();
-      counts.set(s.id, c.length);
+    // M4：把逐会话 N+1 条 count 查询，改为一条按 session 分组的聚合查询
+    let counts = new Map<number, number>();
+    if (sessions.length > 0) {
+      const sessionIds = sessions.map((s) => s.id);
+      const rows = await db.select({
+        session_id: qaMessage.session_id,
+        cnt: sql<number>`count(*)`,
+      }).from(qaMessage)
+        .where(inArray(qaMessage.session_id, sessionIds))
+        .groupBy(qaMessage.session_id)
+        .execute();
+      counts = new Map(rows.map((r) => [r.session_id, Number(r.cnt) ?? 0]));
     }
 
     return NextResponse.json({
@@ -76,6 +84,13 @@ export async function POST(request: NextRequest) {
     if (!message && rawAttachments.length === 0) {
       return NextResponse.json({ error: "消息不能为空" }, { status: 400 });
     }
+    // M2：每用户限流 + 输入长度上限，防止无限制调用烧 AI 费用
+    if (!aiRateLimit(`assistant:${authUser.userId}`)) {
+      return NextResponse.json({ error: "提问过于频繁，请稍后再试" }, { status: 429 });
+    }
+    if (message.length > 4000) {
+      return NextResponse.json({ error: "提问内容过长（上限 4000 字）" }, { status: 400 });
+    }
 
     // 构造本轮 user content：图片多模态 + 文件文本注入；并产出持久化元数据
     const build = buildUserContent(message, rawAttachments);
@@ -97,12 +112,13 @@ export async function POST(request: NextRequest) {
       sessionId = created[0]?.id;
     }
 
-    // 取历史消息（上下文记忆：最近 30 条）
-    const historyMsgs = await db.select().from(qaMessage)
+    // 取历史消息（上下文记忆：最近 30 条——按 id 倒序取最新 30 条再反转回时间正序）
+    const latestMsgs = await db.select().from(qaMessage)
       .where(eq(qaMessage.session_id, sessionId!))
-      .orderBy(qaMessage.id)
+      .orderBy(desc(qaMessage.id))
       .limit(30)
       .execute();
+    const historyMsgs = latestMsgs.reverse();
 
     // 保存用户消息
     await db.insert(qaMessage).values({ session_id: sessionId!, role: 'user', content: message, attachment: build.persist ? JSON.stringify(build.persist) : null }).execute();

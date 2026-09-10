@@ -102,6 +102,7 @@ interface InvokeOptions {
   model?: string;
   temperature?: number;
   max_tokens?: number;
+  signal?: AbortSignal;
 }
 
 interface StreamChunk {
@@ -150,6 +151,8 @@ class ZhipuClient {
         temperature,
         max_tokens,
       }),
+      // 防止上游挂起时请求无限悬挂占用资源；60s 仍未响应则中止
+      signal: AbortSignal.timeout(60_000),
     });
 
     if (!response.ok) {
@@ -181,6 +184,8 @@ class ZhipuClient {
         max_tokens,
         stream: true,
       }),
+      // 由调用方(如 SSE 路由)传入 request.signal：客户端断开时中止上游请求，避免在生成上继续烧钱
+      signal: options.signal,
     });
 
     if (!response.ok) {

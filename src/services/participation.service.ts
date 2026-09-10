@@ -80,28 +80,34 @@ export async function computeParticipationScore(studentId: number): Promise<Part
   const signinDays = signins.length;
   const signinRate = Math.min(100, Math.round((signinDays / WINDOW) * 100));
 
-  // 2) 作业完成率：布置给该学生所在班级的作业数 vs 该生已提交数
+  // 2) 作业完成率：布置给该学生所在班级的作业数 vs 该生在本班作业中已提交数
   // 口径：学生班级(经 user.class_id) → 该班课程(course.class_id) → 布置的作业(assignment.course_id)
+  // 分子必须与分母同口径（只统计本班已发布/已关闭作业），避免换班/跨班提交虚增完成率
   const myClassId = (await db.select({ class_id: user.class_id })
     .from(user).where(eq(user.id, studentId)).execute())[0]?.class_id;
-  let assignedAll = 0;
+  let assignedIds: number[] = [];
   if (myClassId != null) {
     const classCourseRows = await db.select({ id: course.id })
       .from(course).where(eq(course.class_id, myClassId)).execute();
     const classCourseIds = classCourseRows.map((c) => c.id);
-    assignedAll = classCourseIds.length > 0
-      ? (await db.select({ id: assignment.id })
-          .from(assignment)
-          .where(and(
-            inArray(assignment.course_id, classCourseIds),
-            inArray(assignment.status, ['published', 'closed']),
-          )).execute()).length
-      : 0;
+    if (classCourseIds.length > 0) {
+      const rows = await db.select({ id: assignment.id })
+        .from(assignment)
+        .where(and(
+          inArray(assignment.course_id, classCourseIds),
+          inArray(assignment.status, ['published', 'closed']),
+        )).execute();
+      assignedIds = rows.map((a) => a.id);
+    }
   }
+  const assignedAll = assignedIds.length;
   const answered = await db.select().from(answer)
     .where(and(eq(answer.student_id, studentId), eq(answer.is_submitted, true)))
     .execute();
-  const submittedCount = Math.min(new Set(answered.map((a) => a.assignment_id)).size, assignedAll || Number.MAX_SAFE_INTEGER);
+  const submittedSet = new Set(assignedIds.length > 0
+    ? answered.filter((a) => assignedIds.includes(a.assignment_id)).map((a) => a.assignment_id)
+    : []);
+  const submittedCount = Math.min(submittedSet.size, assignedAll || Number.MAX_SAFE_INTEGER);
   const homeworkRate = assignedAll > 0 ? Math.round((submittedCount / assignedAll) * 100) : 0;
 
   // 3) 阅读投入：累计分钟数 → 每 60 分钟 10 分，封顶 25（口径见 lib/reading-score）

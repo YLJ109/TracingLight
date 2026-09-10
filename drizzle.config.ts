@@ -14,7 +14,7 @@ function dbUrl(): string {
   );
 }
 
-/** 外链云库（Supabase/Neon 池化端点）为自签证书，需关闭证书校验；本地 localhost 不加 SSL */
+/** 外链托管库为自签证书，需关闭证书校验；本地 localhost 不加 SSL */
 function dbSsl(): { rejectUnauthorized: boolean } | boolean | undefined {
   const url = dbUrl();
   if (/^postgres(ql)?:\/\//.test(url) && !/localhost|127\.0\.0\.1|::1/.test(new URL(url).hostname)) {

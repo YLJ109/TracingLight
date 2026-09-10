@@ -91,7 +91,7 @@ async function main() {
   await seedSocial(db, ctx);
 
   // —— 同步 serial 序列：种子显式 id 不会推进序列，需置为当前最大 id，防止运行时无显式 id 插入冲突 ——
-  // 注意：只遍历「当前 schema（public）」内的表，避免把 Supabase 自带的 auth 等内部 schema 也扫进来导致报错。
+  // 注意：只遍历「当前 schema（public）」内的表，避免把托管库自带的内部 schema（如 auth）也扫进来导致报错。
   console.log('🔁 同步自增序列 ...');
   await db.execute(sql`
     DO $$

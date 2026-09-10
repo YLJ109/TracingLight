@@ -387,6 +387,24 @@ export async function recordGrading(params: {
   const db = getDb();
   const { questionData, studentId, assignmentId, studentAnswer, answerId, result, notify = false } = params;
 
+  // AI 批改结果健壮性兜底（覆盖 computeGrade 全部返回路径）：
+  // 幻觉可能返回超满分/负数/非数字的 total_score，或越界的维度分、非数组的 annotations。
+  // 统一 clamp 到合法范围再入库，避免单题分>满分、总分虚高、或 PG 数字列写入报错。
+  const full = Number(result.full_score) && Number(result.full_score) >= 0 ? Number(result.full_score) : Number(questionData.default_score || 10);
+  const rawTotal = Number(result.total_score);
+  result.total_score = Number.isFinite(rawTotal) ? Math.min(full, Math.max(0, rawTotal)) : 0;
+  result.full_score = full;
+  if (result.dimension_scores && typeof result.dimension_scores === 'object') {
+    const dim = result.dimension_scores as Record<string, number>;
+    for (const k of Object.keys(dim)) {
+      const v = Number(dim[k]);
+      dim[k] = Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 0;
+    }
+  } else {
+    result.dimension_scores = { knowledge_accuracy: 0, logic_completeness: 0, expression_clarity: 0, expansion: 0 };
+  }
+  if (!Array.isArray(result.annotations)) result.annotations = [];
+
   const gradingTaskId = await db.transaction(async () => {
     // 防重复累计：同一 (assignment, student, question) 此前若已批改（含退回后重批），旧行置 superseded 作废，
     // 各汇总只认最新一条 completed，避免总分/题数因行数叠加而膨胀。

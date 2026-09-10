@@ -25,9 +25,9 @@ function getDatabaseUrl(): string {
 }
 
 /**
- * 外链云数据库（如 Supabase / Neon 的池化端点）常使用自签证书，
+ * 外链托管数据库（如多家云厂商的池化端点）常使用自签证书，
  * node-postgres 的新版会把 `sslmode=require` 当 verify-full 处理而拒连。
- * 故对外链统一走「关闭证书校验」的 SSL；本地 localhost 保持无 SSL 原状。
+ * 故对非本地主机统一走「关闭证书校验」的 SSL；本地 localhost 保持无 SSL 原状。
  */
 function resolveSsl(): { rejectUnauthorized: boolean } | undefined {
   const url = getDatabaseUrl();
@@ -80,9 +80,16 @@ export async function initDb(): Promise<ReturnType<typeof drizzle>> {
   };
 
   g.__TL_INIT_PROMISE = attempt().catch((err) => {
-    // 失败即清空，避免缓存死掉的 promise；让下次 initDb 重新建池重试
+    // 失败即清空，避免缓存死掉的 promise；让下次 initDb 重新建池重试。
+    // 同时必须关闭刚创建未成功的 Pool(socket/定时器全部释放)，否则 DB 宕机期间
+    // 每个请求重试都会残留一个 Pool，导致句柄/文件描述符持续泄漏直至进程崩溃。
+    const leakedPool = g.__TL_POOL;
     g.__TL_POOL = undefined;
+    g.__TL_DB = undefined;
     g.__TL_INIT_PROMISE = undefined;
+    if (leakedPool) {
+      try { leakedPool.end().catch(() => {}); } catch { /* 忽略关闭异常 */ }
+    }
     throw err;
   });
 

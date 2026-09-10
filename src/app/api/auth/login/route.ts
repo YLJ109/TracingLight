@@ -3,16 +3,25 @@ import { getDb } from '@/storage/database/db';
 import { user as userTable } from '@/storage/database/shared/schema';
 import { eq } from 'drizzle-orm';
 import jwt from 'jsonwebtoken';
-import { verifyPassword } from '@/lib/password';
+import { verifyPassword, hashPassword } from '@/lib/password';
 import { writeAudit } from '@/lib/audit';
 
 // 内存级登录限流，防止暴力破解（演示/单机场景够用，生产可换 Redis）
 const MAX_ATTEMPTS = 5;             // 每窗口最多失败 5 次
 const WINDOW_MS = 5 * 60 * 1000;    // 5 分钟窗口
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+// 定期清理游标：避免只失败未成功的 key 永久残留在 Map 中导致内存缓慢增长
+let lastCleanupAt = 0;
 
 function hitLimit(key: string): boolean {
   const now = Date.now();
+  // 每 5 分钟清理一次所有过期条目，Map 规模与活跃攻击窗口成正比，不会无限增长
+  if (now - lastCleanupAt > WINDOW_MS) {
+    for (const [k, v] of loginAttempts) {
+      if (now > v.resetAt) loginAttempts.delete(k);
+    }
+    lastCleanupAt = now;
+  }
   const rec = loginAttempts.get(key);
   if (!rec || now > rec.resetAt) {
     loginAttempts.set(key, { count: 1, resetAt: now + WINDOW_MS });
@@ -72,6 +81,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
     }
 
+    // L8：旧 sha256(固定盐) 哈希在本次登录成功后，透明升级为 bcrypt，逐步淘汰弱哈希
+    const pwHash = userData.password || '';
+    if (pwHash && !/^\$2[aby]\$/.test(pwHash)) {
+      await db.update(userTable).set({ password: hashPassword(password) })
+        .where(eq(userTable.id, userData.id)).execute();
+    }
+
     // 登录成功，清除限流计数
     clearLimit(key);
 
@@ -113,6 +129,8 @@ export async function POST(request: NextRequest) {
       sameSite: 'lax',
       path: '/',
       maxAge: 7 * 24 * 60 * 60, // 7 天
+      // L1：生产(https)环境启用 secure，防止 token 明文走 http。注意——若生产实际跑在 http 下应关闭此项
+      secure: process.env.NODE_ENV === 'production',
     });
     // 登录成功埋点（静默，失败不影响响应）
     writeAudit({

@@ -210,11 +210,15 @@
 
 | 目标 | 是否推荐 | 一行入口 | 数据库 |
 |------|---------|---------|--------|
-| **PC / 本地 Windows** | ✅ 开发首选 | `setup.bat` → `start.bat` | 本地 Docker PG（端口 5433） |
+| **PC / Windows + 本机已装 PostgreSQL** | ✅ | `setup.bat` → `start.bat` | 你的本地 PG（默认 `localhost:5433`，若本机 PG 在 5432，改 `.env` 端口即可） |
+| **PC / Windows + Docker 托管数据库** | ✅ 开发首选 | `docker\setup-docker.bat` → `docker\start-docker.bat` | Docker 容器 PG（5433，不会和你的系统 PG 冲突） |
 | **Linux 服务器**（VPS/云主机常驻） | ✅ 生产常驻 | `sudo ./deploy/setup-linux.sh`（PM2 守护） | 服务器本地 PG 或外部云库 |
 | **命令行手动** | 🟡 进阶/排障 | 见「方式二」 | 任意上述 PG |
 
-> **数据库三选一**：本地 Docker（`localhost:5433`）、Linux 服务器本地 PG（`localhost:5432`）、外部托管云库（`postgresql://…@aws-0-<region>.pooler.supabase.com:5432/postgres`，改 `DATABASE_URL` 即可切换，无需改代码）。
+> **数据库说明**：全项目统一直接使用 PostgreSQL，不依赖 Supabase。三选一部署：
+> 1. Docker 托管数据库（推荐）：脚本自动拉起 pg 容器，不污染系统；
+> 2. 本机 PostgreSQL：你自己已装，直接连接端口 5433（5432 改下 `.env`）；
+> 3. 外部云库：改 `DATABASE_URL` 即可直连（Neon / Supabase / 阿里云 RDS 都可，无需改代码）。
 
 ### 前置条件
 
@@ -222,33 +226,42 @@
 |------|---------|---------|
 | Node.js | ≥ 20.x | [nodejs.org](https://nodejs.org) 下载 LTS 版 |
 | pnpm | ≥ 9.x | `npm install -g pnpm` |
-| PostgreSQL | ≥ 14 | 见下「启动 PostgreSQL」 |
+| PostgreSQL | ≥ 14 | 要么本机装，要么装 Docker（会自动拉 pg 镜像），要么有外部云库地址 |
+| Docker | (可选) | [docker.com](https://www.docker.com) — 使用 `setup-docker.bat` 时需要 |
 | 智谱 API Key | — | [open.bigmodel.cn](https://open.bigmodel.cn) 免费注册获取（启动后在管理端配置即可） |
-
-> **启动 PostgreSQL**（本地开发推荐用 Docker，避免与系统 5432 冲突用 5433）：
-> ```bash
-> docker run -d --name tracinglight-pg -p 5433:5432 \
->   -e POSTGRES_USER=tracinglight -e POSTGRES_PASSWORD=tracinglight_pw \
->   -e POSTGRES_DB=tracinglight postgres:16
-> ```
 
 ---
 
 ### 方式一：Windows 一键部署（推荐）
 
+**① Docker 托管数据库（推荐，脚本自动拉起 pg 容器）**
+
 ```bash
-# 1) 双击 setup.bat  —— 自动完成：环境检查 → pnpm 安装依赖 → 生成 .env
-#    首次自动建表 + 导入种子数据
-# 2) 双击 start.bat  —— 启动开发服务器 → http://localhost:5000
-#    start.bat dev  —— 开发模式（改代码自动热更新）
+# 1) 双击 docker\setup-docker.bat  —— 环境检查 → 启动 PG 容器(5433) → 安装依赖 → 建表+种子 → 构建
+# 2) 双击 docker\start-docker.bat —— 启动服务器 → http://localhost:5000
+#    docker\start-docker.bat dev —— 开发模式（改代码自动热更新）
 # 3) 配置 AI：管理员登录 → 管理端 → 系统设置 → AI 服务配置
 #    填入 API 地址与 Key，保存后立即生效，并自动同步写入 .env
 ```
 
+**② 直接启动（你自己本机已装 PostgreSQL）**
+
+```bash
+# 前置：本机 PostgreSQL 已在运行，默认连接 localhost:5433；
+#      若你的 PG 在 5432，把 .env 里 DATABASE_URL 的 5433 改成 5432
+# 1) 双击 setup.bat     —— 环境检查 → 安装依赖 → 建表+种子 → 构建
+# 2) 双击 start.bat     —— 启动服务器 → http://localhost:5000
+#    start.bat dev      —— 开发模式（改代码自动热更新）
+```
+
+> 数据库账号默认 `tracinglight / tracinglight_pw`（库名 `tracinglight`）。本机直连时若账号/密码不一致，请按需修改 `.env`。
+
 | 脚本 | 干什么 | 什么时候用 |
 |------|--------|-----------|
-| `setup.bat` | 环境检查 → 安装依赖 → 生成 .env → 建库 | 首次部署 / 重新部署 |
-| `start.bat` | 启动服务器（默认生产模式；`start.bat dev` 热更新） | 每次启动 |
+| `docker\setup-docker.bat` | Docker 模式：拉起 PG 容器 → 安装依赖 → 建表+种子 → 构建 | 首次 Docker 部署 |
+| `docker\start-docker.bat` | Docker 模式：启动服务器（默认生产；`dev` 热更新），自动确保 PG 容器在跑 | 每次 Docker 启动 |
+| `setup.bat` | 直接模式：本机 PG 下的安装依赖 → 建表+种子 → 构建 | 首次本机 PG 部署 |
+| `start.bat` | 直接模式：启动服务器（默认生产模式；`start.bat dev` 热更新） | 每次启动 |
 | `start.bat update` | 更新模式：构建 + 启动 | 拉取新代码后更新 |
 | `build.bat` | `next build` 生产构建（可传 `pull` 先拉取） | 代码改动后部署前验证 |
 | `init-db.bat` | 只删数据库 → 重新建表 → 重新导入种子数据 | 重置数据 |

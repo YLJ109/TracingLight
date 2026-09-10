@@ -26,7 +26,16 @@ export async function seedSocial(db: Drizzle, ctx: SeedCtx) {
   ];
   for (const c of sysConfing) await db.insert(schema.systemConfig).values({ id: nextId(), ...c }).execute();
 
-  // ===== 学习材料 + 行为日志（含阅读计分） =====
+// 真实可播放的哔哩哔哩 Python 教学视频（BV 号，经 resolveVideoEmbed 识别为 bilibili 在线播放）
+const BILI_VIDEO_POOL = [
+  'https://www.bilibili.com/video/BV1c4411e77t', // 小甲鱼《零基础入门学习Python》最新版
+  'https://www.bilibili.com/video/BV1xs411Q799', // 小甲鱼《零基础入门学习Python》经典
+  'https://www.bilibili.com/video/BV1ex411x7Em', // 黑马程序员 Python600集 从入门到精通
+  'https://www.bilibili.com/video/BV1wD4y1o7AS', // 马士兵 Python 入门基础（基础语法）
+  'https://www.bilibili.com/video/BV12E411A7ZQ', // IT私塾 Python 爬虫基础 5 天速成
+];
+
+// ===== 学习材料 + 行为日志（含阅读计分） =====
   const materialTypes = ['video', 'document', 'slide'] as const;
   for (const cid of ctx.courseIds) {
     const teacherId = ctx.courseTeacher.get(cid)!;
@@ -34,17 +43,24 @@ export async function seedSocial(db: Drizzle, ctx: SeedCtx) {
     const students = ctx.classStudents.get(classId) ?? [];
     const kps = ctx.courseKps.get(cid) ?? [];
     const nMat = rng.int(4, 8);
+    let videoIdx = 0;
     for (let m = 0; m < nMat; m++) {
       const mid = nextId();
       const type = rng.pick(materialTypes);
       const title = `${rng.pick(['课件', '微视频', '拓展阅读'])}${m + 1}`;
-      const kpIds = kps.slice(0, Math.min(rng.int(1, 3), kps.length)).map((k) => k.kpId);
+      // 选取 1~3 个知识点，章节归属取第一个知识点的章节（避免全部挤在第1章）
+      const sel = kps.slice(0, Math.min(rng.int(1, 3), kps.length));
+      const selKp = sel[0];
+      const kpIds = sel.map((k) => k.kpId);
+      const chapter = selKp?.chapter ?? ctx.courseKps.get(cid)?.[0]?.chapter ?? '第1章 基础';
       await db.insert(schema.learningMaterial).values({
         id: mid, course_id: cid, teacher_id: teacherId, title, type,
         content: `${type === 'video' ? '本视频讲解' : type === 'slide' ? '本课件包含' : '本材料系统梳理'}${kpIds.length}个必考知识点。`,
-        url: type === 'video' ? `/uploads/materials/v${mid}.mp4` : `/uploads/materials/m${mid}.pdf`,
+        // 视频材料用真实可播放的 B 站链接（在线 iframe 播放），文稿/课件留空 url 由文本内容承载
+        url: type === 'video' ? BILI_VIDEO_POOL[videoIdx++ % BILI_VIDEO_POOL.length]
+             : type === 'slide' ? null : `/uploads/materials/m${mid}.pdf`,
         duration_minutes: type === 'video' ? rng.int(8, 30) : rng.int(15, 45),
-        knowledge_point_ids: kpIds, chapter: ctx.courseKps.get(cid)?.[0]?.chapter ?? '第1章 基础',
+        knowledge_point_ids: kpIds, chapter,
         is_required: rng.chance(0.4),
       } as any).execute();
       // 行为日志（部分学生完成阅读）
