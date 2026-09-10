@@ -107,6 +107,7 @@ coverage/
 *.lcov
 .nyc_output
 # Environment variables
+.env.bak*
 .env.local
 .env.development.local
 .env.test.local
@@ -173,3 +174,6 @@ data/
 playwright-report/
 test-results/
 blob-report/
+
+# PPT QA 渲染预览（build.js 可用 render.py 重新生成）
+scripts/ppt-tools/qa/slide-*.png
