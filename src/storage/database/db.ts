@@ -58,8 +58,13 @@ export async function initDb(): Promise<ReturnType<typeof drizzle>> {
   if (g.__TL_INIT_PROMISE) return g.__TL_INIT_PROMISE;
 
   const attempt = async (): Promise<ReturnType<typeof drizzle>> => {
+    const url = getDatabaseUrl();
+    let host = url;
+    try { host = `${new URL(url).hostname}:${new URL(url).port || '5432'}`; } catch { /* 连接串格式异常时原样展示 */ }
+    console.log('[db] 正在连接数据库: ' + host);
+
     const pool = new Pool({
-      connectionString: getDatabaseUrl(),
+      connectionString: url,
       ssl: resolveSsl(),
       max: 10,
       idleTimeoutMillis: 30000,
