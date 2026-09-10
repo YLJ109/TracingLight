@@ -210,15 +210,16 @@
 
 | 目标 | 是否推荐 | 一行入口 | 数据库 |
 |------|---------|---------|--------|
-| **PC / Windows + 本机已装 PostgreSQL** | ✅ | `setup.bat` → `start.bat` | 你的本地 PG（默认 `localhost:5433`，若本机 PG 在 5432，改 `.env` 端口即可） |
+| **PC / Windows + 本机已装 PostgreSQL** | ✅ | 见「② 直接启动」 | 你的本地 PG（默认 `localhost:5432`；Docker 则用 `5433`，按 `.env` 的 `DATABASE_URL` 实际端口） |
 | **PC / Windows + Docker 托管数据库** | ✅ 开发首选 | `docker\setup-docker.bat` → `docker\start-docker.bat` | Docker 容器 PG（5433，不会和你的系统 PG 冲突） |
 | **Linux 服务器**（VPS/云主机常驻） | ✅ 生产常驻 | `sudo ./deploy/setup-linux.sh`（PM2 守护） | 服务器本地 PG 或外部云库 |
 | **命令行手动** | 🟡 进阶/排障 | 见「方式二」 | 任意上述 PG |
 
 > **数据库说明**：全项目统一直接使用 PostgreSQL，不依赖 Supabase。三选一部署：
-> 1. Docker 托管数据库（推荐）：脚本自动拉起 pg 容器，不污染系统；
-> 2. 本机 PostgreSQL：你自己已装，直接连接端口 5433（5432 改下 `.env`）；
-> 3. 外部云库：改 `DATABASE_URL` 即可直连（Neon / Supabase / 阿里云 RDS 都可，无需改代码）。
+> 1. Docker 托管数据库（推荐）：脚本自动拉起 pg 容器，不污染系统（端口 5433）；
+> 2. 本机 PostgreSQL：直接连接本机库（默认 5432），首次先执行为本机建库建号的 `scripts/maintenance/setup-local-pg.sql`；
+> 3. 外部云库：改 `DATABASE_URL` 即可直连（Neon / 阿里云 RDS 等，无需改代码）。
+> Supabase 连接串已在 `.env` 中以注释留作备用，如需切回云库只需换 `DATABASE_URL`。
 
 ### 前置条件
 
@@ -247,14 +248,17 @@
 **② 直接启动（你自己本机已装 PostgreSQL）**
 
 ```bash
-# 前置：本机 PostgreSQL 已在运行，默认连接 localhost:5433；
-#      若你的 PG 在 5432，把 .env 里 DATABASE_URL 的 5433 改成 5432
-# 1) 双击 setup.bat     —— 环境检查 → 安装依赖 → 建表+种子 → 构建
-# 2) 双击 start.bat     —— 启动服务器 → http://localhost:5000
-#    start.bat dev      —— 开发模式（改代码自动热更新）
+# 前置：本机 PostgreSQL 已在运行。
+#  0) 首次需建库建号（用超级用户 postgres 执行一次，成功后无需再跑）：
+#        psql -h 127.0.0.1 -p 5432 -U postgres -f scripts\maintenance\setup-local-pg.sql
+#    脚本会创建账号 tracinglight / tracinglight_pw，并建好同名数据库。
+#  1) 双击 setup.bat —— 环境检查 → 安装依赖 → 建表+种子 → 构建
+#  2) 双击 start.bat —— 启动服务器 → http://localhost:5000
+#     start.bat dev  —— 开发模式（改代码自动热更新）
+#  注：默认连 localhost:5432；若用 Docker 容器 PG(5433)，改 .env 的 DATABASE_URL 端口即可。
 ```
 
-> 数据库账号默认 `tracinglight / tracinglight_pw`（库名 `tracinglight`）。本机直连时若账号/密码不一致，请按需修改 `.env`。
+> 数据库账号默认 `tracinglight / tracinglight_pw`（库名 `tracinglight`）。首次部署建议用 `scripts/maintenance/setup-local-pg.sql` 建库建号，避免手动建库。`.env` 里的 Supabase 连接串为备用，默认未启用。
 
 | 脚本 | 干什么 | 什么时候用 |
 |------|--------|-----------|
