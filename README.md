@@ -337,6 +337,8 @@ sudo ./deploy/setup-linux.sh deploy
 
    ```
    DATABASE_URL=postgresql://postgres.<ref>:<密码>@aws-0-<region>.pooler.supabase.com:5432/postgres
+   JWT_SECRET=你的随机密钥（至少 32 位字符）
+   COOKIE_SECURE=false  # 必须！Coze/裸 HTTP 部署必须设为 false，否则浏览器拒存 cookie → 登录成功但 401
    ```
 
 5. **重新部署**，访问首页出现登录页即成功；测试账号见下方表格。
