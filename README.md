@@ -212,7 +212,6 @@
 |------|---------|---------|--------|
 | **PC / 本地 Windows** | ✅ 开发首选 | `setup.bat` → `start.bat` | 本地 Docker PG（端口 5433） |
 | **Linux 服务器**（VPS/云主机常驻） | ✅ 生产常驻 | `sudo ./deploy/setup-linux.sh`（PM2 守护） | 服务器本地 PG 或外部云库 |
-| **扣子 Coze / Serverless 沙箱** | 🟡 需真机实测 | 配环境变量 `DATABASE_URL` 外链 | **必须**外部托管 PG（Supabase/Neon） |
 | **命令行手动** | 🟡 进阶/排障 | 见「方式二」 | 任意上述 PG |
 
 > **数据库三选一**：本地 Docker（`localhost:5433`）、Linux 服务器本地 PG（`localhost:5432`）、外部托管云库（`postgresql://…@aws-0-<region>.pooler.supabase.com:5432/postgres`，改 `DATABASE_URL` 即可切换，无需改代码）。
@@ -291,7 +290,7 @@ sudo ./deploy/setup-linux.sh deploy
 
 ### 方式四：云环境 / Serverless 容器部署（对接外部托管 PostgreSQL）
 
-适合部署到**临时/一次性沙箱**（如扣子 Coze、Serverless 容器、CI 预览环境）：这类环境无法稳定提供本地数据库服务，因此**不安装本地 PostgreSQL**，而是连接一个**外部托管 PostgreSQL**（推荐 Neon / Supabase 免费档）。
+适合部署到**临时/一次性沙箱**（如 Serverless 容器、CI 预览环境）：这类环境无法稳定提供本地数据库服务，因此**不安装本地 PostgreSQL**，而是连接一个**外部托管 PostgreSQL**（推荐 Neon / Supabase 免费档）。
 
 > 原理：应用通过 `DATABASE_URL` 直连远端 PG。构建阶段（`next build`）不会连接数据库（`instrumentation.ts` 在 `phase-production-build` 阶段跳过 `initDb()`），只在服务启动时连接 → 只要沙箱能 TCP 外链 PG 即可稳定上线，无需在沙箱内自建数据库。
 

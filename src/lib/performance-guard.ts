@@ -6,7 +6,7 @@
  *   "Failed to execute 'measure' on 'Performance': 'StudentHome' cannot have a negative time stamp."
  *
  * 该错误仅来自框架的渲染埋点，业务无害，但会触发 Next 全屏错误浮层，
- * 在部署/预览场景（如扣子）被误判为「部署失败」。
+ * 在开发预览 / CI 预览等环境被误判为「部署失败」。
  * 此处对「性能埋点」类 DOMException 做吞掉降级，其他真实错误照常抛出。
  */
 if (typeof window !== 'undefined' && typeof Performance !== 'undefined') {

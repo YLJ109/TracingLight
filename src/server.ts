@@ -62,7 +62,7 @@ app.prepare().then(async () => {
   }
 
   // Initialize database（健壮启动：DB 暂不可达也不阻断进程，站点照常可用，
-  // 数据接口会在 DB 恢复后按需重试；避免扣子等部署环境因数据库晚就绪而"部署即失败"）
+  // 数据接口会在 DB 恢复后按需重试，避免数据库晚就绪导致"部署即失败"）
   console.log('Initializing database...');
   try {
     const db = await initDb();
