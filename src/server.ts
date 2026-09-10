@@ -77,6 +77,24 @@ function ensureJwtSecret(): void {
   }
 }
 
+/** 启动自检：生产必然态 Cookie Secure 提醒（HTTP 部署必须 COOKIE_SECURE=false，否则登录成功后 401） */
+function checkCookieSecure(): void {
+  if (process.env.NODE_ENV !== 'production') return;
+  const v = process.env.COOKIE_SECURE;
+  if (v === 'true' || v === 'false') return; // 已显式配置，信任其选择
+  console.warn(
+    '\n' +
+    '============================================================\n' +
+    '⚠️  COOKIE_SECURE 未设置，生产默认使用 Secure cookie（仅 HTTPS 可用）。\n' +
+    '   若本服务通过 HTTP/内网/Coze 对外访问，浏览器会拒存登录 cookie，\n' +
+    '   导致「登录成功但随后请求 401 / 数据加载失败」。\n' +
+    '   请按部署方式设置环境变量：\n' +
+    '     COOKIE_SECURE=false   服务器/Coze/裸 HTTP 必须设 false\n' +
+    '     COOKIE_SECURE=true    走 HTTPS 对外时设 true\n' +
+    '============================================================\n',
+  );
+}
+
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = process.env.HOSTNAME || 'localhost';
 const port = parseInt(process.env.PORT || '5000', 10);
@@ -88,6 +106,8 @@ const handle = app.getRequestHandler();
 app.prepare().then(async () => {
   // JWT 密钥检查：未设置或使用示例默认值时，自动生成随机密钥并持久化；无法持久化时给出醒目告警
   ensureJwtSecret();
+  // Cookie Secure 部署自检：生产且未显式配置 COOKIE_SECURE 时，提醒 HTTP 部署需设 false
+  checkCookieSecure();
   console.log('Initializing database...');
   try {
     const db = await initDb();
