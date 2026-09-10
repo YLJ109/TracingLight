@@ -12,5 +12,14 @@ export async function register(): Promise<void> {
   if (process.env.NEXT_PHASE === 'phase-production-build') return;
 
   const { initDb } = await import('./storage/database/db');
-  await initDb();
+  try {
+    await initDb();
+  } catch (err) {
+    // 数据库暂不可达时仅告警，不让 next start 直接崩溃；
+    // server.ts 的请求层会在 DB 恢复后按需重试 initDb。
+    console.warn(
+      '⚠️  数据库初始化失败（启动继续，数据接口将在 DB 恢复后重试）：',
+      (err as Error)?.message || err,
+    );
+  }
 }

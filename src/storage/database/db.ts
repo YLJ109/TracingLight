@@ -42,15 +42,22 @@ export function getDb() {
   return g.__TL_DB;
 }
 
+/** 是否已成功初始化连接池（供启动/请求层判断是否需按需重试 initDb） */
+export function isDbReady(): boolean {
+  return !!g.__TL_DB;
+}
+
 /**
  * 初始化 PostgreSQL 连接池并包装 Drizzle 实例。
  * 幂等：重复调用返回同一个实例。
+ * 健壮性：连接失败时清空缓存状态，避免 rejected promise 被永久缓存，
+ * 允许后续调用（如 DB 暂不可达后恢复）重新尝试初始化。
  */
 export async function initDb(): Promise<ReturnType<typeof drizzle>> {
   if (g.__TL_DB) return g.__TL_DB;
   if (g.__TL_INIT_PROMISE) return g.__TL_INIT_PROMISE;
 
-  g.__TL_INIT_PROMISE = (async () => {
+  const attempt = async (): Promise<ReturnType<typeof drizzle>> => {
     const pool = new Pool({
       connectionString: getDatabaseUrl(),
       ssl: resolveSsl(),
@@ -65,7 +72,14 @@ export async function initDb(): Promise<ReturnType<typeof drizzle>> {
 
     g.__TL_DB = drizzle(pool, { schema: { ...schema, ...relations } });
     return g.__TL_DB;
-  })();
+  };
+
+  g.__TL_INIT_PROMISE = attempt().catch((err) => {
+    // 失败即清空，避免缓存死掉的 promise；让下次 initDb 重新建池重试
+    g.__TL_POOL = undefined;
+    g.__TL_INIT_PROMISE = undefined;
+    throw err;
+  });
 
   return g.__TL_INIT_PROMISE;
 }

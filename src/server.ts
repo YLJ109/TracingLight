@@ -3,7 +3,7 @@ import { parse } from 'url';
 import { existsSync, createReadStream, statSync } from 'fs';
 import { resolve } from 'path';
 import next from 'next';
-import { initDb } from './storage/database/db';
+import { initDb, isDbReady } from './storage/database/db';
 import { user } from './storage/database/shared/schema';
 
 // Next 生产模式在启动时会快照 public 目录，之后新增到 public 的文件不会被静态服务识别（404）。
@@ -61,11 +61,19 @@ app.prepare().then(async () => {
     );
   }
 
-  // Initialize database
+  // Initialize database（健壮启动：DB 暂不可达也不阻断进程，站点照常可用，
+  // 数据接口会在 DB 恢复后按需重试；避免扣子等部署环境因数据库晚就绪而"部署即失败"）
   console.log('Initializing database...');
-  const db = await initDb();
-  const uc = (await db.select().from(user).execute()).length;
-  console.log(`Database ready (${uc} users loaded).`);
+  try {
+    const db = await initDb();
+    const uc = (await db.select().from(user).execute()).length;
+    console.log(`Database ready (${uc} users loaded).`);
+  } catch (err) {
+    console.warn(
+      '⚠️  数据库暂不可达，服务器仍将启动；数据相关功能将在数据库恢复后按需重试。',
+      (err as Error)?.message || err,
+    );
+  }
 
   const server = createServer(async (req, res) => {
     try {
@@ -73,6 +81,11 @@ app.prepare().then(async () => {
       const pathname = parsedUrl.pathname || '/';
       // 静态优先：解决运行期新增到 public/ 的上传文件（头像等）404 问题
       if (pathname.startsWith('/uploads/') && servePublicFile(req, res, pathname)) return;
+      // 启动时若 DB 未就绪，这里按需重试初始化（幂等且具重试语义）；
+      // 失败仅忽略并交给具体接口自行报错，不阻塞登录页 / 静态资源。
+      if (!isDbReady()) {
+        try { await initDb(); } catch { /* DB 仍未就绪，交由接口层处理 */ }
+      }
       await handle(req, res, parsedUrl);
     } catch (err) {
       console.error('Error occurred handling', req.url, err);
