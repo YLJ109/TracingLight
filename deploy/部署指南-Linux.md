@@ -95,22 +95,30 @@ pm2 startup    # 会输出一条 sudo 命令，按提示执行即可
 pm2 save       # 固化进程清单
 ```
 
+> **替代方案：systemd** —— 若不习惯 pm2，可用仓库附带的 `deploy/tracinglight.service`：
+> 改好 `WorkingDirectory=/opt/tracinglight` / `User=tracinglight`，然后
+> `sudo cp deploy/tracinglight.service /etc/systemd/system/ && sudo systemctl enable --now tracinglight`。
+
 ---
 
 ## 5. 数据备份 / 重置
 
-项目为单文件 SQLite：
+项目使用 **PostgreSQL**（`DATABASE_URL` 指向的目标库）。备份针对的是该 PG 实例，不是单文件：
 
 ```bash
-# 备份
-cp data/tracinglight.db data/tracinglight_backup.db
+# 备份（本地 PG 默认连接串 localhost:5432 / tracinglight）
+pg_dump postgres://tracinglight:tracinglight_pw@localhost:5432/tracinglight \
+  --file=backup_$(date +%F_%H%M).sql
 
-# 还原
-cp data/tracinglight_backup.db data/tracinglight.db && pm2 restart tracinglight
+# 还原（新建空库后导入）
+psql postgres://tracinglight:tracinglight_pw@localhost:5432/tracinglight \
+  -f backup_YYYY-MM-DD_HHMM.sql
 
-# 重置为种子快照（仅删库，其余不动）
-rm data/tracinglight.db && sudo ./deploy/setup-linux.sh
+# 重置为种子快照（仅清空业务表重新灌种子，其余不动）
+rm -f data/.pg_seeded && sudo ./deploy/setup-linux.sh
 ```
+
+> 若 `DATABASE_URL` 指向外部托管库（Supabase/Neon），请改用对应平台自带的备份/导出功能，确保数据持久在云服务上。
 
 ---
 

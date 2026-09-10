@@ -24,6 +24,19 @@ function getDatabaseUrl(): string {
   );
 }
 
+/**
+ * 外链云数据库（如 Supabase / Neon 的池化端点）常使用自签证书，
+ * node-postgres 的新版会把 `sslmode=require` 当 verify-full 处理而拒连。
+ * 故对外链统一走「关闭证书校验」的 SSL；本地 localhost 保持无 SSL 原状。
+ */
+function resolveSsl(): { rejectUnauthorized: boolean } | undefined {
+  const url = getDatabaseUrl();
+  if (/^postgres(ql)?:\/\//.test(url) && !/localhost|127\.0\.0\.1|::1/.test(new URL(url).hostname)) {
+    return { rejectUnauthorized: false };
+  }
+  return undefined;
+}
+
 export function getDb() {
   if (!g.__TL_DB) throw new Error('Database not initialized. Call initDb() first.');
   return g.__TL_DB;
@@ -40,6 +53,7 @@ export async function initDb(): Promise<ReturnType<typeof drizzle>> {
   g.__TL_INIT_PROMISE = (async () => {
     const pool = new Pool({
       connectionString: getDatabaseUrl(),
+      ssl: resolveSsl(),
       max: 10,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000,

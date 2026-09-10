@@ -1,0 +1,24 @@
+[Unit]
+Description=TracingLight - AI education platform (Next.js + custom server)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 改成你的项目绝对路径
+WorkingDirectory=/opt/tracinglight
+User=tracinglight
+Group=tracinglight
+Environment=NODE_ENV=production
+Environment=PORT=5000
+# 若要连外部托管库（Supabase/Neon），在 .env 里配 DATABASE_URL 即可，无需改动本文件
+ExecStart=/opt/tracinglight/node_modules/.bin/tsx /opt/tracinglight/src/server.ts
+Restart=always
+RestartSec=3
+# 限制了不会自动访问的沙箱能力（按需放宽；上传/部分功能可能需要私有 TMPDIR 可写）
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { NotificationProvider } from '@/lib/notification-store';
 import { EyeCareProvider } from '@/lib/eye-care-store';
 import { Toaster } from '@/components/ui/sonner';
+// 屏蔽 Next 16 Turbopack 同步 redirect 触发的 performance.measure 负时间戳误报（见文件内注释）
+import '@/lib/performance-guard';
 import './globals.css';
 
 export const metadata: Metadata = {

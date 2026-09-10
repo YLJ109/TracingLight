@@ -91,22 +91,25 @@ async function main() {
   await seedSocial(db, ctx);
 
   // —— 同步 serial 序列：种子显式 id 不会推进序列，需置为当前最大 id，防止运行时无显式 id 插入冲突 ——
+  // 注意：只遍历「当前 schema（public）」内的表，避免把 Supabase 自带的 auth 等内部 schema 也扫进来导致报错。
   console.log('🔁 同步自增序列 ...');
   await db.execute(sql`
     DO $$
-    DECLARE t text; s text;
+    DECLARE t text; s text; c_schema text;
     BEGIN
+      SELECT current_schema() INTO c_schema;
       FOR t IN
         SELECT c.relname FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
         JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'id'
-        WHERE c.relkind = 'r' AND a.attnum > 0 AND NOT a.attisdropped
+        WHERE c.relkind = 'r' AND n.nspname = c_schema AND a.attnum > 0 AND NOT a.attisdropped
           AND (a.attidentity <> '' OR EXISTS (
                 SELECT 1 FROM pg_attrdef d WHERE d.adrelid = c.oid AND d.adnum = a.attnum
                   AND pg_get_expr(d.adbin, d.adrelid) LIKE 'nextval%'))
       LOOP
-        s := pg_get_serial_sequence('"' || t || '"', 'id');
+        s := pg_get_serial_sequence(format('"%s"."%s"', c_schema, t), 'id');
         IF s IS NOT NULL THEN
-          EXECUTE 'SELECT setval(''' || s || ''', COALESCE((SELECT MAX(id)::bigint FROM "' || t || '"), 1), true)';
+          EXECUTE format('SELECT setval(%L, COALESCE((SELECT MAX(id)::bigint FROM "%s"."%s"), 1), true)', s, c_schema, t);
         END IF;
       END LOOP;
     END $$;

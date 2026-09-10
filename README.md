@@ -204,6 +204,19 @@
 
 ## 快速开始
 
+### 部署总览：三平台选择
+
+先选部署目标，再按对应方式执行：
+
+| 目标 | 是否推荐 | 一行入口 | 数据库 |
+|------|---------|---------|--------|
+| **PC / 本地 Windows** | ✅ 开发首选 | `setup.bat` → `start.bat` | 本地 Docker PG（端口 5433） |
+| **Linux 服务器**（VPS/云主机常驻） | ✅ 生产常驻 | `sudo ./deploy/setup-linux.sh`（PM2 守护） | 服务器本地 PG 或外部云库 |
+| **扣子 Coze / Serverless 沙箱** | 🟡 需真机实测 | 配环境变量 `DATABASE_URL` 外链 | **必须**外部托管 PG（Supabase/Neon） |
+| **命令行手动** | 🟡 进阶/排障 | 见「方式二」 | 任意上述 PG |
+
+> **数据库三选一**：本地 Docker（`localhost:5433`）、Linux 服务器本地 PG（`localhost:5432`）、外部托管云库（`postgresql://…@aws-0-<region>.pooler.supabase.com:5432/postgres`，改 `DATABASE_URL` 即可切换，无需改代码）。
+
 ### 前置条件
 
 | 依赖 | 版本要求 | 安装方式 |
@@ -273,6 +286,46 @@ sudo ./deploy/setup-linux.sh deploy
 ```
 
 详见 [docs/部署指南-Linux.md](deploy/部署指南-Linux.md)（含 AI 配置、备份/重置、Nginx 对外、pm2 开机自启）。
+
+---
+
+### 方式四：云环境 / Serverless 容器部署（对接外部托管 PostgreSQL）
+
+适合部署到**临时/一次性沙箱**（如扣子 Coze、Serverless 容器、CI 预览环境）：这类环境无法稳定提供本地数据库服务，因此**不安装本地 PostgreSQL**，而是连接一个**外部托管 PostgreSQL**（推荐 Neon / Supabase 免费档）。
+
+> 原理：应用通过 `DATABASE_URL` 直连远端 PG。构建阶段（`next build`）不会连接数据库（`instrumentation.ts` 在 `phase-production-build` 阶段跳过 `initDb()`），只在服务启动时连接 → 只要沙箱能 TCP 外链 PG 即可稳定上线，无需在沙箱内自建数据库。
+
+1. **建外部 PostgreSQL**，拿到连接串（菜单 Settings → Database 里选 `Connection string`）：
+
+   - **不要**手动追加 `?sslmode=require`：Supabase / Neon 的池化端点用**自签证书**，新版 node-postgres 会把 `sslmode=require` 当作 `verify-full` 处理而拒连。
+   - 应用已自动对外链主机下发 `ssl:{rejectUnauthorized:false}`（见 `src/storage/database/db.ts` 的 `resolveSsl()`），**裸连接串直接可用**。
+   - 若官方直连主机 `db.<ref>.supabase.co` 解析失败，改用同地区的池化端点 `aws-0-<region>.pooler.supabase.com`，且用户名为 `postgres.<ref>`：
+
+   ```
+   postgresql://postgres.<项目ref>:<密码>@aws-0-<region>.pooler.supabase.com:5432/postgres
+   ```
+
+2. **本地推送表结构（仅一次）**：
+
+   ```bash
+   DATABASE_URL="postgresql://postgres.<ref>:<密码>@aws-0-<region>.pooler.supabase.com:5432/postgres" pnpm db:push:pg
+   ```
+
+3. **可选：灌演示数据**（仅当界面需要假数据；**会清空所有表**，勿对真实库执行）：
+
+   ```bash
+   DATABASE_URL="postgresql://postgres.<ref>:<密码>@aws-0-<region>.pooler.supabase.com:5432/postgres" npx tsx src/storage/database/seed.ts
+   ```
+
+4. **在部署平台配置环境变量**（最关键，未配置会回退到本地默认 `localhost:5433` 而启动失败）：
+
+   ```
+   DATABASE_URL=postgresql://postgres.<ref>:<密码>@aws-0-<region>.pooler.supabase.com:5432/postgres
+   ```
+
+5. **重新部署**，访问首页出现登录页即成功；测试账号见下方表格。
+
+> ⚠️ 说明：上传文件走 `public/uploads`，在临时沙箱中**不持久**（重启会丢失头像/材料）；如需正式生产，建议后续将上传迁移到对象存储，或部署到持久化磁盘环境。
 
 ---
 
@@ -397,7 +450,8 @@ SQLite + Drizzle ORM，共 55+ 张业务表，分四层：基础数据（学校/
 | `ZHIPU_BASE_URL` | ✗ | 智谱 API 地址 | 官方默认 |
 | `ZHIPU_MODEL` | ✗ | 模型名称（免费：`glm-4-flash`，付费：`glm-4-plus`） | `glm-4-flash` |
 | `JWT_SECRET` | ✗ | JWT 签名密钥（`setup.bat` 自动生成） | 随机生成 |
-| `DATABASE_PATH` | ✗ | SQLite 数据库文件路径 | `./data/tracinglight.db` |
+| `DATABASE_PATH` | ✗ | SQLite 数据库文件路径（历史遗留，已改用 PostgreSQL） | `./data/tracinglight.db` |
+| `DATABASE_URL` | ✓ | PostgreSQL 连接串（云环境 / 非本地部署必填；本地默认见 `src/server.ts`） | `postgres://tracinglight:tracinglight_pw@localhost:5433/tracinglight` |
 | `PORT` | ✗ | HTTP 服务端口 | `5000` |
 | `NODE_ENV` | ✗ | `development` / `production` | `development` |
 
