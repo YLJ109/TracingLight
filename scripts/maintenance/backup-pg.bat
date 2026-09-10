@@ -103,12 +103,16 @@ goto :eof
 REM ---------- helper: locate pg_dump ----------
 :find_pg_dump
 set "pg_dump="
+if defined PG_BIN if exist "%PG_BIN%\pg_dump.exe" (
+  set "pg_dump=%PG_BIN%\pg_dump.exe"
+  goto :eof
+)
 where pg_dump 1>nul 2>nul
 if not errorlevel 1 (
   set "pg_dump=pg_dump"
   goto :eof
 )
-for /d %%p in ("C:\Program Files\PostgreSQL\*") do (
+for /d %%p in ("C:\Program Files\PostgreSQL\*" "F:\Program Files\PostgreSQL\*") do (
   if exist "%%p\bin\pg_dump.exe" (
     set "pg_dump=%%p\bin\pg_dump.exe"
     goto :eof
