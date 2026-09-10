@@ -120,6 +120,8 @@ lerna-debug.log*
 # Runtime data
 # 运行时上传的头像/资源（接口会在运行时自动重建目录）
 public/uploads/
+# 数据库备份（pg_dump，勿提交）
+backups/
 pids
 *.pid
 *.seed

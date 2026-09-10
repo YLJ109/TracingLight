@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
+import { cacheGet, cacheSet } from '@/lib/short-cache';
 import { user, gradingTask, assignment, course, knowledgeMasteryLog, knowledgePoint, errorBook, answer, examSchedule, abilityPoint, abilityKnowledge, learningBehaviorLog, qaSession, classInfo, major, exam, examAttempt, examGrading } from '@/storage/database/shared/schema';
 import { eq, and, sql, inArray } from 'drizzle-orm';
 import { classifyMastery, isWeakMastery } from '@/lib/domain';
@@ -14,6 +15,16 @@ export async function GET(request: NextRequest) {
     // 数据归属强制绑定当前登录用户，杜绝越权（IDOR）
     const studentId = authUser.userId;
     const courseId = searchParams.get('course_id') ? parseInt(searchParams.get('course_id')!) : null;
+
+    // 短缓存：学情数据低频变化，TTL 内直接返回上次聚合结果，削峰避免每次几十条查询全量打库。
+    // ?nocache=1 可强制绕过（如批改完成后主动刷新）；TTL 可用 CACHE_TTL_MS 覆盖（0=关闭）。
+    const cacheKey = `student-profile:${studentId}:${courseId ?? 'all'}`;
+    if (searchParams.get('nocache') !== '1') {
+      const hit = cacheGet(cacheKey);
+      if (hit != null) {
+        return new NextResponse(hit, { headers: { 'Content-Type': 'application/json' } });
+      }
+    }
 
     // Get student info
     const studentRows = await db.select()
@@ -597,7 +608,7 @@ export async function GET(request: NextRequest) {
     timeline.sort((a, b) => b.ts.localeCompare(a.ts));
     const growthTimeline = timeline.slice(0, 12);
 
-    return NextResponse.json({
+    const payload = {
         success: true,
         data: {
           student: { ...student, classRank, classTotal, className, majorName, courseCount: courses.length },
@@ -644,7 +655,10 @@ export async function GET(request: NextRequest) {
           // 课程维度真实学情
           courseData,
         },
-      });
+      };
+    // 写缓存供 TTL 内的后续请求直接复用
+    cacheSet(cacheKey, JSON.stringify(payload));
+    return NextResponse.json(payload);
   } catch (e) {
     if (e && typeof (e as { status?: number }).status === "number") return e as NextResponse;
     console.error('Get student profile error:', e);

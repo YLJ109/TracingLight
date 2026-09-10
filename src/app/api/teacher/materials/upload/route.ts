@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomBytes } from 'crypto';
-import { mkdir, writeFile } from 'fs/promises';
-import { resolve, join, extname } from 'path';
+import { extname } from 'path';
 import { requireAuth } from '@/lib/server-auth';
+import { saveUpload } from '@/lib/storage';
 
 /**
  * 教师上传学习材料文件接口
@@ -53,16 +53,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `不支持的文件类型「${ext || '无扩展名'}」` }, { status: 415 });
     }
 
-    const uploadDir = resolve(process.cwd(), 'public', 'uploads', 'materials');
-    await mkdir(uploadDir, { recursive: true });
-
     const randomName = `${Date.now()}-${randomBytes(8).toString('hex')}${ext}`;
     const buf = Buffer.from(await file.arrayBuffer());
-    await writeFile(join(uploadDir, randomName), buf);
+    // 经存储抽象层落盘：本地默认(public/uploads/materials)，配 STORAGE_DRIVER=s3 时走对象存储
+    const saved = await saveUpload('materials', randomName, buf, file.type || 'application/octet-stream');
 
     return NextResponse.json({
       success: true,
-      data: { name: originalName, path: `uploads/materials/${randomName}`, size: file.size, mime: file.type || 'application/octet-stream' },
+      data: { name: originalName, path: saved.url, size: file.size, mime: file.type || 'application/octet-stream' },
     });
   } catch (e) {
     if (e && typeof (e as { status?: number }).status === 'number') return e as NextResponse;

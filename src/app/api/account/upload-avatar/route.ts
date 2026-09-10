@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { mkdirSync, writeFileSync, unlinkSync, existsSync } from 'fs';
-import { join, extname, resolve, sep } from 'path';
+import { extname, resolve } from 'path';
 import { getDb } from '@/storage/database/db';
 import { requireAuth } from '@/lib/server-auth';
 import { user as userTable } from '@/storage/database/shared/schema';
 import { eq } from 'drizzle-orm';
+import { saveUpload, deleteUploadLocal } from '@/lib/storage';
 
 const ALLOWED_EXT = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
 
@@ -44,25 +44,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '文件内容不是有效图片' }, { status: 400 });
     }
     const filename = `${authUser.userId}-${Date.now()}${ext}`;
-    const dir = join(process.cwd(), 'public', 'uploads', 'avatars');
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, filename), buf);
-
-    const avatarUrl = `/uploads/avatars/${filename}`;
+    // 经存储抽象层落盘：本地默认，配 STORAGE_DRIVER=s3 时走对象存储
+    const saved = await saveUpload('avatars', filename, buf, f.type || 'image/*');
+    const avatarUrl = saved.url;
     await getDb().update(userTable)
       .set({ avatar_url: avatarUrl })
       .where(eq(userTable.id, authUser.userId))
       .execute();
 
-    // L4：清理旧头像文件，避免磁盘无限堆积（仅删除 avatars 目录内的旧文件，防路径穿越）
+    // 清理旧头像文件，避免磁盘无限堆积（仅本地驱动清理；对象存储由桶生命周期策略负责）
     const prev = (await getDb().select({ avatar_url: userTable.avatar_url })
       .from(userTable).where(eq(userTable.id, authUser.userId)).execute())[0];
-    if (prev?.avatar_url && prev.avatar_url !== avatarUrl && prev.avatar_url.startsWith('/uploads/avatars/')) {
-      try {
-        const oldPath = resolve(process.cwd(), 'public', '.' + prev.avatar_url);
-        const avatarsDir = resolve(process.cwd(), 'public', 'uploads', 'avatars') + sep;
-        if (oldPath.startsWith(avatarsDir) && existsSync(oldPath)) unlinkSync(oldPath);
-      } catch { /* 旧文件删除失败不影响头像更新 */ }
+    if (saved.kind === 'local' && prev?.avatar_url && prev.avatar_url !== avatarUrl && prev.avatar_url.startsWith('/uploads/avatars/')) {
+      await deleteUploadLocal(resolve(process.cwd(), 'public', '.' + prev.avatar_url));
     }
 
     return NextResponse.json({ success: true, avatar_url: avatarUrl });
