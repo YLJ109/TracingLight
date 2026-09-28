@@ -106,6 +106,7 @@ export default function AdminUsers() {
       ) : (
         <Card className="rounded-2xl border-0 shadow-sm py-0">
           <CardContent className="p-0">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-xs text-muted-foreground">
@@ -157,7 +158,7 @@ export default function AdminUsers() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </CardContent>
         </Card>
       )}

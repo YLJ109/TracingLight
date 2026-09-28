@@ -4,6 +4,7 @@ import { requireAuthWithStatus } from '@/lib/server-auth';
 import { eq, and } from 'drizzle-orm';
 import { exam, examEnroll, examAttempt } from '@/storage/database/shared/schema';
 import { canStart, computeDeadline, defaultProctorConfig } from '@/lib/exam-core';
+import { saveDb } from '@/storage/database/db';
 
 /** 开始/恢复考试：校验开考时间与报名，创建或续用 attempt，返回服务器权威 deadline */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

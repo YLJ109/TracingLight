@@ -285,7 +285,17 @@
 :root.eye-care .text-slate-700 { color: oklch(0.38 0.035 145) !important; }
 :root.eye-care .text-slate-600 { color: oklch(0.44 0.035 145) !important; }
 :root.eye-care .text-slate-500 { color: oklch(0.50 0.03 145) !important; }
-:root.eye-care .text-slate-400 { color: oklch(0.56 0.025 145) !important; }
+:root.eye-care .bg-indigo-50  { background-color: #eef4ec !important; }
+:root.eye-care .bg-indigo-100  { background-color: #dfe9dc !important; }
+:root.eye-care .bg-indigo-600  { background-color: #4a7a62 !important; }
+:root.eye-care .bg-indigo-950  { background-color: #1c2b22 !important; }
+:root.eye-care .text-indigo-500, :root.eye-care .text-indigo-600 { color: #3f6f57 !important; }
+:root.eye-care .text-indigo-700 { color: #35604b !important; }
+:root.eye-care .border-indigo-100 { border-color: #d8e4d4 !important; }
+:root.eye-care .border-indigo-200 { border-color: #c5d6c0 !important; }
+:root.eye-care .border-indigo-300 { border-color: #b2c8ac !important; }
+/* v1.3 正文对比度：slate-400 提亮至 WCAG 友好 */
+:root.eye-care .text-slate-400 { color: oklch(0.60 0.03 145) !important; }
 
 /* 品牌色文字/边框轻微转暖 */
 :root.eye-care .text-violet-600, :root.eye-care .text-violet-700 { color: oklch(0.51 0.08 180) !important; }

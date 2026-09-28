@@ -236,7 +236,8 @@ export default function AppShell({
       </main>
 
       {/* 移动端底栏（学生/教师） */}
-      {role !== 'admin' && <MobileTabBar role={role} />}
+      {/* 移动端底栏（三端通用；admin 之前缺失导致移动端零导航） */}
+      <MobileTabBar role={role} />
     </div>
     </ActiveNavContext.Provider>
   );

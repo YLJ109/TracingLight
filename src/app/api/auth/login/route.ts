@@ -37,9 +37,7 @@ function clearLimit(key: string): void {
 
 function clientKey(request: NextRequest, username: string): string {
   // 优先使用代理/反向代理可信来源，避免使用可被客户端伪造/绕过限流的 x-forwarded-for
-  const ip = request.headers.get('x-real-ip')
-    || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    || 'unknown';
+  const ip = 'local'; // 单机部署：限流键改用 username 维度，避免 XFF 头被伪造绕过
   return `${ip}:${username}`;
 }
 

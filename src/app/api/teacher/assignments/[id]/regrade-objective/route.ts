@@ -16,12 +16,12 @@ const OBJ_DETERMINISTIC = new Set(['single_choice', 'judgment', 'multiple_choice
  * 使其与「客观题错了一律 0 分」规则对齐。仅处理确定性客观题，填空/主观不动。
  * POST body 可选 { studentId }，缺省则重算该作业全部学生的客观题。
  */
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await requireAuth(request, 'teacher');
     if (!user) return NextResponse.json({ error: '未登录' }, { status: 401 });
 
-    const assignmentId = Number(request.url.split('/').filter(Boolean).pop());
+    const assignmentId = Number((await params).id);
     if (!Number.isFinite(assignmentId)) {
       return NextResponse.json({ error: '作业参数无效' }, { status: 400 });
     }
@@ -31,8 +31,8 @@ export async function POST(request: NextRequest) {
     const db = getDb();
 
     // 跨租户隔离：仅作业创建教师可回刷
-    const asgn = (await db.select({ teacher_id: assignment.teacher_id })
-      .from(assignment).where(eq(assignment.id, assignmentId)).execute())[0];
+    const asgn = (db.select({ teacher_id: assignment.teacher_id })
+      .from(assignment).where(eq(assignment.id, assignmentId)).all())[0];
     if (!asgn) return NextResponse.json({ error: '作业不存在' }, { status: 404 });
     if (asgn.teacher_id !== user.userId) {
       return NextResponse.json({ error: '无权操作该作业' }, { status: 403 });
@@ -42,13 +42,14 @@ export async function POST(request: NextRequest) {
     const scope = studentId
       ? and(eq(gradingTask.assignment_id, assignmentId), eq(gradingTask.student_id, studentId))
       : eq(gradingTask.assignment_id, assignmentId);
-    const tasks = await db.select().from(gradingTask).where(scope).execute();
+    const tasks = db.select().from(gradingTask).where(scope).all();
 
     let updated = 0;
     let correctedToFull = 0;
     let correctedToZero = 0;
 
-    await db.transaction(async (tx) => {
+    const masteryQueue: Array<{ studentId: number; knowledgePointId: number; score: number; fullScore: number; isCorrect: boolean }> = [];
+    db.transaction((tx) => {
       for (const task of tasks) {
         if (!OBJ_DETERMINISTIC.has(task.question_type)) continue;
         if (!task.student_answer?.trim()) continue; // 未作答不回刷，保持 0 分语义
@@ -68,7 +69,7 @@ export async function POST(request: NextRequest) {
         const isCorrect = r.is_correct;
         const kpId = task.knowledge_point_id;
 
-        await tx.update(gradingTask)
+        tx.update(gradingTask)
           .set({
             total_score: ruleScore,
             teacher_override_score: ruleScore, // 最终分以规则为准
@@ -79,21 +80,21 @@ export async function POST(request: NextRequest) {
             completed_at: task.completed_at ?? new Date().toISOString(),
           })
           .where(eq(gradingTask.id, task.id))
-          .execute();
+          .run();
 
         // 错题本同步：错(有作答)→若未收录则入；对→移除已收录的错题，避免回刷后残留假错题
-        const eb = (await tx.select({ id: errorBook.id })
+        const eb = (tx.select({ id: errorBook.id })
           .from(errorBook)
           .where(and(
             eq(errorBook.student_id, task.student_id),
             eq(errorBook.question_id, task.question_id),
             eq(errorBook.assignment_id, assignmentId),
           ))
-          .limit(1).execute());
+          .limit(1).all());
         if (isCorrect) {
-          if (eb[0]) await tx.delete(errorBook).where(eq(errorBook.id, eb[0].id)).execute();
+          if (eb[0]) tx.delete(errorBook).where(eq(errorBook.id, eb[0].id)).run();
         } else if (!eb[0]) {
-          await tx.insert(errorBook).values({
+          tx.insert(errorBook).values({
             student_id: task.student_id,
             question_id: task.question_id,
             knowledge_point_id: task.knowledge_point_id,
@@ -105,18 +106,16 @@ export async function POST(request: NextRequest) {
             review_status: 'pending',
             review_count: 0,
             next_review_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' '),
-          }).execute();
+          }).run();
         }
 
-        // 掌握度按规则分回写，保持能力画像与最终成绩一致
+        // 掌握度按规则分回写：同步事务内仅收集，事务外统一执行（sql.js 事务回调必须同步）
         if (kpId) {
-          const finalScore = ruleScore;
-          const full = Number(task.full_score) || 0;
-          await syncMasteryFromGrading({
+          masteryQueue.push({
             studentId: task.student_id,
             knowledgePointId: kpId,
-            score: finalScore,
-            fullScore: full,
+            score: ruleScore,
+            fullScore: Number(task.full_score) || 0,
             isCorrect: isCorrect,
           });
         }
@@ -129,7 +128,20 @@ export async function POST(request: NextRequest) {
     try { saveDb(); } catch { /* 定时持久化兜底 */ }
     maybeAutoPublishGrades(assignmentId);
 
-    return NextResponse.json({ success: true, updated, correctedToFull, correctedToZero });
+        // 掌握度回写（事务外异步执行，避免阻塞同步事务）
+    for (const m of masteryQueue) {
+      try {
+        await syncMasteryFromGrading({
+          studentId: m.studentId,
+          knowledgePointId: m.knowledgePointId,
+          score: m.score,
+          fullScore: m.fullScore,
+          isCorrect: m.isCorrect,
+        });
+      } catch (me) { console.error('mastery sync failed:', me); }
+    }
+
+return NextResponse.json({ success: true, updated, correctedToFull, correctedToZero });
   } catch (e) {
     console.error('Regrade objective error:', e);
     return NextResponse.json({ error: '重算失败' }, { status: 500 });

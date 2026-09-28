@@ -72,6 +72,16 @@ export default function KnowledgeGraphPage() {
   const [maxDepth, setMaxDepth] = useState<number>(3);
   const [studentId, setStudentId] = useState<number | null>(null);
   const [selectedNode, setSelectedNode] = useState<APINode | null>(null);
+
+  // 详情抽屉：ESC 关闭（键盘可达性）
+  useEffect(() => {
+    if (!selectedNode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedNode(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedNode]);
   const [leftOpen, setLeftOpen] = useState(true);
   const [filter, setFilter] = useState<Filter>('all');
   const [dark, setDark] = useState(false);

@@ -257,7 +257,9 @@ export async function PATCH(request: NextRequest) {
     // 关键写路径即时落盘（T-2）
     try { saveDb(); } catch { /* 定时持久化兜底 */ }
 
-    return NextResponse.json({ success: true, data: { status: finalStatus } });
+    const updatedRow = db.select({ next_review_at: errorBook.next_review_at })
+      .from(errorBook).where(eq(errorBook.id, Number(error_id))).limit(1).all()[0];
+    return NextResponse.json({ success: true, data: { status: finalStatus, next_review_at: updatedRow?.next_review_at ?? null } });
   } catch (e) {
     if (e && typeof (e as { status?: number }).status === "number") return e as NextResponse;
     console.error('Update error book error:', e);

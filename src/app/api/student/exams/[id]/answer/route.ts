@@ -3,6 +3,7 @@ import { getDb } from '@/storage/database/db';
 import { requireAuthWithStatus } from '@/lib/server-auth';
 import { eq, and } from 'drizzle-orm';
 import { exam, examAttempt, examAnswer } from '@/storage/database/shared/schema';
+import { saveDb } from '@/storage/database/db';
 
 interface SaveAnswerItem {
   question_id: number;

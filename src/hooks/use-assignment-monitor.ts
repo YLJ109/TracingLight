@@ -71,23 +71,22 @@ export function useAssignmentMonitor(options: UseAssignmentMonitorOptions = {}) 
       if (e.type === 'copy') copyRef.current += 1;
     };
 
-    if (disableCopy) {
-      // 禁用敏感区键盘快捷键复制粘贴（老师端未开启则不干预）
-      const onKeydown = (e: KeyboardEvent) => {
-        const mod = e.ctrlKey || e.metaKey;
-        if (mod && ((e.key === 'c' && disableCopy) || (e.key === 'v' && disablePaste))) {
-          e.preventDefault();
-        }
-      };
-      window.addEventListener('keydown', onKeydown);
-      return () => window.removeEventListener('keydown', onKeydown);
-    }
+    // 禁用敏感区键盘快捷键复制粘贴（老师端未开启则不干预）
+    const onKeydown = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && ((e.key === 'c' && disableCopy) || (e.key === 'v' && disablePaste))) {
+        e.preventDefault();
+      }
+    };
 
+    // 复制/粘贴计数与粘贴监听必须始终注册（disableCopy 分支提前 return 曾导致 paste 监控整体失效）
     window.addEventListener('copy', counter);
     document.addEventListener('paste', onPaste);
+    window.addEventListener('keydown', onKeydown);
     return () => {
       window.removeEventListener('copy', counter);
       document.removeEventListener('paste', onPaste);
+      window.removeEventListener('keydown', onKeydown);
     };
   }, [disableCopy, disablePaste, trackPaste]);
 

@@ -5,6 +5,7 @@ import { eq, and } from 'drizzle-orm';
 import { examAttempt } from '@/storage/database/shared/schema';
 import { finalizeExamSubmission } from '@/lib/exam-submit';
 import { writeAudit } from '@/lib/audit';
+import { saveDb } from '@/storage/database/db';
 
 /** 学生交卷：保存剩余作答并最终化成绩（手动交卷） */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

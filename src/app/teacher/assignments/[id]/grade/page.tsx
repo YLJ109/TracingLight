@@ -1,7 +1,7 @@
 'use client';
 import { apiFetch } from '@/lib/api-fetch';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback , useRef } from "react";
 import { useParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -289,17 +289,25 @@ export default function TeacherGradeDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nav]);
 
+  // 竞态守卫：快速切换学生时丢弃过期响应（教师可能对着错误作答改分，业务后果严重）
+  const fetchSeqRef = useRef(0);
   const fetchData = useCallback(async () => {
     if (!studentId) return;
+    const seq = ++fetchSeqRef.current;
     try {
       const res = await apiFetch(`/api/teacher/assignments/${id}/students/${studentId}`);
       const json = await res.json();
+      if (seq !== fetchSeqRef.current) return; // 过期响应
       if (json.success) {
         setData(json.data);
         setTransitionKey((k) => k + 1); // 触发内容淡入过渡
+      } else {
+        toast.error(json.error || '加载批改详情失败');
       }
     } catch (e) {
+      if (seq !== fetchSeqRef.current) return;
       console.error(e);
+      toast.error('网络异常，加载批改详情失败');
     }
   }, [id, studentId]);
 

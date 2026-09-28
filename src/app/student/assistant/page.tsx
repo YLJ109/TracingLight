@@ -80,13 +80,19 @@ export default function AssistantPage() {
   const activeSession = sessions.find((s) => s.id === activeId) || null;
 
   // 切换会话：按需加载消息
+  // 竞态守卫：会话切换序号 + 当前会话 ID 快照，防止流式回复写入已切走的会话（串话）
+  const sessionSeqRef = useRef(0);
+  const activeIdRef = useRef<number | null>(null);
   const switchSession = useCallback(async (id: number) => {
+    const seq = ++sessionSeqRef.current;
+    activeIdRef.current = id;
     setActiveId(id);
     setPending([]);
     setLoadingMsgs(true);
     try {
       const res = await apiFetch(`/api/ai/assistant/session?id=${id}`);
       const d = await res.json();
+      if (seq !== sessionSeqRef.current) return; // 过期响应丢弃
       const raw: Array<{ role: string; content: string; attachment?: string | null }> = d.success ? d.data.messages : [];
       setMessages(raw.map((m) => ({
         role: m.role as 'user' | 'assistant',
@@ -228,7 +234,10 @@ export default function AssistantPage() {
     setLoading(true);
 
     setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
+    // 流式写入作用域标记：仅当仍停留在发起会话时才更新界面
+    const sendScopeId = activeIdRef.current;
     const updateLast = (delta: string) => {
+      if (activeIdRef.current !== sendScopeId) return; // 已切走会话，丢弃流式增量
       setMessages((prev) => {
         const next = [...prev];
         next[next.length - 1] = { role: 'assistant', content: next[next.length - 1].content + delta };
@@ -236,6 +245,7 @@ export default function AssistantPage() {
       });
     };
     const setLast = (content: string) => {
+      if (activeIdRef.current !== sendScopeId) return;
       setMessages((prev) => {
         const next = [...prev];
         next[next.length - 1] = { role: 'assistant', content };

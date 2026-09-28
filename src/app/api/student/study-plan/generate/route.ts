@@ -63,20 +63,20 @@ export async function POST(request: NextRequest) {
     const cid = authUser.classId ?? 0;
 
     // 1. 获取学生课表
-    const schedules = await db.select()
+    const schedules = db.select()
       .from(studentSchedule)
       .where(eq(studentSchedule.student_id, sid))
-      .execute();
+      .all();
 
     // 2. 获取薄弱知识点
-    const masteryLogs = await db.select({
+    const masteryLogs = db.select({
       knowledge_point_id: knowledgeMasteryLog.knowledge_point_id,
       mastery_rate: knowledgeMasteryLog.mastery_rate,
     })
       .from(knowledgeMasteryLog)
       .where(eq(knowledgeMasteryLog.student_id, sid))
       .orderBy(desc(knowledgeMasteryLog.recorded_at))
-      .execute();
+      .all();
 
     const weakKps: string[] = [];
     if (masteryLogs.length > 0) {
@@ -85,11 +85,11 @@ export async function POST(request: NextRequest) {
         if (!seen.has(m.knowledge_point_id) && isWeakMastery(m.mastery_rate)) {
           seen.add(m.knowledge_point_id);
           // Look up knowledge point name
-          const kpRow = await db.select({ name: knowledgePoint.name })
+          const kpRow = db.select({ name: knowledgePoint.name })
             .from(knowledgePoint)
             .where(eq(knowledgePoint.id, m.knowledge_point_id))
             .limit(1)
-            .execute();
+            .all();
           weakKps.push(kpRow[0]?.name || `知识点${m.knowledge_point_id}`);
         }
       }
@@ -97,21 +97,21 @@ export async function POST(request: NextRequest) {
 
     // 3. 获取考试安排
     const today = new Date().toISOString().split("T")[0];
-    const exams = await db.select()
+    const exams = db.select()
       .from(examSchedule)
       .where(and(
         eq(examSchedule.class_id, cid),
         gte(examSchedule.exam_date, today)
       ))
       .orderBy(asc(examSchedule.exam_date))
-      .execute();
+      .all();
 
     // 4. 获取学生信息
-    const studentRows = await db.select({ real_name: user.real_name })
+    const studentRows = db.select({ real_name: user.real_name })
       .from(user)
       .where(eq(user.id, sid))
       .limit(1)
-      .execute();
+      .all();
     const student = studentRows[0] || null;
 
     // 5. 调用AI生成学习计划
@@ -176,8 +176,8 @@ ${JSON.stringify(examInfo, null, 2)}
         is_ai_generated: true,
       }));
 
-      await db.transaction(async (tx) => {
-        await tx.insert(studyPlan).values(planItems).execute();
+      db.transaction((tx) => {
+        tx.insert(studyPlan).values(planItems).run();
       });
       saveDb();
     }

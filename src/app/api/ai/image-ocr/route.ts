@@ -15,6 +15,10 @@ export async function POST(request: NextRequest) {
     if (!image.startsWith('data:image/')) {
       return NextResponse.json({ success: false, error: '缺少图片数据' }, { status: 400 });
     }
+    // 防内存打爆：base64 体积上限 8MB（约对应 6MB 原图）
+    if (image.length > 8 * 1024 * 1024) {
+      return NextResponse.json({ success: false, error: '图片过大，请压缩后上传' }, { status: 413 });
+    }
 
     const text = await extractTextFromImage(
       image,

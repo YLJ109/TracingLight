@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
     // 可访问课程范围
     const accessible = await getAccessibleCourseIds(authUser);
-    if (courseId && !canAccessCourse(authUser, courseId)) {
+    if (courseId && !await canAccessCourse(authUser, courseId)) {
       return NextResponse.json({ error: '无权访问该课程' }, { status: 403 });
     }
     const filterCourseIds = courseId ? [courseId] : accessible;
@@ -44,8 +44,8 @@ export async function GET(request: NextRequest) {
       .execute();
     const courseMap = new Map(courses.map((c) => [c.id, c.name]));
 
-    const data = posts.map((p) => {
-      const author = resolveAuthorInfo(p.author_id);
+    const data = await Promise.all(posts.map(async (p) => {
+      const author = await resolveAuthorInfo(p.author_id);
       return {
         id: p.id,
         course_id: p.course_id,
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
         author,
         can_delete: p.author_id === authUser.userId || authUser.role === 'admin' || authUser.role === 'teacher',
       };
-    });
+    }));
 
     // 教师/管理员额外返回可访问课程列表，供前端课程筛选与「发帖选课」使用（避免缺 course_id 导致发帖 400）
     // 学生端仍只消费 data 数组，附加字段不破坏兼容。
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
     if (!courseId) return NextResponse.json({ error: '缺少课程' }, { status: 400 });
     if (!title) return NextResponse.json({ error: '请输入标题' }, { status: 400 });
     if (!content) return NextResponse.json({ error: '请输入内容' }, { status: 400 });
-    if (!canAccessCourse(authUser, courseId)) {
+    if (!(await canAccessCourse(authUser, courseId))) {
       return NextResponse.json({ error: '无权在该课程发布讨论' }, { status: 403 });
     }
 

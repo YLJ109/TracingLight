@@ -119,6 +119,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const g = (await db.select().from(examGrading).where(eq(examGrading.id, it.grading_id)).execute())[0];
     if (!g || g.exam_id !== examId) continue;
     const score = Number(it.score);
+      if (!Number.isFinite(score) || score < 0 || score > (g.full_score || 0)) {
+        return NextResponse.json({ error: '分值不合法（须为 0~满分内的数值）' }, { status: 400 });
+      }
     const comment = it.comment || g.overall_comment; // 未填评语则保留 AI 评语
     await db.update(examGrading).set({
       total_score: score, status: 'completed', overall_comment: comment, completed_at: now,

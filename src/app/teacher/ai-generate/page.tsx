@@ -261,28 +261,45 @@ const validateQuestion = (q: { question_type: string; content: string; options?:
     if (!kpId) { toast.error('请选择知识点'); return; }
     setSaving(true);
     let ok = 0;
+    const failed: string[] = [];
+    const okIdx = new Set<number>();
     try {
       for (const q of chosen) {
-        const res = await apiFetch('/api/teacher/questions/bank', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            course_id: parseInt(courseId),
-            knowledge_point_id: parseInt(kpId),
-            question_type: q.question_type,
-            difficulty: q.difficulty,
-            content: q.content,
-            options: q.options,
-            answer: q.answer,
-            analysis: q.analysis,
-            default_score: q.default_score,
-            source: 'ai',
-          }),
-        });
-        if (res.ok) ok++;
+        try {
+          const res = await apiFetch('/api/teacher/questions/bank', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              course_id: parseInt(courseId),
+              knowledge_point_id: parseInt(kpId),
+              question_type: q.question_type,
+              difficulty: q.difficulty,
+              content: q.content,
+              options: q.options,
+              answer: q.answer,
+              analysis: q.analysis,
+              default_score: q.default_score,
+              source: 'ai',
+            }),
+          });
+          const d = await res.json().catch(() => null);
+          // 业务失败（success:false）与网络失败都计入失败明细，不得静默丢题
+          if (!d?.success) {
+            failed.push(`「${(q.content || '').slice(0, 20)}…」${d?.error || '入库失败'}`);
+          } else {
+            ok++;
+            okIdx.add(chosen.indexOf(q));
+          }
+        } catch {
+          failed.push(`「${(q.content || '').slice(0, 20)}…」网络异常`);
+        }
       }
       setSavedCount(ok);
-      setGenerated([]);
+      // 只清成功项：失败的题目保留在预览区供教师重试
+      setGenerated(failed.length === 0 ? [] : chosen.filter((_, i) => !okIdx.has(i)));
+      if (failed.length > 0) {
+        toast.error(`${failed.length} 题入库失败：\n${failed.join('\n')}`, { duration: 8000 });
+      }
     } finally {
       setSaving(false);
     }

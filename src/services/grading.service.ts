@@ -405,20 +405,20 @@ export async function recordGrading(params: {
   }
   if (!Array.isArray(result.annotations)) result.annotations = [];
 
-  const gradingTaskId = await db.transaction(async () => {
+  const gradingTaskId = db.transaction((tx) => {
     // 防重复累计：同一 (assignment, student, question) 此前若已批改（含退回后重批），旧行置 superseded 作废，
     // 各汇总只认最新一条 completed，避免总分/题数因行数叠加而膨胀。
-    await db.update(gradingTask)
+    tx.update(gradingTask)
       .set({ status: 'superseded' })
       .where(and(
         eq(gradingTask.assignment_id, assignmentId),
         eq(gradingTask.student_id, studentId),
         eq(gradingTask.question_id, questionData.id),
       ))
-      .execute();
+      .run();
 
-    const inserted = await db.insert(gradingTask).values({
-      answer_id: answerId || 0,
+    const inserted = tx.insert(gradingTask).values({
+      answer_id: answerId > 0 ? answerId : (() => { throw new Error('ANSWER_MISSING'); })(),
       assignment_id: assignmentId,
       student_id: studentId,
       question_id: questionData.id,
@@ -436,22 +436,22 @@ export async function recordGrading(params: {
       ai_generated_probability: result.ai_generated_probability ?? null,
       status: 'completed',
       completed_at: new Date().toISOString(),
-    }).returning().execute();
+    }).returning().all();
     const taskId = inserted[0]?.id ?? null;
 
     // 非满分错题归档（含去重）。空答/未作答只计 0 分但不进错题本，避免"未作答"污染错题复习队列
     const fullScore = result.full_score || questionData.default_score || 10;
     if (studentAnswer?.trim() && result.total_score < fullScore) {
-      const existing = await db.select({ id: errorBook.id })
+      const existing = tx.select({ id: errorBook.id })
         .from(errorBook)
         .where(and(
           eq(errorBook.student_id, studentId),
           eq(errorBook.question_id, questionData.id),
           eq(errorBook.assignment_id, assignmentId),
         ))
-        .limit(1).execute();
+        .limit(1).all();
       if (!existing[0]) {
-        await db.insert(errorBook).values({
+        tx.insert(errorBook).values({
           student_id: studentId,
           question_id: questionData.id,
           knowledge_point_id: questionData.knowledge_point_id,
@@ -463,7 +463,7 @@ export async function recordGrading(params: {
           review_status: 'pending',
           review_count: 0,
           next_review_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' '),
-        }).execute();
+        }).run();
       }
     }
 
@@ -473,7 +473,7 @@ export async function recordGrading(params: {
     if (kpId) {
       const isCorrect = result.total_score >= fullScore * 0.6;
       const thisRate = scoreToMastery(result.total_score, fullScore);
-      const existingLog = await db.select({
+      const existingLog = tx.select({
         id: knowledgeMasteryLog.id,
         mastery_rate: knowledgeMasteryLog.mastery_rate,
         error_count: knowledgeMasteryLog.error_count,
@@ -483,27 +483,27 @@ export async function recordGrading(params: {
           eq(knowledgeMasteryLog.student_id, studentId),
           eq(knowledgeMasteryLog.knowledge_point_id, kpId),
         ))
-        .limit(1).execute();
+        .limit(1).all();
       const row = existingLog[0];
       if (row) {
         const oldRate = row.mastery_rate || 0;
         const newRate = Math.round(oldRate * 0.7 + thisRate * 0.3);
-        await db.update(knowledgeMasteryLog)
+        tx.update(knowledgeMasteryLog)
           .set({
             mastery_rate: newRate,
             error_count: (row.error_count || 0) + (isCorrect ? 0 : 1),
             recorded_at: new Date().toISOString().split('T')[0],
           })
           .where(eq(knowledgeMasteryLog.id, row.id))
-          .execute();
+          .run();
       } else {
-        await db.insert(knowledgeMasteryLog).values({
+        tx.insert(knowledgeMasteryLog).values({
           student_id: studentId,
           knowledge_point_id: kpId,
           mastery_rate: thisRate,
           error_count: isCorrect ? 0 : 1,
           recorded_at: new Date().toISOString().split('T')[0],
-        }).execute();
+        }).run();
       }
     }
 

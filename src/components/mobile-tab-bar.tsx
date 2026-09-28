@@ -11,6 +11,8 @@ import {
   Library,
   Sparkles,
   MessageCircle,
+  Shield,
+  Settings,
 } from 'lucide-react';
 
 const studentTabs = [
@@ -21,6 +23,14 @@ const studentTabs = [
   { href: '/student/recommend', label: '推荐', icon: Sparkles },
 ];
 
+const adminTabs = [
+  { href: '/admin', label: '概览', icon: LayoutDashboard },
+  { href: '/admin/users', label: '用户', icon: Users },
+  { href: '/admin/courses', label: '课程', icon: BookOpen },
+  { href: '/admin/logs', label: '日志', icon: FileText },
+  { href: '/admin/settings', label: '设置', icon: Settings },
+];
+
 const teacherTabs = [
   { href: '/teacher', label: '总览', icon: LayoutDashboard },
   { href: '/teacher/students', label: '学生', icon: Users },
@@ -29,9 +39,9 @@ const teacherTabs = [
   { href: '/teacher/ai-generate', label: 'AI', icon: Sparkles },
 ];
 
-export default function MobileTabBar({ role }: { role: 'student' | 'teacher' }) {
+export default function MobileTabBar({ role }: { role: 'student' | 'teacher' | 'admin' }) {
   const pathname = usePathname();
-  const tabs = role === 'student' ? studentTabs : teacherTabs;
+  const tabs = role === 'student' ? studentTabs : role === 'admin' ? adminTabs : teacherTabs;
 
   function isActive(href: string) {
     if (href === '/student' || href === '/teacher') return pathname === href;

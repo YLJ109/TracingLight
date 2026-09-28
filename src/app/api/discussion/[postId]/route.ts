@@ -20,7 +20,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const post = (await db.select().from(discussionPost).where(eq(discussionPost.id, pid)).limit(1).execute())[0];
     if (!post) return NextResponse.json({ error: '帖子不存在' }, { status: 404 });
-    if (!canAccessCourse(authUser, post.course_id)) {
+    if (!await canAccessCourse(authUser, post.course_id)) {
       return NextResponse.json({ error: '无权访问该课程' }, { status: 403 });
     }
 
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       for (const l of myLikes) likedReplyIds.add(l.target_id);
     }
 
-    const author = resolveAuthorInfo(post.author_id);
+    const author = await resolveAuthorInfo(post.author_id);
 
     return NextResponse.json({
       success: true,
@@ -60,15 +60,15 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
           liked: !!myPostLike,
           can_delete: post.author_id === authUser.userId || authUser.role === 'admin' || authUser.role === 'teacher',
         },
-        replies: replies.map((r) => ({
+        replies: await Promise.all(replies.map(async (r) => ({
           id: r.id,
           content: r.content,
           like_count: r.like_count || 0,
           created_at: r.created_at,
-          author: resolveAuthorInfo(r.author_id),
+          author: await resolveAuthorInfo(r.author_id),
           liked: likedReplyIds.has(r.id),
           can_delete: r.author_id === authUser.userId || authUser.role === 'admin',
-        })),
+        }))),
       },
     });
   } catch (e) {
@@ -89,7 +89,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const post = (await db.select().from(discussionPost).where(eq(discussionPost.id, pid)).limit(1).execute())[0];
     if (!post) return NextResponse.json({ error: '帖子不存在' }, { status: 404 });
-    if (!canAccessCourse(authUser, post.course_id)) {
+    if (!await canAccessCourse(authUser, post.course_id)) {
       return NextResponse.json({ error: '无权在该课程发言' }, { status: 403 });
     }
 
@@ -134,7 +134,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       return NextResponse.json({ error: '无权删除该帖子' }, { status: 403 });
     }
     // 教师/管理员仅能删本人可见课程下的帖子
-    if (!isOwner && !canAccessCourse(authUser, post.course_id)) {
+    if (!isOwner && !await canAccessCourse(authUser, post.course_id)) {
       return NextResponse.json({ error: '无权删除该帖子' }, { status: 403 });
     }
 

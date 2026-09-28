@@ -252,7 +252,8 @@ export default function StudentErrors() {
           const err = errors.find((e) => e.id === errorId);
           if (err) setToast({ message: '第三次复习完成，已自动标记为掌握！', kpName: err.knowledge_point_name });
         } else {
-          setErrors(prev => prev.map(e => e.id === errorId ? { ...e, review_count: (e.review_count || 0) + 1, next_review_at: new Date(Date.now() + ((e.review_count || 0) === 0 ? 3 : 7) * 86400000).toISOString().slice(0, 19).replace('T', ' ') } : e));
+          // 以下一响应中的服务端排期为准（间隔策略调整时前端自动跟随）
+          setErrors(prev => prev.map(e => e.id === errorId ? { ...e, review_count: (e.review_count || 0) + 1, next_review_at: d.data?.next_review_at ?? e.next_review_at } : e));
           const err = errors.find((e) => e.id === errorId);
           if (err) setToast({ message: '本次复习完成，下次复习已按间隔排期', kpName: err.knowledge_point_name });
         }
@@ -518,7 +519,7 @@ export default function StudentErrors() {
   return (
     <div className="space-y-6 animate-fade-in-up">
       {/* Toast */}
-      {toast && (
+      {toast && createPortal(
         <div className="fixed top-4 right-4 z-50 animate-fade-in-up">
           <div className="flex items-center gap-3 bg-white border border-green-200 rounded-xl px-4 py-3 shadow-lg max-w-md">
             <CheckCircle2 className="w-5 h-5 text-green-500 flex-none" />
@@ -531,7 +532,8 @@ export default function StudentErrors() {
             </button>
           </div>
         </div>
-      )}
+      , document.body)
+      }
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           {kpIdFromQuery && kpFilterName && (

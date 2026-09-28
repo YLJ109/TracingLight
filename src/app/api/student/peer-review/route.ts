@@ -312,14 +312,14 @@ export async function POST(request: NextRequest) {
       reviewee_id: revieweeId,
       total_score: Math.round(totalScore * 10) / 10,
       dimension_scores: dimensionScores,
-      comment: body.comment || '',
+      comment: String(body.comment || '').replace(/<[^>]*>/g, '').trim().slice(0, 500),
       status: 'completed',
     }).onConflictDoUpdate({
       target: [peerReview.assignment_id, peerReview.question_id, peerReview.reviewer_id, peerReview.reviewee_id],
       set: {
         total_score: Math.round(totalScore * 10) / 10,
         dimension_scores: dimensionScores,
-        comment: body.comment || '',
+        comment: String(body.comment || '').replace(/<[^>]*>/g, '').trim().slice(0, 500),
         status: 'completed',
       },
     }).execute();
