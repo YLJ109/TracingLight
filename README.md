@@ -31,6 +31,27 @@
 
 **溯光 TracingLight** 是一套面向高校师生的智慧教育平台，利用 AI 大模型实现从智能出题、作业批改、错题分析到个性化学习推荐的完整教学闭环。覆盖学生端、教师端、管理端三端。
 
+### 界面预览
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/login.png" alt="登录页" /><br /><b>统一登录</b> · 三角色一键切换</td>
+    <td width="50%" align="center"><img src="docs/screenshots/student-overview.png" alt="学生学情" /><br /><b>学生学情总览</b> · 掌握率 / 班级排名 / 薄弱点定位</td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/student-errors.png" alt="AI 错题本" /><br /><b>AI 错题本</b> · 深度解析 + 间隔复习 + 举一反三</td>
+    <td width="50%" align="center"><img src="docs/screenshots/student-assistant.png" alt="AI 答疑" /><br /><b>AI 答疑</b> · 多会话流式输出，结合学情上下文</td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/teacher-analytics.png" alt="教师学情看板" /><br /><b>教师学情看板</b> · 班级掌握率 / 分层 / 薄弱点布置</td>
+    <td width="50%" align="center"><img src="docs/screenshots/teacher-ai-generate.png" alt="AI 智能出题" /><br /><b>AI 智能出题</b> · 质量自检 + 预览审校 + 图片出题</td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/grading-config.png" alt="批改规则配置" /><br /><b>批改规则配置</b> · 评分标准 / 扣分规则 / 等级自定义</td>
+    <td width="50%" align="center"><img src="docs/screenshots/knowledge-graph.png" alt="知识图谱" /><br /><b>知识图谱</b> · 知识 / 能力 / 思政三维可视化</td>
+  </tr>
+</table>
+
 ### 核心能力
 
 | 能力 | 说明 |
