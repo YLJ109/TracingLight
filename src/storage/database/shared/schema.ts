@@ -1,44 +1,44 @@
 import {
-  pgTable, serial, integer, text, doublePrecision, jsonb, boolean, index, uniqueIndex,
-} from "drizzle-orm/pg-core";
+  sqliteTable, integer, text, real, index, uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 // ===================== 基础数据层 =====================
 
-export const school = pgTable("school", {
-  id: serial("id").primaryKey(),
+export const school = sqliteTable("school", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   short_name: text("short_name"),
   logo_url: text("logo_url"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 });
 
-export const college = pgTable("college", {
-  id: serial("id").primaryKey(),
+export const college = sqliteTable("college", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   school_id: integer("school_id").notNull().references(() => school.id),
   name: text("name").notNull(),
   short_name: text("short_name"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [index("college_school_id_idx").on(table.school_id)]);
 
-export const major = pgTable("major", {
-  id: serial("id").primaryKey(),
+export const major = sqliteTable("major", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   college_id: integer("college_id").notNull().references(() => college.id),
   name: text("name").notNull(),
   short_name: text("short_name"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [index("major_college_id_idx").on(table.college_id)]);
 
-export const classInfo = pgTable("class", {
-  id: serial("id").primaryKey(),
+export const classInfo = sqliteTable("class", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   major_id: integer("major_id").notNull().references(() => major.id),
   name: text("name").notNull(),
   grade: text("grade"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [index("class_major_id_idx").on(table.major_id)]);
 
-export const user = pgTable("user", {
-  id: serial("id").primaryKey(),
+export const user = sqliteTable("user", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   username: text("username").notNull().unique(),
   real_name: text("real_name").notNull(),
   role: text("role").notNull(), // teacher / student
@@ -54,23 +54,23 @@ export const user = pgTable("user", {
   title: text("title"), // 教师职称：讲师 / 副教授 / 教授
   bio: text("bio"), // 个人简介
   avatar_url: text("avatar_url"),
-  is_active: boolean("is_active").default(true),
+  is_active: integer("is_active", { mode: "boolean" }).default(true),
   token_version: integer("token_version").default(0), // 改密/禁用时递增，使旧 JWT 全部失效
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("user_role_idx").on(table.role),
   index("user_class_id_idx").on(table.class_id),
 ]);
 
-export const course = pgTable("course", {
-  id: serial("id").primaryKey(),
+export const course = sqliteTable("course", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   short_name: text("short_name"),
   description: text("description"),
   teacher_id: integer("teacher_id").references(() => user.id),
   class_id: integer("class_id").references(() => classInfo.id),
   semester: text("semester"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("course_teacher_id_idx").on(table.teacher_id),
   index("course_class_id_idx").on(table.class_id),
@@ -78,22 +78,22 @@ export const course = pgTable("course", {
 
 // ===================== 教学资源层 =====================
 
-export const knowledgePoint = pgTable("knowledge_point", {
-  id: serial("id").primaryKey(),
+export const knowledgePoint = sqliteTable("knowledge_point", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   course_id: integer("course_id").notNull().references(() => course.id),
   name: text("name").notNull(),
   description: text("description"),
   difficulty: text("difficulty"), // easy / medium / hard
   parent_id: integer("parent_id"),
   sort_order: integer("sort_order").default(0),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("kp_course_id_idx").on(table.course_id),
   index("kp_parent_id_idx").on(table.parent_id),
 ]);
 
-export const knowledgeGraphNode = pgTable("knowledge_graph_node", {
-  id: serial("id").primaryKey(),
+export const knowledgeGraphNode = sqliteTable("knowledge_graph_node", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   knowledge_point_id: integer("knowledge_point_id").notNull().references(() => knowledgePoint.id, { onDelete: "cascade" }),
   course_id: integer("course_id").notNull().references(() => course.id),
   node_name: text("node_name").notNull(),
@@ -101,8 +101,8 @@ export const knowledgeGraphNode = pgTable("knowledge_graph_node", {
   parent_node_id: integer("parent_node_id"),
   display_order: integer("display_order").default(0),
   color_hex: text("color_hex"),
-  is_leaf: boolean("is_leaf").default(false),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  is_leaf: integer("is_leaf", { mode: "boolean" }).default(false),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("kgn_course_id_idx").on(table.course_id),
   index("kgn_parent_node_id_idx").on(table.parent_node_id),
@@ -110,8 +110,8 @@ export const knowledgeGraphNode = pgTable("knowledge_graph_node", {
   // 同一知识点可出现在图谱的多个层级，故不用 uniqueIndex
 ]);
 
-export const knowledgeGraphEdge = pgTable("knowledge_graph_edge", {
-  id: serial("id").primaryKey(),
+export const knowledgeGraphEdge = sqliteTable("knowledge_graph_edge", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   from_node_id: integer("from_node_id").notNull().references(() => knowledgeGraphNode.id, { onDelete: "cascade" }),
   to_node_id: integer("to_node_id").notNull().references(() => knowledgeGraphNode.id, { onDelete: "cascade" }),
   relation_type: text("relation_type").notNull(), // prerequisite / related / expands
@@ -122,26 +122,26 @@ export const knowledgeGraphEdge = pgTable("knowledge_graph_edge", {
   uniqueIndex("kge_unique_idx").on(table.from_node_id, table.to_node_id, table.relation_type),
 ]);
 
-export const question = pgTable("question", {
-  id: serial("id").primaryKey(),
+export const question = sqliteTable("question", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   course_id: integer("course_id").notNull().references(() => course.id),
   knowledge_point_id: integer("knowledge_point_id").notNull().references(() => knowledgePoint.id),
   question_type: text("question_type").notNull(), // single_choice / multi_choice / judgment / fill_blank / short_answer / programming
   difficulty: text("difficulty").notNull(), // easy / medium / hard
   content: text("content").notNull(),
-  options: jsonb("options"),
+  options: text("options", { mode: "json" }),
   answer: text("answer").notNull(),
   analysis: text("analysis"),
   default_score: integer("default_score").default(10),
   source: text("source").default("ai"),
   version: integer("version").default(1),
-  is_active: boolean("is_active").default(true),
-  locked: boolean("locked").default(false), // 锁定后选题/组卷不可选
+  is_active: integer("is_active", { mode: "boolean" }).default(true),
+  locked: integer("locked", { mode: "boolean" }).default(false), // 锁定后选题/组卷不可选
   min_chars: integer("min_chars"), // 主观题作答最低字数（NULL=不限）
   max_chars: integer("max_chars"), // 主观题作答最高字数（NULL=不限）
   min_select: integer("min_select"), // 多选至少选择项数（NULL=不限）
   max_select: integer("max_select"), // 多选最多选择项数（NULL=不限）
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("q_course_id_idx").on(table.course_id),
   index("q_kp_id_idx").on(table.knowledge_point_id),
@@ -151,25 +151,25 @@ export const question = pgTable("question", {
 
 // ===================== 业务流转层 =====================
 
-export const assignment = pgTable("assignment", {
-  id: serial("id").primaryKey(),
+export const assignment = sqliteTable("assignment", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   course_id: integer("course_id").notNull().references(() => course.id),
   teacher_id: integer("teacher_id").notNull().references(() => user.id),
   title: text("title").notNull(),
   description: text("description"),
-  question_ids: jsonb("question_ids").notNull(), // integer array as JSON
-  total_score: doublePrecision("total_score").default(100),
+  question_ids: text("question_ids", { mode: "json" }).notNull(), // integer array as JSON
+  total_score: real("total_score").default(100),
   start_time: text("start_time").notNull(),
   end_time: text("end_time").notNull(),
   status: text("status").default("published"), // draft / published / closed
-  allow_resubmit: boolean("allow_resubmit").default(false),
+  allow_resubmit: integer("allow_resubmit", { mode: "boolean" }).default(false),
   review_mode: text("review_mode").default("auto"), // auto / teacher_review
-  has_subjective: boolean("has_subjective").default(false),
-  grades_published: boolean("grades_published").default(false), // 成绩是否已发布给学生（发布前学生不可见批改分数）
-  question_scores: jsonb("question_scores"), // 布置时按难度/题型自动分配的每题分值 {questionId: score}
-  monitor_config: jsonb("monitor_config"), // 防作弊监督配置 JSON（禁用复制粘贴/强制全屏/最低时长等）
-  peer_review: jsonb("peer_review"), // 生生互评配置 { enabled: boolean, count: number, reveal_name?: boolean }（count=每份学生作业被几位同学互评，默认2）
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  has_subjective: integer("has_subjective", { mode: "boolean" }).default(false),
+  grades_published: integer("grades_published", { mode: "boolean" }).default(false), // 成绩是否已发布给学生（发布前学生不可见批改分数）
+  question_scores: text("question_scores", { mode: "json" }), // 布置时按难度/题型自动分配的每题分值 {questionId: score}
+  monitor_config: text("monitor_config", { mode: "json" }), // 防作弊监督配置 JSON（禁用复制粘贴/强制全屏/最低时长等）
+  peer_review: text("peer_review", { mode: "json" }), // 生生互评配置 { enabled: boolean, count: number, reveal_name?: boolean }（count=每份学生作业被几位同学互评，默认2）
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("asgn_course_id_idx").on(table.course_id),
   index("asgn_status_idx").on(table.status),
@@ -177,17 +177,17 @@ export const assignment = pgTable("assignment", {
 
 /** 生生互评（peer review）：学生互评同学的主观题作答（盲评，默认匿名）。
  * 只作「互评参考」信号，绝不改变学生的官方成绩（官方成绩仍以 grading_task 的 AI/教师批改为准）。 */
-export const peerReview = pgTable("peer_review", {
-  id: serial("id").primaryKey(),
+export const peerReview = sqliteTable("peer_review", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   assignment_id: integer("assignment_id").notNull().references(() => assignment.id, { onDelete: "cascade" }),
   question_id: integer("question_id").notNull().references(() => question.id),
   reviewer_id: integer("reviewer_id").notNull().references(() => user.id), // 评阅同学（学生）
   reviewee_id: integer("reviewee_id").notNull().references(() => user.id), // 被评同学（学生）
-  total_score: doublePrecision("total_score"), // 互评得分（0 ~ 题目满分）
-  dimension_scores: jsonb("dimension_scores"), // 可选：四维度互评 {knowledge_accuracy,...}
+  total_score: real("total_score"), // 互评得分（0 ~ 题目满分）
+  dimension_scores: text("dimension_scores", { mode: "json" }), // 可选：四维度互评 {knowledge_accuracy,...}
   comment: text("comment"),
   status: text("status").default("completed"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("pr_assignment_id_idx").on(table.assignment_id),
   index("pr_question_id_idx").on(table.question_id),
@@ -196,50 +196,50 @@ export const peerReview = pgTable("peer_review", {
   uniqueIndex("pr_unique_idx").on(table.assignment_id, table.question_id, table.reviewer_id, table.reviewee_id),
 ]);
 
-export const answer = pgTable("answer", {
-  id: serial("id").primaryKey(),
+export const answer = sqliteTable("answer", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   assignment_id: integer("assignment_id").notNull().references(() => assignment.id, { onDelete: "cascade" }),
   student_id: integer("student_id").notNull().references(() => user.id),
   question_id: integer("question_id").notNull().references(() => question.id),
   student_answer: text("student_answer"),
-  is_submitted: boolean("is_submitted").default(false),
+  is_submitted: integer("is_submitted", { mode: "boolean" }).default(false),
   submitted_at: text("submitted_at"),
-  returned: boolean("returned").default(false), // 教师退回重做标记
+  returned: integer("returned", { mode: "boolean" }).default(false), // 教师退回重做标记
   returned_at: text("returned_at"),
   return_comment: text("return_comment"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("ans_assignment_id_idx").on(table.assignment_id),
   index("ans_student_id_idx").on(table.student_id),
   uniqueIndex("ans_unique_idx").on(table.assignment_id, table.student_id, table.question_id),
 ]);
 
-export const gradingTask = pgTable("grading_task", {
-  id: serial("id").primaryKey(),
+export const gradingTask = sqliteTable("grading_task", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   answer_id: integer("answer_id").notNull().references(() => answer.id, { onDelete: "cascade" }),
   assignment_id: integer("assignment_id").notNull().references(() => assignment.id),
   student_id: integer("student_id").notNull().references(() => user.id),
   question_id: integer("question_id").notNull().references(() => question.id),
   knowledge_point_id: integer("knowledge_point_id").notNull().references(() => knowledgePoint.id),
-  full_score: doublePrecision("full_score").notNull(),
+  full_score: real("full_score").notNull(),
   question_type: text("question_type").notNull(),
   reference_answer: text("reference_answer"),
   student_answer: text("student_answer"),
-  rubric_json: jsonb("rubric_json"),
-  total_score: doublePrecision("total_score"),
-  dimension_scores: jsonb("dimension_scores"),
-  annotations: jsonb("annotations"),
-  unmastered_knowledge_ids: jsonb("unmastered_knowledge_ids"),
+  rubric_json: text("rubric_json", { mode: "json" }),
+  total_score: real("total_score"),
+  dimension_scores: text("dimension_scores", { mode: "json" }),
+  annotations: text("annotations", { mode: "json" }),
+  unmastered_knowledge_ids: text("unmastered_knowledge_ids", { mode: "json" }),
   error_type: text("error_type"),
   overall_comment: text("overall_comment"),
   status: text("status").default("pending"), // pending / processing / completed / failed
   retry_count: integer("retry_count").default(0),
   max_retries: integer("max_retries").default(3),
   error_message: text("error_message"),
-  teacher_override_score: doublePrecision("teacher_override_score"),
+  teacher_override_score: real("teacher_override_score"),
   teacher_override_comment: text("teacher_override_comment"),
-  ai_generated_probability: doublePrecision("ai_generated_probability"), // AI率：疑似 AI 生成概率 0~1（仅主观题评估）
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  ai_generated_probability: real("ai_generated_probability"), // AI率：疑似 AI 生成概率 0~1（仅主观题评估）
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
   completed_at: text("completed_at"),
 }, (table) => [
   index("gt_status_idx").on(table.status),
@@ -247,8 +247,8 @@ export const gradingTask = pgTable("grading_task", {
   index("gt_student_id_idx").on(table.student_id),
 ]);
 
-export const errorBook = pgTable("error_book", {
-  id: serial("id").primaryKey(),
+export const errorBook = sqliteTable("error_book", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   student_id: integer("student_id").notNull().references(() => user.id),
   question_id: integer("question_id").references(() => question.id),
   knowledge_point_id: integer("knowledge_point_id").notNull().references(() => knowledgePoint.id),
@@ -261,34 +261,34 @@ export const errorBook = pgTable("error_book", {
   error_type: text("error_type"),
   error_analysis: text("error_analysis"),
   knowledge_explanation: text("knowledge_explanation"),
-  similar_questions: jsonb("similar_questions"),
+  similar_questions: text("similar_questions", { mode: "json" }),
   learning_suggestion: text("learning_suggestion"),
   review_status: text("review_status").default("pending"), // pending / reviewing / mastered
   reviewed_at: text("reviewed_at"),
   next_review_at: text("next_review_at"), // 间隔复习到期时间（1/3/7 天）
   review_count: integer("review_count").default(0), // 已复习次数（推进间隔用）
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("eb_student_id_idx").on(table.student_id),
   index("eb_kp_id_idx").on(table.knowledge_point_id),
   index("eb_review_status_idx").on(table.review_status),
 ]);
 
-export const knowledgeMasteryLog = pgTable("knowledge_mastery_log", {
-  id: serial("id").primaryKey(),
+export const knowledgeMasteryLog = sqliteTable("knowledge_mastery_log", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   student_id: integer("student_id").notNull().references(() => user.id),
   knowledge_point_id: integer("knowledge_point_id").notNull().references(() => knowledgePoint.id),
-  mastery_rate: doublePrecision("mastery_rate").notNull(),
+  mastery_rate: real("mastery_rate").notNull(),
   error_count: integer("error_count").default(0),
-  recorded_at: text("recorded_at").notNull().default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD')`),
+  recorded_at: text("recorded_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("kml_student_id_idx").on(table.student_id),
   index("kml_recorded_at_idx").on(table.recorded_at),
   uniqueIndex("kml_unique_idx").on(table.student_id, table.knowledge_point_id, table.recorded_at),
 ]);
 
-export const answerMonitor = pgTable("answer_monitor", {
-  id: serial("id").primaryKey(),
+export const answerMonitor = sqliteTable("answer_monitor", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   assignment_id: integer("assignment_id").notNull().references(() => assignment.id, { onDelete: "cascade" }),
   student_id: integer("student_id").notNull().references(() => user.id),
   copy_count: integer("copy_count").default(0),          // 复制次数
@@ -296,11 +296,11 @@ export const answerMonitor = pgTable("answer_monitor", {
   blur_count: integer("blur_count").default(0),          // 失焦/切屏次数
   blur_seconds: integer("blur_seconds").default(0),      // 累计失焦秒数
   time_spent_seconds: integer("time_spent_seconds").default(0), // 从开始到提交用时（秒）
-  paste_records: jsonb("paste_records"), // 粘贴明细 [{questionId, preview, at}] 供教师追溯
-  suspicious_flag: boolean("suspicious_flag").default(false), // 系统判疑
+  paste_records: text("paste_records", { mode: "json" }), // 粘贴明细 [{questionId, preview, at}] 供教师追溯
+  suspicious_flag: integer("suspicious_flag", { mode: "boolean" }).default(false), // 系统判疑
   suspicious_reason: text("suspicious_reason"),
-  monitor_snapshot: jsonb("monitor_snapshot"), // 其他快照数据
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  monitor_snapshot: text("monitor_snapshot", { mode: "json" }), // 其他快照数据
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
   updated_at: text("updated_at"),
 }, (table) => [
   index("am_assignment_id_idx").on(table.assignment_id),
@@ -310,8 +310,8 @@ export const answerMonitor = pgTable("answer_monitor", {
 
 // ===================== 互动管理层 =====================
 
-export const questionRecord = pgTable("question_record", {
-  id: serial("id").primaryKey(),
+export const questionRecord = sqliteTable("question_record", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   student_id: integer("student_id").notNull().references(() => user.id),
   teacher_id: integer("teacher_id").references(() => user.id),
   course_id: integer("course_id").references(() => course.id),
@@ -321,9 +321,9 @@ export const questionRecord = pgTable("question_record", {
   question_text: text("question_text").notNull(),
   answer_text: text("answer_text"),
   status: text("status").default("pending"), // pending / answered / resolved / closed
-  is_public: boolean("is_public").default(false),
+  is_public: integer("is_public", { mode: "boolean" }).default(false),
   student_rating: integer("student_rating"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
   answered_at: text("answered_at"),
   resolved_at: text("resolved_at"),
 }, (table) => [
@@ -333,27 +333,27 @@ export const questionRecord = pgTable("question_record", {
   index("qr_course_id_idx").on(table.course_id),
 ]);
 
-export const announcement = pgTable("announcement", {
-  id: serial("id").primaryKey(),
+export const announcement = sqliteTable("announcement", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   teacher_id: integer("teacher_id").notNull().references(() => user.id),
   course_id: integer("course_id").references(() => course.id),
   title: text("title").notNull(),
   content: text("content").notNull(),
-  is_pinned: boolean("is_pinned").default(false),
+  is_pinned: integer("is_pinned", { mode: "boolean" }).default(false),
   target_type: text("target_type").default("all"), // all / specific
-  target_student_ids: jsonb("target_student_ids"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  target_student_ids: text("target_student_ids", { mode: "json" }),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
   updated_at: text("updated_at"),
 }, (table) => [
   index("ann_teacher_id_idx").on(table.teacher_id),
   index("ann_course_id_idx").on(table.course_id),
 ]);
 
-export const announcementRead = pgTable("announcement_read", {
-  id: serial("id").primaryKey(),
+export const announcementRead = sqliteTable("announcement_read", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   announcement_id: integer("announcement_id").notNull().references(() => announcement.id, { onDelete: "cascade" }),
   student_id: integer("student_id").notNull().references(() => user.id),
-  read_at: text("read_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  read_at: text("read_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("ar_announcement_id_idx").on(table.announcement_id),
   index("ar_student_id_idx").on(table.student_id),
@@ -362,24 +362,24 @@ export const announcementRead = pgTable("announcement_read", {
 
 // ===================== 学习规划层 =====================
 
-export const studentSchedule = pgTable("student_schedule", {
-  id: serial("id").primaryKey(),
+export const studentSchedule = sqliteTable("student_schedule", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   student_id: integer("student_id").notNull().references(() => user.id),
   title: text("title").notNull(),
   category: text("category").notNull(), // driving / parttime / exercise / club / other
   schedule_type: text("schedule_type").notNull(), // fixed / once
-  day_of_week: jsonb("day_of_week"), // integer array
+  day_of_week: text("day_of_week", { mode: "json" }), // integer array
   start_time: text("start_time").notNull(),
   end_time: text("end_time").notNull(),
   date_start: text("date_start"),
   date_end: text("date_end"),
   priority: integer("priority").default(3),
-  is_active: boolean("is_active").default(true),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  is_active: integer("is_active", { mode: "boolean" }).default(true),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [index("ss_student_id_idx").on(table.student_id)]);
 
-export const classSchedule = pgTable("class_schedule", {
-  id: serial("id").primaryKey(),
+export const classSchedule = sqliteTable("class_schedule", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   course_id: integer("course_id").notNull().references(() => course.id),
   class_id: integer("class_id").notNull().references(() => classInfo.id),
   day_of_week: integer("day_of_week").notNull(),
@@ -387,39 +387,39 @@ export const classSchedule = pgTable("class_schedule", {
   end_time: text("end_time").notNull(),
   location: text("location"),
   week_pattern: text("week_pattern").default("every"),
-  is_active: boolean("is_active").default(true),
+  is_active: integer("is_active", { mode: "boolean" }).default(true),
 }, (table) => [
   index("cs_course_id_idx").on(table.course_id),
   index("cs_class_id_idx").on(table.class_id),
 ]);
 
-export const examSchedule = pgTable("exam_schedule", {
-  id: serial("id").primaryKey(),
+export const examSchedule = sqliteTable("exam_schedule", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   course_id: integer("course_id").notNull().references(() => course.id),
   class_id: integer("class_id").notNull().references(() => classInfo.id),
   exam_name: text("exam_name").notNull(),
   exam_date: text("exam_date").notNull(),
   start_time: text("start_time").notNull(),
   end_time: text("end_time").notNull(),
-  knowledge_scope: jsonb("knowledge_scope"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  knowledge_scope: text("knowledge_scope", { mode: "json" }),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("es_course_id_idx").on(table.course_id),
   index("es_class_id_idx").on(table.class_id),
 ]);
 
-export const studyPlan = pgTable("study_plan", {
-  id: serial("id").primaryKey(),
+export const studyPlan = sqliteTable("study_plan", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   student_id: integer("student_id").notNull().references(() => user.id),
   plan_name: text("plan_name"),
   plan_type: text("plan_type"), // weekly / sprint / daily
   start_date: text("start_date"),
   end_date: text("end_date"),
-  focus_knowledge_ids: jsonb("focus_knowledge_ids"),
+  focus_knowledge_ids: text("focus_knowledge_ids", { mode: "json" }),
   total_sessions: integer("total_sessions"),
   completed_sessions: integer("completed_sessions").default(0),
   status: text("status").default("active"), // active / completed / abandoned
-  generated_at: text("generated_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  generated_at: text("generated_at").default(sql`(CURRENT_TIMESTAMP)`),
   updated_at: text("updated_at"),
   // AI-generated plan item fields
   course_id: integer("course_id"),
@@ -428,19 +428,19 @@ export const studyPlan = pgTable("study_plan", {
   subject: text("subject"),
   content: text("content"),
   duration_minutes: integer("duration_minutes"),
-  is_ai_generated: boolean("is_ai_generated").default(false),
+  is_ai_generated: integer("is_ai_generated", { mode: "boolean" }).default(false),
 }, (table) => [index("sp_student_id_idx").on(table.student_id)]);
 
-export const studySession = pgTable("study_session", {
-  id: serial("id").primaryKey(),
+export const studySession = sqliteTable("study_session", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   plan_id: integer("plan_id").notNull().references(() => studyPlan.id, { onDelete: "cascade" }),
   session_date: text("session_date").notNull(),
   start_time: text("start_time").notNull(),
   end_time: text("end_time").notNull(),
   knowledge_point_id: integer("knowledge_point_id").notNull().references(() => knowledgePoint.id),
   session_type: text("session_type").notNull(), // review / practice / preview
-  resources: jsonb("resources"),
-  is_completed: boolean("is_completed").default(false),
+  resources: text("resources", { mode: "json" }),
+  is_completed: integer("is_completed", { mode: "boolean" }).default(false),
   completed_at: text("completed_at"),
   student_feedback: text("student_feedback"), // too_easy / just_right / too_hard / skip
   scheduled_duration: integer("scheduled_duration"),
@@ -451,31 +451,31 @@ export const studySession = pgTable("study_session", {
   index("ss_session_date_idx").on(table.session_date),
 ]);
 
-export const abilityPoint = pgTable("ability_point", {
-  id: serial("id").primaryKey(),
+export const abilityPoint = sqliteTable("ability_point", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   description: text("description"),
   course_id: integer("course_id").notNull().references(() => course.id),
 });
 
-export const ideologyPoint = pgTable("ideology_point", {
-  id: serial("id").primaryKey(),
+export const ideologyPoint = sqliteTable("ideology_point", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   description: text("description"),
   course_id: integer("course_id").notNull().references(() => course.id),
 });
 
-export const abilityKnowledge = pgTable("ability_knowledge", {
-  id: serial("id").primaryKey(),
+export const abilityKnowledge = sqliteTable("ability_knowledge", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   ability_id: integer("ability_id").notNull().references(() => abilityPoint.id),
   knowledge_id: integer("knowledge_id").notNull().references(() => knowledgePoint.id),
-  weight: doublePrecision("weight").default(1),
+  weight: real("weight").default(1),
 }, (table) => [
   uniqueIndex("ak_unique_idx").on(table.ability_id, table.knowledge_id),
 ]);
 
-export const ideologyKnowledge = pgTable("ideology_knowledge", {
-  id: serial("id").primaryKey(),
+export const ideologyKnowledge = sqliteTable("ideology_knowledge", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   ideology_id: integer("ideology_id").notNull().references(() => ideologyPoint.id),
   knowledge_id: integer("knowledge_id").notNull().references(() => knowledgePoint.id),
 }, (table) => [
@@ -484,8 +484,8 @@ export const ideologyKnowledge = pgTable("ideology_knowledge", {
 
 // ===================== 学习材料与行为分析 =====================
 
-export const learningMaterial = pgTable("learning_material", {
-  id: serial("id").primaryKey(),
+export const learningMaterial = sqliteTable("learning_material", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   course_id: integer("course_id").notNull().references(() => course.id),
   teacher_id: integer("teacher_id").notNull().references(() => user.id),
   title: text("title").notNull(),
@@ -493,23 +493,23 @@ export const learningMaterial = pgTable("learning_material", {
   content: text("content"), // 课件正文/摘要
   url: text("url"),
   duration_minutes: integer("duration_minutes"),
-  knowledge_point_ids: jsonb("knowledge_point_ids"),
+  knowledge_point_ids: text("knowledge_point_ids", { mode: "json" }),
   chapter: text("chapter"), // 章节名（课程知识定位）
-  is_required: boolean("is_required").default(false), // 必学任务点标记
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  is_required: integer("is_required", { mode: "boolean" }).default(false), // 必学任务点标记
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("lm_course_id_idx").on(table.course_id),
 ]);
 
-export const learningBehaviorLog = pgTable("learning_behavior_log", {
-  id: serial("id").primaryKey(),
+export const learningBehaviorLog = sqliteTable("learning_behavior_log", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   student_id: integer("student_id").notNull().references(() => user.id),
   material_id: integer("material_id").notNull().references(() => learningMaterial.id),
   watch_duration: integer("watch_duration").default(0), // 累计停留秒数
   progress: integer("progress").default(0), // 0-100
   review_count: integer("review_count").default(0), // 重看次数
-  is_completed: boolean("is_completed").default(false),
-  last_watched_at: text("last_watched_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  is_completed: integer("is_completed", { mode: "boolean" }).default(false),
+  last_watched_at: text("last_watched_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   uniqueIndex("lbl_unique_idx").on(table.student_id, table.material_id),
   index("lbl_student_id_idx").on(table.student_id),
@@ -518,8 +518,8 @@ export const learningBehaviorLog = pgTable("learning_behavior_log", {
 // ===================== 激励体系：积分 / 签到 / 商店 =====================
 
 /** 积分账户（每学生一行）：总积分 total_earned 只增不减（排行榜依据），balance 可用积分（商城消费） */
-export const pointsAccount = pgTable("points_account", {
-  id: serial("id").primaryKey(),
+export const pointsAccount = sqliteTable("points_account", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   user_id: integer("user_id").notNull().references(() => user.id).unique(),
   total_earned: integer("total_earned").default(0), // 总积分（累计获得，只增不减）
   balance: integer("balance").default(0),           // 可用积分（可消费）
@@ -528,13 +528,13 @@ export const pointsAccount = pgTable("points_account", {
   frozen: integer("frozen").default(0),             // 冻结（预留）
   version: integer("version").default(0),           // 乐观锁
   level: integer("level").default(1),
-  rank_visible: boolean("rank_visible").default(true),
+  rank_visible: integer("rank_visible", { mode: "boolean" }).default(true),
   updated_at: text("updated_at"),
 });
 
 /** 积分流水：每笔变动必留痕，balance_after 快照用于对账 */
-export const pointsLedger = pgTable("points_ledger", {
-  id: serial("id").primaryKey(),
+export const pointsLedger = sqliteTable("points_ledger", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   user_id: integer("user_id").notNull(),
   direction: text("direction").notNull(), // earn / spend / refund / expire / adjust
   amount: integer("amount").notNull(),
@@ -545,23 +545,23 @@ export const pointsLedger = pgTable("points_ledger", {
   remark: text("remark"),
   expire_at: text("expire_at"),
   operator_id: integer("operator_id"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [index("pl_user_time_idx").on(table.user_id, table.created_at)]);
 
 /** 签到记录：UNIQUE(user_id, sign_date) 数据库层防重复 */
-export const signInRecord = pgTable("sign_in_record", {
-  id: serial("id").primaryKey(),
+export const signInRecord = sqliteTable("sign_in_record", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   user_id: integer("user_id").notNull(),
   sign_date: text("sign_date").notNull(), // YYYY-MM-DD
   streak_day: integer("streak_day").notNull(),
   points: integer("points").notNull(),
   source: text("source").notNull().default("normal"), // normal / remedy
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [uniqueIndex("sr_user_date_uq").on(table.user_id, table.sign_date)]);
 
 /** 签到汇总：避免每次聚合 */
-export const signInSummary = pgTable("sign_in_summary", {
-  id: serial("id").primaryKey(),
+export const signInSummary = sqliteTable("sign_in_summary", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   user_id: integer("user_id").notNull().unique(),
   current_streak: integer("current_streak").default(0),
   max_streak: integer("max_streak").default(0),
@@ -575,8 +575,8 @@ export const signInSummary = pgTable("sign_in_summary", {
 });
 
 /** 商城商品 */
-export const shopItem = pgTable("shop_item", {
-  id: serial("id").primaryKey(),
+export const shopItem = sqliteTable("shop_item", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   type: text("type").notNull(),       // decoration / benefit / physical
   subtype: text("subtype").notNull(), // avatar_frame / chat_bubble / name_color / font / profile_theme / title / effect / consumable
@@ -588,18 +588,18 @@ export const shopItem = pgTable("shop_item", {
   points_price: integer("points_price").notNull(),
   stock: integer("stock").default(-1), // -1 不限
   per_user_limit: integer("per_user_limit").default(0),
-  need_teacher_review: boolean("need_teacher_review").default(false),
+  need_teacher_review: integer("need_teacher_review", { mode: "boolean" }).default(false),
   status: text("status").default("on_shelf"), // on_shelf / off_shelf
   start_at: text("start_at"),
   end_at: text("end_at"),
   version: integer("version").default(0),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
   updated_at: text("updated_at"),
 });
 
 /** 兑换订单 */
-export const redeemOrder = pgTable("redeem_order", {
-  id: serial("id").primaryKey(),
+export const redeemOrder = sqliteTable("redeem_order", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   order_no: text("order_no").notNull().unique(),
   user_id: integer("user_id").notNull(),
   item_id: integer("item_id").notNull(),
@@ -610,28 +610,28 @@ export const redeemOrder = pgTable("redeem_order", {
   idempotency_key: text("idempotency_key").unique(),
   handled_by: integer("handled_by"),
   remark: text("remark"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
   updated_at: text("updated_at"),
 });
 
 /** 用户装饰背包与装备：同 subtype 只能装备 1 个 */
-export const userDecoration = pgTable("user_decoration", {
-  id: serial("id").primaryKey(),
+export const userDecoration = sqliteTable("user_decoration", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   user_id: integer("user_id").notNull(),
   item_id: integer("item_id"),
   subtype: text("subtype").notNull(),
   config_key: text("config_key"),
   config_value: text("config_value"),
   source: text("source").default("purchase"), // purchase / achievement / grant
-  is_equipped: boolean("is_equipped").default(false),
-  acquired_at: text("acquired_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  is_equipped: integer("is_equipped", { mode: "boolean" }).default(false),
+  acquired_at: text("acquired_at").default(sql`(CURRENT_TIMESTAMP)`),
   expire_at: text("expire_at"),
 }, (table) => [index("ud_user_subtype_idx").on(table.user_id, table.subtype)]);
 
 // ===================== 教师批改规则配置 =====================
 
-export const gradingConfig = pgTable("grading_config", {
-  id: serial("id").primaryKey(),
+export const gradingConfig = sqliteTable("grading_config", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   teacher_id: integer("teacher_id").notNull().references(() => user.id),
   name: text("name").notNull(),
   course_id: integer("course_id"), // 可选：限定课程（null = 全部课程）
@@ -639,30 +639,30 @@ export const gradingConfig = pgTable("grading_config", {
   scoring_criteria: text("scoring_criteria"), // 评分标准
   deduction_rules: text("deduction_rules"), // 扣分规则
   comment_style: text("comment_style"), // 评语风格
-  grade_levels: jsonb("grade_levels"), // [{min:90,label:'优秀'}]
-  is_active: boolean("is_active").default(true),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  grade_levels: text("grade_levels", { mode: "json" }), // [{min:90,label:'优秀'}]
+  is_active: integer("is_active", { mode: "boolean" }).default(true),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
   updated_at: text("updated_at"),
 }, (table) => [index("gc_teacher_id_idx").on(table.teacher_id)]);
 
 // ===================== 管理后台：审计日志 + 系统配置 =====================
 
-export const auditLog = pgTable("audit_log", {
-  id: serial("id").primaryKey(),
+export const auditLog = sqliteTable("audit_log", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   operator_id: integer("operator_id").references(() => user.id),
   operator_name: text("operator_name"),
   action: text("action").notNull(), // create_user / disable_user / reset_password / change_role / update_config
   target_type: text("target_type"),
   target_id: text("target_id"),
   detail: text("detail"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("al_operator_idx").on(table.operator_id),
   index("al_created_at_idx").on(table.created_at),
 ]);
 
-export const systemConfig = pgTable("system_config", {
-  id: serial("id").primaryKey(),
+export const systemConfig = sqliteTable("system_config", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   key: text("key").notNull().unique(),
   value: text("value"),
   description: text("description"),
@@ -673,93 +673,93 @@ export const systemConfig = pgTable("system_config", {
 
 // ===================== 通知 =====================
 
-export const notification = pgTable("notification", {
-  id: serial("id").primaryKey(),
+export const notification = sqliteTable("notification", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   user_id: integer("user_id").notNull().references(() => user.id),
   type: text("type").notNull(), // assignment / grade / system
   title: text("title"),
   content: text("content"),
   link: text("link"),
-  is_read: boolean("is_read").default(false),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  is_read: integer("is_read", { mode: "boolean" }).default(false),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("notif_user_id_idx").on(table.user_id),
 ]);
 
 // ===================== AI 答疑会话 =====================
 
-export const qaSession = pgTable("qa_session", {
-  id: serial("id").primaryKey(),
+export const qaSession = sqliteTable("qa_session", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   user_id: integer("user_id").notNull().references(() => user.id),
   title: text("title"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
   updated_at: text("updated_at"),
 }, (table) => [
   index("qs_user_id_idx").on(table.user_id),
 ]);
 
-export const qaMessage = pgTable("qa_message", {
-  id: serial("id").primaryKey(),
+export const qaMessage = sqliteTable("qa_message", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   session_id: integer("session_id").notNull().references(() => qaSession.id),
   role: text("role").notNull(), // user / assistant
   content: text("content").notNull(),
   attachment: text("attachment"), // JSON: {type:'image'|'file', name, size, dataUrl?} 用户上传附件
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("qm_session_id_idx").on(table.session_id),
 ]);
 
 // ===================== 主观题复核留痕 =====================
 
-export const reviewRecord = pgTable("review_record", {
-  id: serial("id").primaryKey(),
+export const reviewRecord = sqliteTable("review_record", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   grading_task_id: integer("grading_task_id").notNull().references(() => gradingTask.id),
   reviewer_id: integer("reviewer_id").notNull().references(() => user.id),
   reviewer_role: text("reviewer_role"), // teacher / assistant
   action: text("action").notNull(), // adopt / modify / reject / appeal
-  ai_score: doublePrecision("ai_score"),
-  final_score: doublePrecision("final_score"),
+  ai_score: real("ai_score"),
+  final_score: real("final_score"),
   comment: text("comment"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("rr_task_id_idx").on(table.grading_task_id),
 ]);
 
 // ===================== 讨论区 =====================
 
-export const discussionPost = pgTable("discussion_post", {
-  id: serial("id").primaryKey(),
+export const discussionPost = sqliteTable("discussion_post", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   course_id: integer("course_id").notNull().references(() => course.id),
   author_id: integer("author_id").notNull().references(() => user.id),
   title: text("title").notNull(),
   content: text("content").notNull(),
-  is_pinned: boolean("is_pinned").default(false),
+  is_pinned: integer("is_pinned", { mode: "boolean" }).default(false),
   like_count: integer("like_count").default(0),
   reply_count: integer("reply_count").default(0),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
   updated_at: text("updated_at"),
 }, (table) => [
   index("dp_course_id_idx").on(table.course_id),
   index("dp_created_at_idx").on(table.created_at),
 ]);
 
-export const discussionReply = pgTable("discussion_reply", {
-  id: serial("id").primaryKey(),
+export const discussionReply = sqliteTable("discussion_reply", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   post_id: integer("post_id").notNull().references(() => discussionPost.id, { onDelete: "cascade" }),
   author_id: integer("author_id").notNull().references(() => user.id),
   content: text("content").notNull(),
   like_count: integer("like_count").default(0),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("dr_post_id_idx").on(table.post_id),
 ]);
 
-export const discussionLike = pgTable("discussion_like", {
-  id: serial("id").primaryKey(),
+export const discussionLike = sqliteTable("discussion_like", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   target_type: text("target_type").notNull(), // post / reply
   target_id: integer("target_id").notNull(),
   user_id: integer("user_id").notNull().references(() => user.id),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   uniqueIndex("dl_unique_idx").on(table.target_type, table.target_id, table.user_id),
 ]);
@@ -767,8 +767,8 @@ export const discussionLike = pgTable("discussion_like", {
 // ===================== 考试系统（exams） =====================
 
 /** 考试主表：学习通式布置配置 + 防作弊策略（发布后固化） */
-export const exam = pgTable("exam", {
-  id: serial("id").primaryKey(),
+export const exam = sqliteTable("exam", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   course_id: integer("course_id").notNull().references(() => course.id),
   teacher_id: integer("teacher_id").notNull().references(() => user.id),
   title: text("title").notNull(),
@@ -778,19 +778,19 @@ export const exam = pgTable("exam", {
   start_at: text("start_at").notNull(), // 开考/窗口起始
   end_at: text("end_at"),               // 窗口结束（time_mode=window 时使用）或固定止
   duration: integer("duration").default(60), // 分钟；fixed=进入后限时，window=个人倒计时
-  auto_submit: boolean("auto_submit").default(true), // 到时自动交卷
-  allow_resubmit: boolean("allow_resubmit").default(false),
+  auto_submit: integer("auto_submit", { mode: "boolean" }).default(true), // 到时自动交卷
+  allow_resubmit: integer("allow_resubmit", { mode: "boolean" }).default(false),
   publish_mode: text("publish_mode").default("manual"), // manual / auto / at_time
   publish_at: text("publish_at"),   // publish_mode=at_time 时指定公布时刻
-  grades_published: boolean("grades_published").default(false),
-  question_ids: jsonb("question_ids").notNull(),
-  question_scores: jsonb("question_scores"), // {questionId: score} 归一化合计 100
-  total_score: doublePrecision("total_score").default(100),
-  has_subjective: boolean("has_subjective").default(false),
-  proctor_config: jsonb("proctor_config"), // 防作弊/开考策略 JSON
-  randomized: boolean("randomized").default(true), // 题目/选项乱序
+  grades_published: integer("grades_published", { mode: "boolean" }).default(false),
+  question_ids: text("question_ids", { mode: "json" }).notNull(),
+  question_scores: text("question_scores", { mode: "json" }), // {questionId: score} 归一化合计 100
+  total_score: real("total_score").default(100),
+  has_subjective: integer("has_subjective", { mode: "boolean" }).default(false),
+  proctor_config: text("proctor_config", { mode: "json" }), // 防作弊/开考策略 JSON
+  randomized: integer("randomized", { mode: "boolean" }).default(true), // 题目/选项乱序
   status: text("status").default("draft"), // draft / scheduled / active / closed
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
   updated_at: text("updated_at"),
 }, (table) => [
   index("exam_course_id_idx").on(table.course_id),
@@ -798,22 +798,22 @@ export const exam = pgTable("exam", {
 ]);
 
 /** 考试名单：考试 × 学生（班级展开），含缺考/缓考标记 */
-export const examEnroll = pgTable("exam_enroll", {
-  id: serial("id").primaryKey(),
+export const examEnroll = sqliteTable("exam_enroll", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   exam_id: integer("exam_id").notNull().references(() => exam.id, { onDelete: "cascade" }),
   student_id: integer("student_id").notNull().references(() => user.id),
   class_id: integer("class_id").references(() => classInfo.id),
-  allow: boolean("allow").default(true),
+  allow: integer("allow", { mode: "boolean" }).default(true),
   enroll_status: text("enroll_status").default("normal"), // normal / absent / deferred
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("ee_exam_id_idx").on(table.exam_id),
   uniqueIndex("ee_unique_idx").on(table.exam_id, table.student_id),
 ]);
 
 /** 考试尝试：学生进入即建/续，deadline 服务器权威，含设备指纹与风险分 */
-export const examAttempt = pgTable("exam_attempt", {
-  id: serial("id").primaryKey(),
+export const examAttempt = sqliteTable("exam_attempt", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   exam_id: integer("exam_id").notNull().references(() => exam.id),
   enroll_id: integer("enroll_id").notNull().references(() => examEnroll.id),
   student_id: integer("student_id").notNull().references(() => user.id),
@@ -823,15 +823,15 @@ export const examAttempt = pgTable("exam_attempt", {
   status: text("status").default("in_progress"), // in_progress / submitted / auto_submitted / terminated / expired
   device_fp: text("device_fp"), // 设备指纹（绑定，换设备标记异常）
   ip: text("ip"),
-  face_verified: boolean("face_verified").default(false),
+  face_verified: integer("face_verified", { mode: "boolean" }).default(false),
   face_verified_at: text("face_verified_at"),
   face_strategy: text("face_strategy"), // once / continuous
-  risk_score: doublePrecision("risk_score").default(0), // 作弊风险分 0~100
-  risk_flags: jsonb("risk_flags"), // 命中异常标记
+  risk_score: real("risk_score").default(0), // 作弊风险分 0~100
+  risk_flags: text("risk_flags", { mode: "json" }), // 命中异常标记
   switch_count: integer("switch_count").default(0), // 切屏/退全屏累计
   fullscreen_exit_count: integer("fullscreen_exit_count").default(0),
   submitted_via: text("submitted_via"), // manual / auto / terminate / exceed
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
   updated_at: text("updated_at"),
 }, (table) => [
   index("ea_exam_id_idx").on(table.exam_id),
@@ -840,19 +840,19 @@ export const examAttempt = pgTable("exam_attempt", {
 ]);
 
 /** 考试作答：每学生每题一行；提交后只读 */
-export const examAnswer = pgTable("exam_answer", {
-  id: serial("id").primaryKey(),
+export const examAnswer = sqliteTable("exam_answer", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   attempt_id: integer("attempt_id").notNull().references(() => examAttempt.id, { onDelete: "cascade" }),
   exam_id: integer("exam_id").notNull().references(() => exam.id),
   student_id: integer("student_id").notNull().references(() => user.id),
   question_id: integer("question_id").notNull().references(() => question.id),
   student_answer: text("student_answer"),
-  is_answered: boolean("is_answered").default(false),
+  is_answered: integer("is_answered", { mode: "boolean" }).default(false),
   revise_count: integer("revise_count").default(0), // 答题节奏分析
   duration_ms: integer("duration_ms").default(0), // 该题累计停留毫秒
-  marked: boolean("marked").default(false), // 答题卡"标记难题"
+  marked: integer("marked", { mode: "boolean" }).default(false), // 答题卡"标记难题"
   saved_at: text("saved_at"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("xans_attempt_id_idx").on(table.attempt_id),
   index("xans_exam_id_idx").on(table.exam_id),
@@ -860,28 +860,28 @@ export const examAnswer = pgTable("exam_answer", {
 ]);
 
 /** 考试批改：每题一条；客观题即时、主观题 AI/人工；联动错题本与掌握度 */
-export const examGrading = pgTable("exam_grading", {
-  id: serial("id").primaryKey(),
+export const examGrading = sqliteTable("exam_grading", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   answer_id: integer("answer_id").notNull().references(() => examAnswer.id, { onDelete: "cascade" }),
   exam_id: integer("exam_id").notNull().references(() => exam.id),
   student_id: integer("student_id").notNull().references(() => user.id),
   question_id: integer("question_id").notNull().references(() => question.id),
   knowledge_point_id: integer("knowledge_point_id").notNull().references(() => knowledgePoint.id),
-  full_score: doublePrecision("full_score").notNull(),
+  full_score: real("full_score").notNull(),
   question_type: text("question_type").notNull(),
   reference_answer: text("reference_answer"),
   student_answer: text("student_answer"),
-  rubric_json: jsonb("rubric_json"),
-  total_score: doublePrecision("total_score"),
-  dimension_scores: jsonb("dimension_scores"),
-  annotations: jsonb("annotations"),
-  unmastered_knowledge_ids: jsonb("unmastered_knowledge_ids"),
+  rubric_json: text("rubric_json", { mode: "json" }),
+  total_score: real("total_score"),
+  dimension_scores: text("dimension_scores", { mode: "json" }),
+  annotations: text("annotations", { mode: "json" }),
+  unmastered_knowledge_ids: text("unmastered_knowledge_ids", { mode: "json" }),
   error_type: text("error_type"),
   overall_comment: text("overall_comment"),
   status: text("status").default("pending"), // pending / completed / failed
-  teacher_override_score: doublePrecision("teacher_override_score"),
-  ai_generated_probability: doublePrecision("ai_generated_probability"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  teacher_override_score: real("teacher_override_score"),
+  ai_generated_probability: real("ai_generated_probability"),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
   completed_at: text("completed_at"),
 }, (table) => [
   // answer_id 唯一：一次考试作答只允许一条批改记录，杜绝并发交卷/重批产生的重复行
@@ -891,15 +891,15 @@ export const examGrading = pgTable("exam_grading", {
 ]);
 
 /** 防作弊事件流水：进入即记录切屏/退全屏/离席/换设备等（只追加） */
-export const examProctorEvent = pgTable("exam_proctor_event", {
-  id: serial("id").primaryKey(),
+export const examProctorEvent = sqliteTable("exam_proctor_event", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   exam_id: integer("exam_id").notNull().references(() => exam.id),
   attempt_id: integer("attempt_id").references(() => examAttempt.id),
   student_id: integer("student_id").notNull().references(() => user.id),
   type: text("type").notNull(), // fullscreen_exit / fullscreen_revoke / blur / switch_away / devtools / copy / paste / device_change / face_absent / multi_face / zoom / resize
   severity: text("severity").default("warn"), // warn / red / critical
-  detail: jsonb("detail"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  detail: text("detail", { mode: "json" }),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [
   index("xpe_exam_id_idx").on(table.exam_id),
   index("xpe_attempt_id_idx").on(table.attempt_id),
@@ -907,8 +907,8 @@ export const examProctorEvent = pgTable("exam_proctor_event", {
 ]);
 
 /** 成绩申诉：学生对单题发起，教师复核改分 */
-export const examAppeal = pgTable("exam_appeal", {
-  id: serial("id").primaryKey(),
+export const examAppeal = sqliteTable("exam_appeal", {
+  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
   exam_id: integer("exam_id").notNull().references(() => exam.id),
   student_id: integer("student_id").notNull().references(() => user.id),
   question_id: integer("question_id").notNull().references(() => question.id),
@@ -916,7 +916,7 @@ export const examAppeal = pgTable("exam_appeal", {
   reason: text("reason").notNull(),
   status: text("status").default("pending"), // pending / resolved / rejected
   teacher_comment: text("teacher_comment"),
-  created_at: text("created_at").default(sql`to_char(now() at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS')`),
+  created_at: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
   handled_at: text("handled_at"),
 }, (table) => [
   index("xap_exam_id_idx").on(table.exam_id),

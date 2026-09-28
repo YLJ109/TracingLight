@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-blue)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)](https://www.typescriptlang.org)
 [![AI](https://img.shields.io/badge/AI-智谱%20GLM--4--Flash-green)](https://open.bigmodel.cn)
-[![Database](https://img.shields.io/badge/DB-PostgreSQL-4169e1)](https://postgresql.org)
+[![Database](https://img.shields.io/badge/DB-SQLite%20(sql.js)-lightgrey)](https://sqlite.org)
 
 </div>
 
@@ -192,7 +192,7 @@
 | **类型系统** | TypeScript | 5 | 严格类型检查 |
 | **UI 组件** | shadcn/ui | latest | Radix UI + Tailwind CSS 4 |
 | **数据可视化** | ECharts / d3.js | 6.x / 7.x | 雷达图、热力图、趋势图、知识图谱 |
-| **数据库** | PostgreSQL | 16+ | 直连本机/容器/云库，Drizzle 迁移，连接池容错 |
+| **数据库** | SQLite (sql.js) | 内嵌，无需安装 | 内存运行 + 30 秒/即时双落盘，零部署依赖 |
 | **ORM** | Drizzle ORM | 0.45 | 类型安全的查询构建器 |
 | **AI 模型** | 智谱 GLM-4-Flash | — | 免费额度, HTTP / SSE 流式 |
 | **认证** | JWT (jsonwebtoken) | 9.x | 自建 Token，改密后失效 |
@@ -204,148 +204,51 @@
 
 ## 快速开始
 
-### 部署总览：三平台选择
+### 部署总览
 
-先选部署目标，再按对应方式执行：
+数据库为**内嵌 SQLite**，无需安装任何数据库服务，双脚本即可跑起来：
 
-| 目标 | 是否推荐 | 一行入口 | 数据库 |
-|------|---------|---------|--------|
-| **PC / Windows + 本机已装 PostgreSQL** | ✅ | 见「② 直接启动」 | 你的本地 PG（默认 `localhost:5432`；Docker 则用 `5433`，按 `.env` 的 `DATABASE_URL` 实际端口） |
-| **PC / Windows + Docker 托管数据库** | ✅ 开发首选 | `docker\setup-docker.bat` → `docker\start-docker.bat` | Docker 容器 PG（5433，不会和你的系统 PG 冲突） |
-| **Linux 服务器**（VPS/云主机常驻） | ✅ 生产常驻 | `sudo ./deploy/setup-linux.sh`（PM2 守护） | 服务器本地 PG 或外部云库 |
-| **命令行手动** | 🟡 进阶/排障 | 见「方式二」 | 任意上述 PG |
-
-> **数据库说明**：全项目统一直接使用 PostgreSQL，不依赖 Supabase。三选一部署：
-> 1. Docker 托管数据库（推荐）：脚本自动拉起 pg 容器，不污染系统（端口 5433）；
-> 2. 本机 PostgreSQL：直接连接本机库（默认 5432），首次先执行为本机建库建号的 `scripts/maintenance/setup-local-pg.sql`；
-> 3. 外部云库：改 `DATABASE_URL` 即可直连（Neon / 阿里云 RDS 等，无需改代码）。
-> Supabase 连接串已在 `.env` 中以注释留作备用，如需切回云库只需换 `DATABASE_URL`。
+| 脚本 | 职责 | 使用时机 |
+|------|------|---------|
+| `setup.bat` | 环境检查 → npm 安装 → 生成 .env（JWT 密钥）→ 建库+种子 | 首次部署 |
+| `start.bat` | 启动服务（含端口占用友好检测） | 日常启动 |
+| `init-db.bat` | 重置数据库为演示数据（Y 确认 + 运行检测） | 数据乱了想重置 |
 
 ### 前置条件
 
 | 依赖 | 版本要求 | 安装方式 |
 |------|---------|---------|
 | Node.js | ≥ 20.x | [nodejs.org](https://nodejs.org) 下载 LTS 版 |
-| pnpm | ≥ 9.x | `npm install -g pnpm` |
-| PostgreSQL | ≥ 14 | 要么本机装，要么装 Docker（会自动拉 pg 镜像），要么有外部云库地址 |
-| Docker | (可选) | [docker.com](https://www.docker.com) — 使用 `setup-docker.bat` 时需要 |
-| 智谱 API Key | — | [open.bigmodel.cn](https://open.bigmodel.cn) 免费注册获取（启动后在管理端配置即可） |
+| npm | 随 Node.js 自带 | 无需单独安装 |
+| 智谱 API Key | — | [open.bigmodel.cn](https://open.bigmodel.cn) 免费注册获取（启动后在管理端「系统设置 → AI 服务配置」填写即可） |
 
----
+### Windows 一键部署（推荐）
 
-### 方式一：Windows 一键部署（推荐）
-
-**① Docker 托管数据库（推荐，脚本自动拉起 pg 容器）**
-
-```bash
-# 1) 双击 docker\setup-docker.bat  —— 环境检查 → 启动 PG 容器(5433) → 安装依赖 → 建表+种子 → 构建
-# 2) 双击 docker\start-docker.bat —— 启动服务器 → http://localhost:5000
-#    docker\start-docker.bat dev —— 开发模式（改代码自动热更新）
-# 3) 配置 AI：管理员登录 → 管理端 → 系统设置 → AI 服务配置
-#    填入 API 地址与 Key，保存后立即生效，并自动同步写入 .env
+```bat
+:: 1. 双击 setup.bat —— 环境检查 → 安装依赖 → 生成 .env → 建库+种子数据
+:: 2. 双击 start.bat —— 启动服务 → http://localhost:5000
+:: 3. 登录后（管理员）进入 管理端 → 系统设置 → AI 服务配置，填入 API Key
 ```
 
-**② 直接启动（你自己本机已装 PostgreSQL）**
-
-```bash
-# 前置：本机 PostgreSQL 已在运行。
-#  0) 首次需建库建号（用超级用户 postgres 执行一次，成功后无需再跑）：
-#        psql -h 127.0.0.1 -p 5432 -U postgres -f scripts\maintenance\setup-local-pg.sql
-#    脚本会创建账号 tracinglight / tracinglight_pw，并建好同名数据库。
-#  1) 双击 setup.bat —— 环境检查 → 安装依赖 → 建表+种子 → 构建
-#  2) 双击 start.bat —— 启动服务器 → http://localhost:5000
-#     start.bat dev  —— 开发模式（改代码自动热更新）
-#  注：默认连 localhost:5432；若用 Docker 容器 PG(5433)，改 .env 的 DATABASE_URL 端口即可。
-```
-
-> 数据库账号默认 `tracinglight / tracinglight_pw`（库名 `tracinglight`）。首次部署建议用 `scripts/maintenance/setup-local-pg.sql` 建库建号，避免手动建库。`.env` 里的 Supabase 连接串为备用，默认未启用。
-
-| 脚本 | 干什么 | 什么时候用 |
-|------|--------|-----------|
-| `docker\setup-docker.bat` | Docker 模式：拉起 PG 容器 → 安装依赖 → 建表+种子 → 构建 | 首次 Docker 部署 |
-| `docker\start-docker.bat` | Docker 模式：启动服务器（默认生产；`dev` 热更新），自动确保 PG 容器在跑 | 每次 Docker 启动 |
-| `setup.bat` | 直接模式：本机 PG 下的安装依赖 → 建表+种子 → 构建 | 首次本机 PG 部署 |
-| `start.bat` | 直接模式：启动服务器（默认生产模式；`start.bat dev` 热更新） | 每次启动 |
-| `start.bat update` | 更新模式：构建 + 启动 | 拉取新代码后更新 |
-| `build.bat` | `next build` 生产构建（可传 `pull` 先拉取） | 代码改动后部署前验证 |
-| `init-db.bat` | 只删数据库 → 重新建表 → 重新导入种子数据 | 重置数据 |
-| `backfill-dimensions.bat` | 为历史已完成但缺失维度分的批改回填六维能力分（幂等，仅补 NULL） | 重置数据 / 换库后，教师端详情六维雷达无数据时 |
-
----
-
-### 方式二：命令行手动部署
+### 命令行手动部署
 
 ```bash
 # 1. 安装依赖
-pnpm install
+pnpm install        # 或 npm install
 
-# 2. 初始化 .env（也可跳过，首次启动 server.ts 会自动生成）
-cp .env.example .env   # 然后按需修改 ZHIPU_API_KEY / JWT_SECRET
+# 2. 生成 .env（JWT 密钥；也可跳过，首次启动自动生成）
+node -e "const fs=require('fs'),c=require('crypto');fs.writeFileSync('.env',['JWT_SECRET='+c.randomBytes(24).toString('hex'),'NODE_ENV=development','PORT=5000'].join('\n'))"
 
-# 3. 初始化数据库（建表 + 导入种子数据）
+# 3. 建库 + 种子数据
 npx tsx src/storage/database/seed.ts
 
-# 4. 启动（开发模式，端口 5000）
+# 4. 启动（端口 5000）
 npx tsx src/server.ts
-# 或生产：pnpm build && set NODE_ENV=production && set PORT=5000 && npx tsx src/server.ts
 ```
 
----
+### 云环境 / Serverless 部署
 
-### 方式三：Linux 服务器部署（物理机 + PM2，常驻运行）
-
-```bash
-git clone https://github.com/YLJ109/TracingLight.git && cd TracingLight
-sudo ./deploy/setup-linux.sh        # 一键：依赖→.env→种子→next build→pm2 启动
-# 日常热更新
-sudo ./deploy/setup-linux.sh deploy
-```
-
-详见 [docs/部署指南-Linux.md](deploy/部署指南-Linux.md)（含 AI 配置、备份/重置、Nginx 对外、pm2 开机自启）。
-
----
-
-### 方式四：云环境 / Serverless 容器部署（对接外部托管 PostgreSQL）
-
-适合部署到**临时/一次性沙箱**（如 Serverless 容器、CI 预览环境）：这类环境无法稳定提供本地数据库服务，因此**不安装本地 PostgreSQL**，而是连接一个**外部托管 PostgreSQL**（推荐 Neon / Supabase 免费档）。
-
-> 原理：应用通过 `DATABASE_URL` 直连远端 PG。构建阶段（`next build`）不会连接数据库（`instrumentation.ts` 在 `phase-production-build` 阶段跳过 `initDb()`），只在服务启动时连接 → 只要沙箱能 TCP 外链 PG 即可稳定上线，无需在沙箱内自建数据库。
-
-1. **建外部 PostgreSQL**，拿到连接串（菜单 Settings → Database 里选 `Connection string`）：
-
-   - **不要**手动追加 `?sslmode=require`：Supabase / Neon 的池化端点用**自签证书**，新版 node-postgres 会把 `sslmode=require` 当作 `verify-full` 处理而拒连。
-   - 应用已自动对外链主机下发 `ssl:{rejectUnauthorized:false}`（见 `src/storage/database/db.ts` 的 `resolveSsl()`），**裸连接串直接可用**。
-   - 若官方直连主机 `db.<ref>.supabase.co` 解析失败，改用同地区的池化端点 `aws-0-<region>.pooler.supabase.com`，且用户名为 `postgres.<ref>`：
-
-   ```
-   postgresql://postgres.<项目ref>:<密码>@aws-0-<region>.pooler.supabase.com:5432/postgres
-   ```
-
-2. **本地推送表结构（仅一次）**：
-
-   ```bash
-   DATABASE_URL="postgresql://postgres.<ref>:<密码>@aws-0-<region>.pooler.supabase.com:5432/postgres" pnpm db:push:pg
-   ```
-
-3. **可选：灌演示数据**（仅当界面需要假数据；**会清空所有表**，勿对真实库执行）：
-
-   ```bash
-   DATABASE_URL="postgresql://postgres.<ref>:<密码>@aws-0-<region>.pooler.supabase.com:5432/postgres" npx tsx src/storage/database/seed.ts
-   ```
-
-4. **在部署平台配置环境变量**（最关键，未配置会回退到本地默认 `localhost:5433` 而启动失败）：
-
-   ```
-   DATABASE_URL=postgresql://postgres.<ref>:<密码>@aws-0-<region>.pooler.supabase.com:5432/postgres
-   JWT_SECRET=你的随机密钥（至少 32 位字符）
-   COOKIE_SECURE=false  # 必须！Coze/裸 HTTP 部署必须设为 false，否则浏览器拒存 cookie → 登录成功但 401
-   ```
-
-5. **重新部署**，访问首页出现登录页即成功；测试账号见下方表格。
-
-> ⚠️ 说明：上传文件走 `public/uploads`，在临时沙箱中**不持久**（重启会丢失头像/材料）；如需正式生产，建议后续将上传迁移到对象存储，或部署到持久化磁盘环境。
-
----
+SQLite 为内嵌数据库，部署到临时沙箱时需注意：`data/tracinglight.db` 与 `public/uploads` 需挂载**持久化磁盘**（或每次部署后执行 seed 重建演示数据）。`.env` 无需配置数据库项。
 
 ### 验证部署 & 测试账号
 
@@ -468,8 +371,7 @@ SQLite + Drizzle ORM，共 55+ 张业务表，分四层：基础数据（学校/
 | `ZHIPU_BASE_URL` | ✗ | 智谱 API 地址 | 官方默认 |
 | `ZHIPU_MODEL` | ✗ | 模型名称（免费：`glm-4-flash`，付费：`glm-4-plus`） | `glm-4-flash` |
 | `JWT_SECRET` | ✗ | JWT 签名密钥（`setup.bat` 自动生成） | 随机生成 |
-| `DATABASE_PATH` | ✗ | SQLite 数据库文件路径（历史遗留，已改用 PostgreSQL） | `./data/tracinglight.db` |
-| `DATABASE_URL` | ✓ | PostgreSQL 连接串（云环境 / 非本地部署必填；本地默认见 `src/server.ts`） | `postgres://tracinglight:tracinglight_pw@localhost:5433/tracinglight` |
+| `DATABASE_PATH` | ✗ | SQLite 数据库文件路径 | `./data/tracinglight.db` |
 | `PORT` | ✗ | HTTP 服务端口 | `5000` |
 | `NODE_ENV` | ✗ | `development` / `production` | `development` |
 
@@ -485,7 +387,7 @@ SQLite + Drizzle ORM，共 55+ 张业务表，分四层：基础数据（学校/
 | AI 功能报错 | Key 未配置 / 是占位符 / 无效 | 管理端→系统设置配置真实 Key；或 `.env` 设 `ZHIPU_API_KEY` |
 | 头像上传后 404 | 未重启 / 旧上传目录 | 重启项目（server.ts 现已按需转发 uploads） |
 | 端口 5000 被占用 | 其他服务占用 | 关掉占用进程或改 `.env` 中 `PORT` |
-| 数据库连接失败 | PostgreSQL 未启动 / 连接串错误 | 启动 PG（如 `docker run -p 5433:5432 ...`），检查 `.env` 的 `DATABASE_URL` |
+| 数据库相关报错 | `data/` 目录不可写或库文件损坏 | 检查磁盘权限；重置数据用 `init-db.bat` |
 | 页面空白 | 构建产物损坏 | 删除 `.next`，重新 `pnpm build` |
 
 ---

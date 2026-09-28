@@ -20,26 +20,26 @@ function addDays(dateStr: string, days: number): string {
 
 /** 唯一约束冲突判定 */
 function isUniqueViolation(e: unknown): boolean {
-  const msg = e instanceof Error ? e.message : String(e);
-  return /unique|constraint/i.test(msg);
+  const msg = String((e as Error)?.message || e || '');
+  return msg.toUpperCase().includes('UNIQUE');
 }
 
 /** 在给定句柄上获取（或惰性创建）签到汇总；并发首建 UNIQUE 冲突用 INSERT+重查规避 */
-async function getOrCreateSummaryOn(q: any, user_id: number) {
-  let s = (await q.select().from(signInSummary)
-    .where(eq(signInSummary.user_id, user_id)).limit(1).execute())[0];
+function getOrCreateSummaryOn(q: any, user_id: number) {
+  let s = (q.select().from(signInSummary)
+    .where(eq(signInSummary.user_id, user_id)).limit(1).all())[0];
   if (!s) {
     try {
-      await q.insert(signInSummary).values({
+      q.insert(signInSummary).values({
         user_id, current_streak: 0, max_streak: 0, last_sign_date: null,
         total_days: 0, month: today().slice(0, 7), month_days: 0, year_days: 0,
         remedy_cards: 1, updated_at: nowStr(),
-      }).execute();
+      }).run();
     } catch (e) {
       if (!isUniqueViolation(e)) throw e;
     }
-    s = (await q.select().from(signInSummary)
-      .where(eq(signInSummary.user_id, user_id)).limit(1).execute())[0];
+    s = (q.select().from(signInSummary)
+      .where(eq(signInSummary.user_id, user_id)).limit(1).all())[0];
   }
   return s;
 }
@@ -53,11 +53,11 @@ function getOrCreateSummary(user_id: number) {
  * 以“补签日前一天的签到记录”为基准（该日 streak_day 是被补签日连续的锚点），
  * 前一天未签则视为该段连续从第 1 天开始。
  */
-async function inferRemedyPoints(q: any, uid: number, date: string): Promise<{ points: number; streakDay: number }> {
+function inferRemedyPoints(q: any, uid: number, date: string): { points: number; streakDay: number } {
   const prevDay = addDays(date, -1);
-  const prev = (await q.select().from(signInRecord)
+  const prev = (q.select().from(signInRecord)
     .where(and(eq(signInRecord.user_id, uid), eq(signInRecord.sign_date, prevDay)))
-    .limit(1).execute())[0];
+    .limit(1).all())[0];
   const streakDay = prev ? (prev.streak_day ?? 0) + 1 : 1;
   const cycleIdx = (streakDay - 1) % 7;
   return { points: CYCLE_POINTS[cycleIdx], streakDay };
@@ -86,43 +86,43 @@ export async function POST(request: NextRequest) {
     }
 
     // 该日期是否已签
-    const exist = (await db.select().from(signInRecord)
+    const exist = (db.select().from(signInRecord)
       .where(and(eq(signInRecord.user_id, uid), eq(signInRecord.sign_date, date)))
-      .limit(1).execute())[0];
+      .limit(1).all())[0];
     if (exist) {
       return NextResponse.json({ success: false, error: '该日期已签到' }, { status: 409 });
     }
 
-    const summaryPre = await getOrCreateSummary(uid);
+    const summaryPre = getOrCreateSummary(uid);
     if ((summaryPre.remedy_cards ?? 0) < 1) {
       return NextResponse.json({ success: false, code: 'NO_REMEDY_CARD', error: '补签卡不足，可在积分商城兑换' }, { status: 400 });
     }
 
     let result;
     try {
-      result = await db.transaction(async (tx) => {
+      result = db.transaction((tx) => {
         // 事务内重新校验补签卡
-        const summary = await getOrCreateSummaryOn(tx, uid);
+        const summary = getOrCreateSummaryOn(tx, uid);
         if ((summary.remedy_cards ?? 0) < 1) {
           throw Object.assign(new Error('NO_REMEDY_CARD'), { status: 400 });
         }
 
         // 补签按该日真实连续位置取档位（不叠加连续加成）
-        const { points, streakDay } = await inferRemedyPoints(tx, uid, date);
+        const { points, streakDay } = inferRemedyPoints(tx, uid, date);
 
-        await tx.insert(signInRecord).values({
+        tx.insert(signInRecord).values({
           user_id: uid, sign_date: date, streak_day: streakDay, points, source: 'remedy', created_at: nowStr(),
-        }).execute();
+        }).run();
 
-        await tx.update(signInSummary).set({
+        tx.update(signInSummary).set({
           remedy_cards: (summary.remedy_cards ?? 0) - 1,
           total_days: (summary.total_days ?? 0) + 1,
           month_days: (summary.month_days ?? 0) + 1,
           year_days: (summary.year_days ?? 0) + 1,
           updated_at: nowStr(),
-        }).where(eq(signInSummary.user_id, uid)).execute();
+        }).where(eq(signInSummary.user_id, uid)).run();
 
-        const award = await awardPointsTx(tx, {
+        const award = awardPointsTx(tx, {
           user_id: uid,
           amount: points,
           biz_type: 'checkin',
